@@ -862,7 +862,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-neutral-950 text-white">
       {alert && (
-        <div className="fixed top-4 inset-x-0 flex justify-center z-30">
+        <div className="fixed top-4 inset-x-0 flex justify-center z-[60]">
           <div className="px-4 py-2 bg-blue-700 text-white rounded shadow">{alert}</div>
         </div>
       )}
@@ -1106,7 +1106,7 @@ export default function App() {
                     {selectedCollection ? (
                       <>
                         <input className="px-3 py-2 rounded bg-neutral-950 border border-neutral-800 flex-1 min-w-[160px]" placeholder="Filter collections" value={collectionFilter} onChange={(e) => setCollectionFilter(e.target.value)} />
-                        <select className="px-3 py-2 rounded bg-neutral-950 border border-neutral-800" value={collectionSort} onChange={(e) => setCollectionSort(e.target.value)}>
+                        <select className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer appearance-none" value={collectionSort} onChange={(e) => setCollectionSort(e.target.value)}>
                           <option value="default">Default</option>
                           <option value="name">Name</option>
                           <option value="newest">Newest</option>
@@ -1116,7 +1116,7 @@ export default function App() {
                     ) : (
                       <>
                         <input className="px-3 py-2 rounded bg-neutral-950 border border-neutral-800 flex-1 min-w-[160px]" placeholder="Filter vaults" value={vaultFilter} onChange={(e) => setVaultFilter(e.target.value)} />
-                        <select className="px-3 py-2 rounded bg-neutral-950 border border-neutral-800" value={vaultSort} onChange={(e) => setVaultSort(e.target.value)}>
+                        <select className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer appearance-none" value={vaultSort} onChange={(e) => setVaultSort(e.target.value)}>
                           <option value="default">Default</option>
                           <option value="name">Name</option>
                           <option value="newest">Newest</option>
@@ -1224,7 +1224,7 @@ export default function App() {
                     {selectedCollection ? (
                       <>
                         <input className="px-3 py-2 rounded bg-neutral-950 border border-neutral-800 flex-1 min-w-[160px]" placeholder="Filter assets" value={assetFilter} onChange={(e) => setAssetFilter(e.target.value)} />
-                        <select className="px-3 py-2 rounded bg-neutral-950 border border-neutral-800" value={assetSort} onChange={(e) => setAssetSort(e.target.value)}>
+                        <select className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer appearance-none" value={assetSort} onChange={(e) => setAssetSort(e.target.value)}>
                           <option value="newest">Newest</option>
                           <option value="oldest">Oldest</option>
                           <option value="name">Name</option>
@@ -1233,7 +1233,7 @@ export default function App() {
                     ) : (
                       <>
                         <input className="px-3 py-2 rounded bg-neutral-950 border border-neutral-800 flex-1 min-w-[160px]" placeholder="Filter collections" value={collectionFilter} onChange={(e) => setCollectionFilter(e.target.value)} />
-                        <select className="px-3 py-2 rounded bg-neutral-950 border border-neutral-800" value={collectionSort} onChange={(e) => setCollectionSort(e.target.value)}>
+                        <select className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer appearance-none" value={collectionSort} onChange={(e) => setCollectionSort(e.target.value)}>
                           <option value="default">Default</option>
                           <option value="name">Name</option>
                           <option value="newest">Newest</option>
@@ -1256,10 +1256,10 @@ export default function App() {
                   {selectedCollection && showAssetForm && (
                     <form className="space-y-4" onSubmit={async (e) => { e.preventDefault(); const ok = await handleAddAsset(); if (ok) setShowAssetForm(false); }}>
                       <div className="grid gap-3 md:grid-cols-2">
-                        <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Title" value={newAsset.title} onChange={(e) => setNewAsset((p) => ({ ...p, title: e.target.value }))} />
+                        <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Title" maxLength={30} value={newAsset.title} onChange={(e) => setNewAsset((p) => ({ ...p, title: e.target.value }))} />
                         <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Category" value={newAsset.category} onChange={(e) => setNewAsset((p) => ({ ...p, category: e.target.value }))} />
                       </div>
-                      <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={3} placeholder="Description" value={newAsset.description} onChange={(e) => setNewAsset((p) => ({ ...p, description: e.target.value }))} />
+                      <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={3} placeholder="Description" maxLength={60} value={newAsset.description} onChange={(e) => setNewAsset((p) => ({ ...p, description: e.target.value }))} />
 
                       <div className="space-y-3">
                         <div className="flex flex-col items-start gap-1">
@@ -1337,33 +1337,28 @@ export default function App() {
                       sortedAssets.length === 0 ? (
                         <div className="p-4 border border-neutral-800 rounded bg-neutral-900 text-neutral-400">No assets in this collection.</div>
                       ) : (
-                        <div className="grid gap-3 md:grid-cols-2">
+                        <div className="space-y-3">
                           {sortedAssets.map((asset) => {
                             const normalized = normalizeAsset(asset);
                             const hero = asset.heroImage || normalized.images[0] || DEFAULT_HERO;
 
                             return (
-                              <div key={asset.id} className="border border-neutral-800 rounded bg-neutral-900 overflow-hidden flex flex-col">
-                                <img src={hero} alt={asset.title} className="w-full h-32 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => openImageViewer(normalized.images, 0)} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
-                                <div className="p-4 flex-1 flex flex-col gap-3">
-                                  <div className="space-y-1 flex-1">
-                                    <p className="text-lg font-semibold">{asset.title}</p>
-                                    <p className="text-sm text-neutral-400">{asset.category || "Uncategorized"}</p>
-                                    {asset.description && <p className="text-sm text-neutral-300 line-clamp-2">{asset.description}</p>}
-                                    {normalized.images.length > 0 && (
-                                      <div className="flex gap-1 pt-2 flex-wrap">
-                                        {normalized.images.map((img, idx) => (
-                                          <img key={idx} src={img} alt="" className="w-12 h-12 object-cover rounded border border-neutral-700 cursor-pointer hover:border-blue-500 transition-colors" onClick={() => openImageViewer(normalized.images, idx)} onError={(e) => { e.target.style.display = "none"; }} />
-                                        ))}
-                                      </div>
-                                    )}
-                                    <p className="text-xs text-neutral-500 pt-1">Added {new Date(asset.createdAt).toLocaleString()}</p>
+                              <div key={asset.id} className="border border-neutral-800 rounded bg-neutral-900 overflow-hidden flex flex-row gap-4 p-3">
+                                <img src={hero} alt={asset.title} className="w-32 h-32 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={() => openImageViewer(normalized.images, 0)} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
+                                <div className="flex-1 flex flex-col justify-between min-w-0 max-h-32">
+                                  <div className="space-y-0.5">
+                                    <p className="text-base font-semibold truncate">{asset.title}</p>
+                                    <p className="text-xs text-neutral-400">{asset.category || "Uncategorized"}</p>
+                                    {asset.description && <p className="text-xs text-neutral-300 line-clamp-1">{asset.description}</p>}
                                   </div>
 
-                                  <div className="flex justify-end gap-2 pt-2 border-t border-neutral-800">
-                                    <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-sm hover:bg-blue-800" onClick={() => openViewAsset(asset)}>View / Edit</button>
-                                    <button className="px-2 py-0.5 bg-green-700 text-white rounded text-sm hover:bg-green-800" onClick={() => { navigator.clipboard.writeText(`Asset: ${asset.title}\nCategory: ${asset.category || 'Uncategorized'}\nDescription: ${asset.description || 'No description'}`); showAlert('Asset details copied to clipboard!'); }}>Share</button>
-                                    <button className="px-2 py-0.5 bg-red-700 text-white rounded text-sm hover:bg-red-800" onClick={() => handleDeleteAsset(asset.id)}>Delete</button>
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="text-xs text-neutral-500">Added {new Date(asset.createdAt).toLocaleDateString()}</p>
+                                    <div className="flex gap-2 flex-shrink-0">
+                                      <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={() => openViewAsset(asset)}>View / Edit</button>
+                                      <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={() => { navigator.clipboard.writeText(`Asset: ${asset.title}\nCategory: ${asset.category || 'Uncategorized'}\nDescription: ${asset.description || 'No description'}`); showAlert('Asset details copied to clipboard!'); }}>Share</button>
+                                      <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={() => handleDeleteAsset(asset.id)}>Delete</button>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
@@ -1397,10 +1392,10 @@ export default function App() {
 
             <div className="space-y-4">
               <div className="grid gap-3 md:grid-cols-2">
-                <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Title" value={viewAssetDraft.title} onChange={(e) => setViewAssetDraft((p) => ({ ...p, title: e.target.value }))} />
+                <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Title" maxLength={30} value={viewAssetDraft.title} onChange={(e) => setViewAssetDraft((p) => ({ ...p, title: e.target.value }))} />
                 <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Category" value={viewAssetDraft.category} onChange={(e) => setViewAssetDraft((p) => ({ ...p, category: e.target.value }))} />
               </div>
-              <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={4} placeholder="Description" value={viewAssetDraft.description} onChange={(e) => setViewAssetDraft((p) => ({ ...p, description: e.target.value }))} />
+              <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={4} placeholder="Description" maxLength={60} value={viewAssetDraft.description} onChange={(e) => setViewAssetDraft((p) => ({ ...p, description: e.target.value }))} />
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
