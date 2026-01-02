@@ -1,0 +1,1 @@
+const ts=require('typescript');const fs=require('fs');const code=fs.readFileSync('src/App.js','utf8');const sf=ts.createSourceFile('App.js',code,ts.ScriptTarget.Latest,true,ts.ScriptKind.JSX);console.log(sf.parseDiagnostics.map(d=>({message:ts.flattenDiagnosticMessageText(d.messageText,' '),start:d.start,length:d.length})));

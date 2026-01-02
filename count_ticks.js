@@ -1,0 +1,1 @@
+const fs=require('fs');const code=fs.readFileSync('src/App.js','utf8');let positions=[];for(let i=0;i<code.length;i++){if(code[i]=='`')positions.push(i);}console.log('backticks',positions.length);console.log('first few',positions.slice(0,5));console.log('last few',positions.slice(-5));

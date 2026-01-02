@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://db.onlinewebfonts.com/c/564b1b2140f2a3fc3a8006a137bfd3c8?family=BOLA+RETRO');
+
+.brand-heading {
+  font-family: 'BOLA RETRO', 'Impact', 'Arial Black', sans-serif;
+  -webkit-text-stroke: 2.8px #000;
+  text-stroke: 2.8px #000;
+  letter-spacing: 0.06em;
+}
+
+body {
+  font-family: system-ui, sans-serif;
+}
+
+/* Smooth page transitions */
+.page-transition {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Smooth button transitions */
+button {
+  transition: all 0.2s ease-in-out;
+}
+
+button:active {
+  transform: scale(0.98);
+}
