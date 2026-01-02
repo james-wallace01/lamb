@@ -871,7 +871,7 @@ export default function App() {
         <header className="border-b border-neutral-900 bg-neutral-950/70 backdrop-blur">
           <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <p className="font-semibold text-lg tracking-[0.15em]">TEXTTEST</p>
+              <p className="font-semibold text-lg tracking-[0.15em]">LAMB</p>
             </div>
             <div className="flex items-center gap-3">
               {isLoggedIn && currentUser ? (
@@ -902,7 +902,7 @@ export default function App() {
               <div className={`transition-all duration-300 ease-out ${activeCenteredView === "landing" ? "opacity-100 translate-y-0 relative" : "opacity-0 -translate-y-3 pointer-events-none absolute inset-0"}`}>
                 <div className="p-8 rounded-2xl border border-neutral-900 bg-neutral-900/50 shadow-lg space-y-6 text-center flex flex-col items-center">
                   <div className="space-y-2">
-                    <p className="text-4xl font-bold text-white tracking-[0.15em]">TEXTTEST</p>
+                    <p className="text-4xl font-bold text-white tracking-[0.15em]">LAMB</p>
                     <p className="text-sm uppercase tracking-[0.2em] text-blue-400">Secure by default</p>
                     <h1 className="text-xl font-bold mt-2">Your private vault for liquid assets.</h1>
                     <p className="text-neutral-400 mt-3 max-w-xl">Organize vaults, collections, and assets with privacy-first defaults. No feeds, no distractions.</p>
@@ -917,7 +917,7 @@ export default function App() {
               <div className={`transition-all duration-300 ease-out ${activeCenteredView === "login" ? "opacity-100 translate-y-0 relative" : "opacity-0 -translate-y-3 pointer-events-none absolute inset-0"}`}>
                 <form className="p-8 rounded-2xl border border-neutral-900 bg-neutral-900/50 shadow-lg space-y-5" onSubmit={handleLogin}>
                   <div className="space-y-2">
-                    <p className="text-4xl font-bold text-white tracking-[0.15em]">TEXTTEST</p>
+                    <p className="text-4xl font-bold text-white tracking-[0.15em]">LAMB</p>
                     <h2 className="text-2xl font-semibold">Login</h2>
                   </div>
                   <div className="space-y-3">
@@ -940,7 +940,7 @@ export default function App() {
               <div className={`transition-all duration-300 ease-out ${activeCenteredView === "register" ? "opacity-100 translate-y-0 relative" : "opacity-0 -translate-y-3 pointer-events-none absolute inset-0"}`}>
                 <form className="p-8 rounded-2xl border border-neutral-900 bg-neutral-900/50 shadow-lg space-y-5" onSubmit={handleRegister}>
                   <div className="space-y-2">
-                    <p className="text-4xl font-bold text-white tracking-[0.15em]">TEXTTEST</p>
+                    <p className="text-4xl font-bold text-white tracking-[0.15em]">LAMB</p>
                     <h2 className="text-2xl font-semibold">Sign up</h2>
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
