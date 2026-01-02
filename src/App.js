@@ -1381,15 +1381,15 @@ export default function App() {
       </main>
 
       {viewAsset && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={closeViewAsset}>
-          <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 max-w-4xl w-full mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={closeViewAsset}>
+          <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 sm:p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-start gap-4 mb-4">
-              <div>
+              <div className="min-w-0 flex-1">
                 <p className="text-sm text-neutral-400">Asset</p>
-                <h3 className="text-xl font-semibold">{viewAssetDraft.title || "Untitled"}</h3>
+                <h3 className="text-xl font-semibold truncate">{viewAssetDraft.title || "Untitled"}</h3>
                 <p className="text-sm text-neutral-500">{viewAssetDraft.category || "Uncategorized"}</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-shrink-0">
                 <button className="px-3 py-1 rounded border border-neutral-700 hover:bg-neutral-800" onClick={closeViewAsset}>Close</button>
                 <button className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700" onClick={handleUpdateViewAsset}>Save</button>
               </div>
@@ -1409,7 +1409,7 @@ export default function App() {
                     <p className="text-xs text-neutral-500">Click to expand in viewer.</p>
                   </div>
                 </div>
-                <div className="w-full h-[400px] border-2 border-neutral-700 rounded-lg bg-neutral-950/50 flex items-center justify-center overflow-hidden">
+                <div className="w-full h-64 sm:h-80 md:h-96 max-h-[50vh] border-2 border-neutral-700 rounded-lg bg-neutral-950/50 flex items-center justify-center overflow-hidden">
                   <img src={viewAssetDraft.heroImage || viewAssetDraft.images?.[0] || DEFAULT_HERO} alt={viewAssetDraft.title} className="max-w-full max-h-full object-contain cursor-pointer hover:opacity-90 transition-opacity" onClick={() => { const heroIdx = viewAssetDraft.images.indexOf(viewAssetDraft.heroImage); openImageViewer(viewAssetDraft.images, heroIdx >= 0 ? heroIdx : 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
                 </div>
               </div>
