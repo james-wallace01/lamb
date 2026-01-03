@@ -195,84 +195,63 @@ export default function App() {
 
   const ensureDefaultVaultForUser = (user) => {
     if (!user) return null;
-    let defaultVault = null;
-    let defaultCollection = null;
 
-    setVaults((prev) => {
-      const existing = prev.find((v) => v.ownerId === user.id && v.isDefault);
-      if (existing) {
-        defaultVault = existing;
-        return prev;
-      }
-      const created = {
-        id: Date.now(),
-        ownerId: user.id,
-        name: "Example Vault",
-        isPrivate: true,
-        isDefault: true,
-        createdAt: user.createdAt || new Date().toISOString(),
-        lastViewed: user.createdAt || new Date().toISOString(),
-        lastEditedBy: user.username,
-        heroImage: DEFAULT_HERO,
-        images: [],
-      };
-      defaultVault = created;
-      return [created, ...prev];
-    });
+    // Check if default vault already exists
+    const existingVault = vaults.find((v) => v.ownerId === user.id && v.isDefault);
+    if (existingVault) return existingVault;
 
-    if (!defaultVault) return null;
+    // Create vault
+    const vaultId = Date.now();
+    const vault = {
+      id: vaultId,
+      ownerId: user.id,
+      name: "Example Vault",
+      isPrivate: true,
+      isDefault: true,
+      createdAt: user.createdAt || new Date().toISOString(),
+      lastViewed: user.createdAt || new Date().toISOString(),
+      lastEditedBy: user.username,
+      heroImage: DEFAULT_HERO,
+      images: [],
+    };
+    setVaults((prev) => [vault, ...prev]);
 
-    setCollections((prev) => {
-      const existingCollection = prev.find(
-        (c) => c.ownerId === user.id && c.vaultId === defaultVault.id && c.isDefault
-      );
-      if (existingCollection) {
-        defaultCollection = existingCollection;
-        return prev;
-      }
-      const created = {
-        id: Date.now() + 1,
-        ownerId: user.id,
-        vaultId: defaultVault.id,
-        name: "Example Collection",
-        isPrivate: true,
-        isDefault: true,
-        createdAt: user.createdAt || new Date().toISOString(),
-        lastViewed: user.createdAt || new Date().toISOString(),
-        lastEditedBy: user.username,
-        heroImage: DEFAULT_HERO,
-        images: [],
-      };
-      defaultCollection = created;
-      return [created, ...prev];
-    });
+    // Create collection
+    const collectionId = vaultId + 1;
+    const collection = {
+      id: collectionId,
+      ownerId: user.id,
+      vaultId: vaultId,
+      name: "Example Collection",
+      isPrivate: true,
+      isDefault: true,
+      createdAt: user.createdAt || new Date().toISOString(),
+      lastViewed: user.createdAt || new Date().toISOString(),
+      lastEditedBy: user.username,
+      heroImage: DEFAULT_HERO,
+      images: [],
+    };
+    setCollections((prev) => [collection, ...prev]);
 
-    if (!defaultCollection) return defaultVault;
+    // Create asset
+    const asset = {
+      id: vaultId + 2,
+      ownerId: user.id,
+      collectionId: collectionId,
+      title: "Example Asset",
+      type: "Collectables",
+      category: "Art",
+      description: "This is an example asset to get you started",
+      value: 1000,
+      heroImage: DEFAULT_HERO,
+      images: [],
+      createdAt: user.createdAt || new Date().toISOString(),
+      lastViewed: user.createdAt || new Date().toISOString(),
+      lastEditedBy: user.username,
+    };
+    setAssets((prev) => [asset, ...prev]);
 
-    setAssets((prev) => {
-      const existingAsset = prev.find(
-        (a) => a.ownerId === user.id && a.collectionId === defaultCollection.id && a.title === "Example Asset"
-      );
-      if (existingAsset) return prev;
-      const created = {
-        id: Date.now() + 2,
-        ownerId: user.id,
-        collectionId: defaultCollection.id,
-        title: "Example Asset",
-        type: "Collectables",
-        category: "Art",
-        description: "This is an example asset to get you started",
-        value: 1000,
-        heroImage: DEFAULT_HERO,
-        images: [],
-        createdAt: user.createdAt || new Date().toISOString(),
-        lastViewed: user.createdAt || new Date().toISOString(),
-        lastEditedBy: user.username,
-      };
-      return [created, ...prev];
-    });
-
-    return defaultVault;
+    return vault;
   };
 
   const openEditVault = (vault) => setEditDialog({ show: true, type: "vault", item: vault, name: vault.name });
