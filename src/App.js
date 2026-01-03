@@ -793,9 +793,7 @@ export default function App() {
         continue;
       }
       const resized = await resizeImage(file);
-      // Add unique identifier to ensure duplicate images are treated as separate entities
-      const uniqueImage = resized + `#${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      converted.push(uniqueImage);
+      converted.push(resized);
     }
 
     setter((prev) => {
@@ -1104,6 +1102,13 @@ export default function App() {
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                   <h1 className="text-2xl font-semibold">{selectedVault ? selectedVault.name : "Vault"}</h1>
+                  <div className="h-10 flex items-center">
+                    {selectedCollection && (
+                      <button className="mt-2 px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => { setSelectedCollectionId(null); setShowCollectionForm(false); setShowAssetForm(false); }}>
+                        ← Back
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <button className="text-xs text-neutral-500 hover:text-neutral-300" onClick={handleClearData}>Clear local data</button>
               </div>
@@ -1116,11 +1121,6 @@ export default function App() {
                       <h3 className="text-lg font-semibold truncate">{selectedCollection ? (selectedVault?.name || "Vault") : "Create or select a Vault"}</h3>
                     </div>
                     <div className="flex items-center gap-2 ml-4">
-                      {selectedCollection && (
-                        <button className="px-3 py-2 rounded bg-neutral-800 border border-neutral-700 hover:bg-neutral-700 whitespace-nowrap text-sm" onClick={() => { setSelectedCollectionId(null); setShowCollectionForm(false); setShowAssetForm(false); }}>
-                          ← Vaults
-                        </button>
-                      )}
                       <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 w-10 h-10 flex items-center justify-center" onClick={() => {
                         if (selectedCollection) {
                           setShowCollectionForm((v) => !v);
@@ -1326,10 +1326,9 @@ export default function App() {
                           <div className="grid gap-2 sm:grid-cols-2">
                             {newAsset.images.map((img, idx) => {
                               const isHero = newAsset.heroImage === img;
-                              const displayImg = img.split('#')[0];
                               return (
                                 <div key={idx} className="relative border border-neutral-800 rounded overflow-hidden">
-                                  <img src={displayImg} alt={`Upload ${idx + 1}`} className="w-full h-28 object-cover" />
+                                  <img src={img} alt={`Upload ${idx + 1}`} className="w-full h-28 object-cover" />
                                   <div className="absolute top-2 right-2 flex gap-1 items-center">
                                     {!isHero && (
                                       <button type="button" className="px-2 py-1 text-xs rounded bg-neutral-800 border border-neutral-700 hover:bg-neutral-700" onClick={() => handleSetHero(img, setNewAsset)}>☆</button>
@@ -1389,11 +1388,10 @@ export default function App() {
                           {sortedAssets.map((asset) => {
                             const normalized = normalizeAsset(asset);
                             const hero = asset.heroImage || normalized.images[0] || DEFAULT_HERO;
-                            const displayHero = hero.split('#')[0];
 
                             return (
                               <div key={asset.id} className="border border-neutral-800 rounded bg-neutral-900 overflow-hidden flex flex-row gap-4 p-3">
-                                <img src={displayHero} alt={asset.title} className="w-32 h-32 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={() => openImageViewer(normalized.images, 0)} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
+                                <img src={hero} alt={asset.title} className="w-32 h-32 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={() => openImageViewer(normalized.images, 0)} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
                                 <div className="flex-1 flex flex-col justify-between min-w-0 max-h-32">
                                   <div className="space-y-0.5">
                                     <p className="text-base font-semibold truncate">{asset.title}</p>
@@ -1470,7 +1468,7 @@ export default function App() {
                   </div>
                 </div>
                 <div className="w-full h-64 sm:h-80 md:h-96 max-h-[50vh] border-2 border-neutral-700 rounded-lg bg-neutral-950/50 flex items-center justify-center overflow-hidden">
-                  <img src={(viewAssetDraft.heroImage || viewAssetDraft.images?.[0] || DEFAULT_HERO).split('#')[0]} alt={viewAssetDraft.title} className="max-w-full max-h-full object-contain cursor-pointer hover:opacity-90 transition-opacity" onClick={() => { const heroIdx = viewAssetDraft.images.indexOf(viewAssetDraft.heroImage); openImageViewer(viewAssetDraft.images, heroIdx >= 0 ? heroIdx : 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
+                  <img src={viewAssetDraft.heroImage || viewAssetDraft.images?.[0] || DEFAULT_HERO} alt={viewAssetDraft.title} className="max-w-full max-h-full object-contain cursor-pointer hover:opacity-90 transition-opacity" onClick={() => { const heroIdx = viewAssetDraft.images.indexOf(viewAssetDraft.heroImage); openImageViewer(viewAssetDraft.images, heroIdx >= 0 ? heroIdx : 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
                 </div>
               </div>
 
@@ -1488,10 +1486,9 @@ export default function App() {
                   }).map((img, idx) => {
                     const isHero = viewAssetDraft.heroImage === img;
                     const originalIdx = viewAssetDraft.images.indexOf(img);
-                    const displayImg = img.split('#')[0];
                     return (
                       <div key={originalIdx} className="relative border border-neutral-800 rounded overflow-hidden">
-                        <img src={displayImg} alt={`Edit ${idx + 1}`} className="w-full h-28 object-cover cursor-pointer hover:opacity-90 transition-opacity" onClick={() => openImageViewer(viewAssetDraft.images, originalIdx)} />
+                        <img src={img} alt={`Edit ${idx + 1}`} className="w-full h-28 object-cover cursor-pointer hover:opacity-90 transition-opacity" onClick={() => openImageViewer(viewAssetDraft.images, originalIdx)} />
                         <div className="absolute top-2 right-2 flex gap-1 items-center">
                           {!isHero && (
                             <button type="button" className="px-2 py-1 text-xs rounded bg-neutral-800 border border-neutral-700 hover:bg-neutral-700" onClick={() => handleSetHero(img, setViewAssetDraft)}>☆</button>
@@ -1572,14 +1569,14 @@ export default function App() {
               )}
 
               <div className="w-[1000px] h-[700px] border-2 border-neutral-700 rounded-lg bg-neutral-950/50 flex items-center justify-center">
-                <img src={imageViewer.images[imageViewer.currentIndex]?.split('#')[0]} alt="" className="max-w-full max-h-full object-contain" onError={(e) => { e.target.src = DEFAULT_HERO; }} />
+                <img src={imageViewer.images[imageViewer.currentIndex]} alt="" className="max-w-full max-h-full object-contain" onError={(e) => { e.target.src = DEFAULT_HERO; }} />
               </div>
             </div>
             
             {imageViewer.images.length > 1 && (
               <div className="flex gap-2 justify-center flex-wrap max-w-md">
                 {imageViewer.images.map((img, idx) => (
-                  <img key={idx} src={img.split('#')[0]} alt="" className={`w-16 h-16 object-cover rounded cursor-pointer border-2 transition-all ${idx === imageViewer.currentIndex ? 'border-blue-500 scale-110' : 'border-neutral-600 hover:border-blue-400 opacity-70 hover:opacity-100'}`} onClick={() => setImageViewer(prev => ({ ...prev, currentIndex: idx }))} onError={(e) => { e.target.style.display = "none"; }} />
+                  <img key={idx} src={img} alt="" className={`w-16 h-16 object-cover rounded cursor-pointer border-2 transition-all ${idx === imageViewer.currentIndex ? 'border-blue-500 scale-110' : 'border-neutral-600 hover:border-blue-400 opacity-70 hover:opacity-100'}`} onClick={() => setImageViewer(prev => ({ ...prev, currentIndex: idx }))} onError={(e) => { e.target.style.display = "none"; }} />
                 ))}
               </div>
             )}
