@@ -140,9 +140,9 @@ export default function App() {
 
   const [selectedVaultId, setSelectedVaultId] = useState(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState(null);
-  const initialVaultState = { name: "", heroImage: "", images: [] };
+  const initialVaultState = { name: "", description: "", heroImage: "", images: [] };
   const [newVault, setNewVault] = useState(initialVaultState);
-  const initialCollectionState = { name: "", heroImage: "", images: [] };
+  const initialCollectionState = { name: "", description: "", heroImage: "", images: [] };
   const [newCollection, setNewCollection] = useState(initialCollectionState);
   const initialAssetState = { title: "", type: "", category: "", description: "", value: "", heroImage: "", images: [] };
   const [newAsset, setNewAsset] = useState(initialAssetState);
@@ -180,7 +180,7 @@ export default function App() {
   const [viewAsset, setViewAsset] = useState(null);
   const [viewAssetDraft, setViewAssetDraft] = useState(initialAssetState);
   const [imageViewer, setImageViewer] = useState({ show: false, images: [], currentIndex: 0 });
-  const [editDialog, setEditDialog] = useState({ show: false, type: null, item: null, name: "" });
+  const [editDialog, setEditDialog] = useState({ show: false, type: null, item: null, name: "", description: "" });
 
   const [alert, setAlert] = useState("");
   const alertTimeoutRef = useRef(null);
@@ -220,6 +220,7 @@ export default function App() {
       id: vaultId,
       ownerId: user.id,
       name: "Example Vault",
+      description: "Your first vault for organizing collections",
       isPrivate: true,
       isDefault: true,
       createdAt: user.createdAt || new Date().toISOString(),
@@ -237,6 +238,7 @@ export default function App() {
       ownerId: user.id,
       vaultId: vaultId,
       name: "Example Collection",
+      description: "Your first collection for storing assets",
       isPrivate: true,
       isDefault: true,
       createdAt: user.createdAt || new Date().toISOString(),
@@ -268,9 +270,9 @@ export default function App() {
     return vault;
   };
 
-  const openEditVault = (vault) => setEditDialog({ show: true, type: "vault", item: vault, name: vault.name });
-  const openEditCollection = (collection) => setEditDialog({ show: true, type: "collection", item: collection, name: collection.name });
-  const closeEditDialog = () => setEditDialog({ show: false, type: null, item: null, name: "" });
+  const openEditVault = (vault) => setEditDialog({ show: true, type: "vault", item: vault, name: vault.name, description: vault.description || "" });
+  const openEditCollection = (collection) => setEditDialog({ show: true, type: "collection", item: collection, name: collection.name, description: collection.description || "" });
+  const closeEditDialog = () => setEditDialog({ show: false, type: null, item: null, name: "", description: "" });
 
   const saveEditDialog = () => {
     const name = (editDialog.name || "").trim();
@@ -279,13 +281,15 @@ export default function App() {
       return;
     }
     if (editDialog.type === "vault" && editDialog.item) {
-      setVaults((prev) => prev.map((v) => (v.id === editDialog.item.id ? { ...v, name, lastEditedBy: currentUser?.username || 'Unknown' } : v)));
+      const description = (editDialog.description || "").trim();
+      setVaults((prev) => prev.map((v) => (v.id === editDialog.item.id ? { ...v, name, description, lastEditedBy: currentUser?.username || 'Unknown' } : v)));
       if (selectedVaultId === editDialog.item.id) {
         setSelectedVaultId(editDialog.item.id);
       }
     }
     if (editDialog.type === "collection" && editDialog.item) {
-      setCollections((prev) => prev.map((c) => (c.id === editDialog.item.id ? { ...c, name, lastEditedBy: currentUser?.username || 'Unknown' } : c)));
+      const description = (editDialog.description || "").trim();
+      setCollections((prev) => prev.map((c) => (c.id === editDialog.item.id ? { ...c, name, description, lastEditedBy: currentUser?.username || 'Unknown' } : c)));
       if (selectedCollectionId === editDialog.item.id) {
         setSelectedCollectionId(editDialog.item.id);
       }
@@ -515,7 +519,7 @@ export default function App() {
     if (!currentUser) return false;
     const images = trimToFour(newVault.images || []);
     const heroImage = newVault.heroImage || images[0] || DEFAULT_HERO;
-    const vault = { id: Date.now(), ownerId: currentUser.id, name: newVault.name.trim(), isPrivate: true, isDefault: false, createdAt: new Date().toISOString(), lastViewed: new Date().toISOString(), lastEditedBy: currentUser.username, heroImage, images };
+    const vault = { id: Date.now(), ownerId: currentUser.id, name: newVault.name.trim(), description: newVault.description.trim(), isPrivate: true, isDefault: false, createdAt: new Date().toISOString(), lastViewed: new Date().toISOString(), lastEditedBy: currentUser.username, heroImage, images };
     setVaults((prev) => [vault, ...prev]);
     setNewVault(initialVaultState);
     return true;
@@ -533,7 +537,7 @@ export default function App() {
     if (!currentUser) return false;
     const images = trimToFour(newCollection.images || []);
     const heroImage = newCollection.heroImage || images[0] || DEFAULT_HERO;
-    const collection = { id: Date.now(), ownerId: currentUser.id, vaultId: selectedVaultId, name: newCollection.name.trim(), isPrivate: true, isDefault: false, createdAt: new Date().toISOString(), lastViewed: new Date().toISOString(), lastEditedBy: currentUser.username, heroImage, images };
+    const collection = { id: Date.now(), ownerId: currentUser.id, vaultId: selectedVaultId, name: newCollection.name.trim(), description: newCollection.description.trim(), isPrivate: true, isDefault: false, createdAt: new Date().toISOString(), lastViewed: new Date().toISOString(), lastEditedBy: currentUser.username, heroImage, images };
     setCollections((prev) => [collection, ...prev]);
     setNewCollection(initialCollectionState);
     return true;
@@ -974,7 +978,7 @@ export default function App() {
             <div className="flex items-center gap-3">
               <button className="hover:opacity-80 transition text-left" onClick={() => { setSelectedVaultId(null); setSelectedCollectionId(null); navigateTo(isLoggedIn ? "vault" : "landing"); }}>
                 <div className="font-semibold text-lg tracking-[0.15em]">LAMB</div>
-                <div className="text-[8px] tracking-[0.2em] text-neutral-500">LIQUID ASSET MANAGEMENT BOARD</div>
+                <div className="text-sm tracking-[0.2em] text-neutral-500">LIQUID ASSET MANAGEMENT BOARD</div>
               </button>
             </div>
             <div className="flex items-center gap-3">
@@ -1007,7 +1011,7 @@ export default function App() {
                 <div className="p-8 rounded-2xl border border-neutral-900 bg-neutral-900/50 shadow-lg space-y-6 text-center flex flex-col items-center">
                   <div className="space-y-2">
                     <p className="text-4xl font-bold text-white tracking-[0.15em]">LAMB</p>
-                    <p className="text-xs tracking-[0.2em] text-neutral-500">LIQUID ASSET MANAGEMENT BOARD</p>
+                    <p className="text-sm tracking-[0.2em] text-neutral-500">LIQUID ASSET MANAGEMENT BOARD</p>
                     <p className="text-sm uppercase tracking-[0.2em] text-blue-400">Secure by default</p>
                     <h1 className="text-xl font-bold mt-2">Your private vault for liquid assets.</h1>
                     <p className="text-neutral-400 mt-3 max-w-xl">Organize vaults, collections, and assets with privacy-first defaults. No feeds, no distractions.</p>
@@ -1023,7 +1027,7 @@ export default function App() {
                 <form className="p-8 rounded-2xl border border-neutral-900 bg-neutral-900/50 shadow-lg space-y-5" onSubmit={handleLogin}>
                   <div className="space-y-2">
                     <p className="text-4xl font-bold text-white tracking-[0.15em]">LAMB</p>
-                    <p className="text-xs tracking-[0.2em] text-neutral-500">LIQUID ASSET MANAGEMENT BOARD</p>
+                    <p className="text-sm tracking-[0.2em] text-neutral-500">LIQUID ASSET MANAGEMENT BOARD</p>
                     <h2 className="text-2xl font-semibold">Login</h2>
                   </div>
                   <div className="space-y-3">
@@ -1047,7 +1051,7 @@ export default function App() {
                 <form className="p-8 rounded-2xl border border-neutral-900 bg-neutral-900/50 shadow-lg space-y-5" onSubmit={handleRegister}>
                   <div className="space-y-2">
                     <p className="text-4xl font-bold text-white tracking-[0.15em]">LAMB</p>
-                    <p className="text-xs tracking-[0.2em] text-neutral-500">LIQUID ASSET MANAGEMENT BOARD</p>
+                    <p className="text-sm tracking-[0.2em] text-neutral-500">LIQUID ASSET MANAGEMENT BOARD</p>
                     <h2 className="text-2xl font-semibold">Sign up</h2>
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
@@ -1252,6 +1256,7 @@ export default function App() {
                   {!selectedCollection && showVaultForm && (
                     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); const ok = handleAddVault(); if (ok) setShowVaultForm(false); }}>
                       <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Vault name" value={newVault.name} onChange={(e) => setNewVault((p) => ({ ...p, name: e.target.value }))} />
+                      <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={2} placeholder="Description (optional)" maxLength={100} value={newVault.description} onChange={(e) => setNewVault((p) => ({ ...p, description: e.target.value }))} />
                       
                       <div className="space-y-3">
                         <div className="flex flex-col items-start gap-1">
@@ -1298,6 +1303,7 @@ export default function App() {
                   {selectedCollection && showCollectionForm && (
                     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); const ok = handleAddCollection(); if (ok) setShowCollectionForm(false); }}>
                       <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Collection name" value={newCollection.name} onChange={(e) => setNewCollection((p) => ({ ...p, name: e.target.value }))} />
+                      <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={2} placeholder="Description (optional)" maxLength={100} value={newCollection.description} onChange={(e) => setNewCollection((p) => ({ ...p, description: e.target.value }))} />
                       
                       <div className="space-y-3">
                         <div className="flex flex-col items-start gap-1">
@@ -1366,6 +1372,7 @@ export default function App() {
                                         <span className="text-xs px-2 py-1 rounded bg-blue-900/50 border border-blue-700 text-blue-300">Vault</span>
                                       </div>
                                       <p className="text-xs text-neutral-500 mt-1">Created {new Date(vault.createdAt).toLocaleDateString()}</p>
+                                      {vault.description && <p className="text-xs text-neutral-300 mt-0.5">{vault.description}</p>}
                                       <p className="text-xs text-neutral-400 mt-0.5">Collections: {collectionCount}</p>
                                       <p className="text-xs text-green-400 font-semibold mt-0.5">Value: ${vaultValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
                                     </div>
@@ -1474,6 +1481,7 @@ export default function App() {
                   {selectedVault && !selectedCollection && showCollectionForm && (
                     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); const ok = handleAddCollection(); if (ok) setShowCollectionForm(false); }}>
                       <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Collection name" value={newCollection.name} onChange={(e) => setNewCollection((p) => ({ ...p, name: e.target.value }))} />
+                      <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={2} placeholder="Description (optional)" maxLength={100} value={newCollection.description} onChange={(e) => setNewCollection((p) => ({ ...p, description: e.target.value }))} />
                       
                       <div className="space-y-3">
                         <div className="flex flex-col items-start gap-1">
@@ -1622,6 +1630,7 @@ export default function App() {
                                         <span className="text-xs px-2 py-1 rounded bg-purple-900/50 border border-purple-700 text-purple-300">Collection</span>
                                       </div>
                                       <p className="text-xs text-neutral-500 mt-1">Created {new Date(collection.createdAt).toLocaleDateString()}</p>
+                                      {collection.description && <p className="text-xs text-neutral-300 mt-0.5">{collection.description}</p>}
                                       <p className="text-xs text-neutral-400 mt-0.5">Assets: {assetCount}</p>
                                       <p className="text-xs text-green-400 font-semibold mt-0.5">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
                                     </div>
@@ -1831,6 +1840,17 @@ export default function App() {
                   value={editDialog.name}
                   onChange={(e) => setEditDialog((prev) => ({ ...prev, name: e.target.value }))}
                   autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-sm text-neutral-400">Description</label>
+                <textarea
+                  className="w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800"
+                  rows={3}
+                  maxLength={100}
+                  placeholder="Optional description"
+                  value={editDialog.description}
+                  onChange={(e) => setEditDialog((prev) => ({ ...prev, description: e.target.value }))}
                 />
               </div>
               <div className="flex gap-3 justify-end">
