@@ -1646,25 +1646,27 @@ export default function App() {
                       sortedAssets.length === 0 ? (
                         <div className="p-4 border border-neutral-800 rounded bg-neutral-900 text-neutral-400">No assets in this collection.</div>
                       ) : (
-                        <div className="space-y-3">
+                        <div className="grid gap-2">
                           {sortedAssets.map((asset) => {
                             const normalized = normalizeAsset(asset);
                             const hero = asset.heroImage || normalized.images[0] || DEFAULT_HERO;
 
                             return (
-                              <div key={asset.id} className="border border-neutral-800 rounded bg-neutral-900 overflow-hidden p-3">
-                                <div className="flex flex-row gap-4">
+                              <div key={asset.id} className="p-3 rounded border border-neutral-800 bg-neutral-950">
+                                <div className="flex gap-4">
                                   <img src={hero} alt={asset.title} className="w-32 h-32 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={() => openImageViewer(normalized.images, 0)} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
-                                  <div className="flex-1 flex justify-between min-w-0">
+                                  <div className="flex-1 flex items-start justify-between">
                                     <div className="flex-1">
-                                      <p className="text-base font-semibold truncate">{asset.title}</p>
-                                      <span className="inline-block text-xs px-2 py-1 rounded bg-emerald-900/50 border border-emerald-700 text-emerald-300 mt-1">Asset</span>
+                                      <p className="font-semibold">{asset.title}</p>
+                                      <div className="flex gap-2 items-center mt-1">
+                                        <span className="text-xs px-2 py-1 rounded bg-emerald-900/50 border border-emerald-700 text-emerald-300">Asset</span>
+                                      </div>
                                       <p className="text-xs text-neutral-400 mt-1">{asset.type || "No Type"} • {asset.category || "Uncategorized"}</p>
-                                      {asset.description && <p className="text-xs text-neutral-300 line-clamp-1">{asset.description}</p>}
+                                      {asset.description && <p className="text-xs text-neutral-300 mt-0.5">{asset.description}</p>}
                                       <p className="text-xs text-neutral-500 mt-1">Created {new Date(asset.createdAt).toLocaleDateString()}</p>
                                       <p className="text-xs text-green-400 font-semibold mt-0.5">Value: ${(parseFloat(asset.value) || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
                                     </div>
-                                    <div className="text-right text-xs text-neutral-400 ml-4 flex-shrink-0">
+                                    <div className="text-right text-xs text-neutral-400 ml-4">
                                       {asset.lastViewed && <p>Viewed {new Date(asset.lastViewed).toLocaleDateString()}</p>}
                                       {asset.lastEditedBy && <p className="mt-0.5">Edited by {asset.lastEditedBy}</p>}
                                     </div>
