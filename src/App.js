@@ -1522,7 +1522,7 @@ export default function App() {
                   <h3 className="text-lg font-semibold">My Vaults</h3>
                   <p className="text-sm text-neutral-400 mt-2">View and manage your vaults and collections.</p>
                 </button>
-                <button className="p-6 rounded-xl border border-neutral-900 bg-neutral-900/50 hover:bg-neutral-900/70 text-left" onClick={() => { /* no-op for now */ }}>
+                <button className="p-6 rounded-xl border border-neutral-900 bg-neutral-900/50 hover:bg-neutral-900/70 text-left" onClick={() => { navigateTo("shared"); }}>
                   <h3 className="text-lg font-semibold">Shared Vaults</h3>
                   <p className="text-sm text-neutral-400 mt-2">Vaults shared with you by others.</p>
                 </button>
@@ -1534,6 +1534,87 @@ export default function App() {
                   <h3 className="text-lg font-semibold">Profile</h3>
                   <p className="text-sm text-neutral-400 mt-2">View and edit your profile details.</p>
                 </button>
+              </div>
+            </div>
+          ) : view === "shared" && currentUser ? (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-2xl font-semibold">Shared Vaults</h1>
+                </div>
+              </div>
+              <div className="mt-3">
+                <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => goBack()}>← Back</button>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <h3 className="text-lg font-semibold mb-2">Shared By Me</h3>
+                  <div className="space-y-3">
+                    {(() => {
+                      const sharedByMe = vaults.filter(v => v.ownerId === currentUser.id && (v.sharedWith || []).length > 0);
+                      if (sharedByMe.length === 0) {
+                        return (
+                          <div className="p-3 rounded border border-neutral-800 bg-neutral-950/30 flex items-center justify-between">
+                            <div>
+                              <div className="font-medium">You haven't shared any vaults</div>
+                              <div className="text-xs text-neutral-400">You can share a vault to collaborate with others.</div>
+                            </div>
+                            <div className="flex gap-2">
+                            </div>
+                          </div>
+                        );
+                      }
+                      return sharedByMe.map((v) => (
+                        <div key={v.id} className="p-3 rounded border border-neutral-800 bg-neutral-950/30 flex items-center justify-between">
+                          <div>
+                            <div className="font-medium">{v.name}</div>
+                            <div className="text-xs text-neutral-400">{(v.sharedWith || []).length} users</div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button className="px-2 py-1 rounded bg-blue-600 text-white text-xs" onClick={() => { openShareDialog(v); }}>Manage</button>
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-semibold mb-2">Shared With Me</h3>
+                  <div className="space-y-3">
+                    {(() => {
+                      const sharedWithMe = vaults.filter(v => (v.sharedWith || []).some(s => s.userId === currentUser.id));
+                      if (sharedWithMe.length === 0) {
+                        return (
+                          <div className="p-3 rounded border border-neutral-800 bg-neutral-950/30 flex items-center justify-between">
+                            <div>
+                              <div className="font-medium">No vaults shared with you</div>
+                              <div className="text-xs text-neutral-400">No one has shared a vault with you yet.</div>
+                            </div>
+                            <div className="flex gap-2">
+                            </div>
+                          </div>
+                        );
+                      }
+                      return sharedWithMe.map((v) => {
+                        const share = (v.sharedWith || []).find(s => s.userId === currentUser.id);
+                        const owner = users.find(u => u.id === v.ownerId) || { username: 'Unknown' };
+                        return (
+                          <div key={v.id} className="p-3 rounded border border-neutral-800 bg-neutral-950/30 flex items-center justify-between">
+                            <div>
+                              <div className="font-medium">{v.name}</div>
+                              <div className="text-xs text-neutral-400">Shared by {owner.username} · {share?.permission}</div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button className="px-2 py-1 rounded bg-blue-600 text-white text-xs" onClick={() => { handleSelectVault(v.id); }}>Open</button>
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
               </div>
             </div>
           ) : (
