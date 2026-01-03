@@ -11,6 +11,7 @@ const VIEW_TO_PATH = {
   login: "/login",
   register: "/sign-up",
   vault: "/vaults",
+  sharedPicker: "/shared-vaults",
   profile: "/profile",
 };
 
@@ -22,6 +23,7 @@ const PATH_TO_VIEW = {
   "/sign-up": "register",
   "/register": "register",
   "/vaults": "vault",
+  "/shared-vaults": "sharedPicker",
   "/profile": "profile",
 };
 
@@ -181,6 +183,7 @@ export default function App() {
   const [showCollectionForm, setShowCollectionForm] = useState(false);
   const [showAssetForm, setShowAssetForm] = useState(false);
   const [sharedMode, setSharedMode] = useState(false);
+  const [sharedOwnerId, setSharedOwnerId] = useState(null);
 
   const [confirmDialog, setConfirmDialog] = useState({ show: false, title: "", message: "", onConfirm: null });
   const [moveDialog, setMoveDialog] = useState({ show: false, assetId: null, targetVaultId: null, targetCollectionId: null });
@@ -456,13 +459,25 @@ export default function App() {
   }, []);
 
   const navigateTo = (nextView, { replace = false } = {}) => {
-    // if user asked for the shared shortcut, switch to the vault view in shared mode
+    // if user asked for the shared shortcut, open the shared-owner picker first
     if (nextView === "shared") {
-      setSharedMode(true);
-      nextView = "vault";
-    } else if (nextView !== "vault") {
-      // leaving the vault view clears shared mode
+      try { setPreviousView(view); } catch (e) {}
+      // clear any previously-selected owner when opening the picker
+      setSharedOwnerId(null);
+      const nextPath = viewToPath("sharedPicker");
+      if (replace) {
+        window.history.replaceState(null, "", nextPath);
+      } else {
+        window.history.pushState(null, "", nextPath);
+      }
+      setView("sharedPicker");
+      return;
+    }
+
+    // leaving the vault view clears shared mode
+    if (nextView !== "vault") {
       setSharedMode(false);
+      setSharedOwnerId(null);
     }
     // record previous view for back navigation
     try { setPreviousView(view); } catch (e) {}
@@ -1208,20 +1223,8 @@ export default function App() {
   });
   const selectedCollection = userCollections.find((c) => c.id === selectedCollectionId) || null;
 
-  const userAssets = currentUser && selectedCollection ? assets.filter((a) => a.ownerId === currentUser.id && a.collectionId === selectedCollection.id) : [];
-  const filteredAssets = userAssets.filter((a) => {
-    const term = normalizeFilter(assetFilter);
-    if (!term) return true;
-    return (a.title || "").toLowerCase().includes(term) || (a.category || "").toLowerCase().includes(term);
-  });
-  const sortedAssets = [...filteredAssets].sort((a, b) => {
-    if (assetSort === "name") return (a.title || "").localeCompare(b.title || "");
-    if (assetSort === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
-    return new Date(b.createdAt) - new Date(a.createdAt); // default newest
-  });
-
   // Datasets for Shared mode (items shared with current user)
-  const sharedVaultsList = currentUser ? vaults.filter(v => (v.sharedWith || []).some(s => s.userId === currentUser.id)) : [];
+  const sharedVaultsList = currentUser ? vaults.filter(v => (v.sharedWith || []).some(s => s.userId === currentUser.id) && (!sharedOwnerId || v.ownerId === sharedOwnerId)) : [];
   const filteredSharedVaults = sharedVaultsList.filter((v) => v.name.toLowerCase().includes(normalizeFilter(vaultFilter)));
   const sortedSharedVaults = [...filteredSharedVaults].sort((a, b) => {
     if (vaultSort === "name") return a.name.localeCompare(b.name);
@@ -1240,15 +1243,22 @@ export default function App() {
   });
 
   const selectedSharedVault = sharedVaultsList.find((v) => v.id === selectedVaultId) || null;
-  const selectedSharedCollection = sharedCollectionsList.find((c) => c.id === selectedCollectionId) || null;
 
-  const sharedAssetsList = currentUser && selectedCollection ? assets.filter(a => a.collectionId === selectedCollection.id && sharedCollectionsList.some(sc => sc.id === a.collectionId)) : [];
-  const filteredSharedAssets = sharedAssetsList.filter((a) => {
+  // Effective selected collection depending on shared mode (defined after shared lists)
+  const selectedSharedCollection = sharedCollectionsList.find((c) => c.id === selectedCollectionId) || null;
+  const effectiveSelectedCollection = sharedMode ? selectedSharedCollection : selectedCollection;
+
+  // Assets for the currently selected collection (owner filtered when not in shared mode)
+  const assetsForSelectedCollection = effectiveSelectedCollection ? assets.filter((a) => a.collectionId === effectiveSelectedCollection.id) : [];
+  const userAssetsForSelected = !sharedMode && currentUser && effectiveSelectedCollection ? assetsForSelectedCollection.filter((a) => a.ownerId === currentUser.id) : [];
+  const sharedAssetsForSelected = sharedMode && currentUser && effectiveSelectedCollection ? assetsForSelectedCollection : [];
+
+  const filteredAssets = (sharedMode ? sharedAssetsForSelected : userAssetsForSelected).filter((a) => {
     const term = normalizeFilter(assetFilter);
     if (!term) return true;
     return (a.title || "").toLowerCase().includes(term) || (a.category || "").toLowerCase().includes(term);
   });
-  const sortedSharedAssets = [...filteredSharedAssets].sort((a, b) => {
+  const sortedAssets = [...filteredAssets].sort((a, b) => {
     if (assetSort === "name") return (a.title || "").localeCompare(b.title || "");
     if (assetSort === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
     return new Date(b.createdAt) - new Date(a.createdAt);
@@ -1259,7 +1269,7 @@ export default function App() {
   const displaySelectedVault = sharedMode ? selectedSharedVault : selectedVault;
   const displaySortedCollections = sharedMode ? sortedSharedCollections : sortedCollections;
   const displaySelectedCollection = sharedMode ? selectedSharedCollection : selectedCollection;
-  const displaySortedAssets = sharedMode ? sortedSharedAssets : sortedAssets;
+  const displaySortedAssets = sortedAssets;
 
   const isAuthView = !isLoggedIn && (view === "login" || view === "register");
   const isLanding = !isLoggedIn && view === "landing";
@@ -1357,6 +1367,52 @@ export default function App() {
         </header>
       )}
 
+      {view === "sharedPicker" && (
+        <div className="max-w-6xl mx-auto px-4 py-10">
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-semibold">Shared Vaults</h1>
+                <p className="text-sm text-neutral-400">Choose a user who has shared vaults with you.</p>
+              </div>
+            </div>
+            <div className="mt-3">
+              <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => goBack()}>← Back</button>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              {(() => {
+                if (!currentUser) return <p className="text-neutral-500">Please log in.</p>;
+                const owners = users.filter(u => vaults.some(v => v.ownerId === u.id && (v.sharedWith || []).some(s => s.userId === currentUser.id)));
+                if (!owners || owners.length === 0) {
+                  return <div className="p-4 rounded border border-neutral-800 bg-neutral-950 text-neutral-400">No users have shared vaults with you.</div>;
+                }
+                return owners.map((owner) => {
+                  const ownerVaults = vaults.filter(v => v.ownerId === owner.id && (v.sharedWith || []).some(s => s.userId === currentUser.id));
+                  return (
+                    <div key={owner.id} className="p-4 rounded border border-neutral-800 bg-neutral-950 flex items-center justify-between">
+                      <div>
+                        <div className="font-medium">{owner.username}</div>
+                        <div className="text-xs text-neutral-400">{ownerVaults.length} vault(s) shared</div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => {
+                          setSharedOwnerId(owner.id);
+                          setSharedMode(true);
+                          setSelectedVaultId(null);
+                          setSelectedCollectionId(null);
+                          setView("vault");
+                        }}>View</button>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {view !== "sharedPicker" && (
       <main className={`${shouldCenter ? "flex items-center justify-center min-h-screen" : ""}`}>
         <div className={`${shouldCenter ? "max-w-3xl w-full mx-auto" : "max-w-6xl mx-auto"} px-4 py-10`}>
           {shouldCenter ? (
@@ -1709,7 +1765,7 @@ export default function App() {
                   </div>
 
                   <div className="flex flex-wrap gap-2 text-sm">
-                    {!showVaultForm && !showCollectionForm && (selectedCollection ? (
+                    {!showVaultForm && !showCollectionForm && (displaySelectedCollection ? (
                       <>
                         <input className="px-3 py-2 rounded bg-neutral-950 border border-neutral-800 flex-1 min-w-[160px]" placeholder="Filter collections" value={collectionFilter} onChange={(e) => setCollectionFilter(e.target.value)} />
                         <select className="px-3 py-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={collectionSort} onChange={(e) => setCollectionSort(e.target.value)}>
@@ -1829,7 +1885,7 @@ export default function App() {
                   )}
 
                   <div className="space-y-2">
-                    {!selectedCollection ? (
+                    {!displaySelectedCollection ? (
                       displaySortedVaults.length === 0 ? (
                         <p className="text-neutral-500">No vaults yet. Add one to start.</p>
                       ) : (
@@ -1879,11 +1935,11 @@ export default function App() {
                         </div>
                       )
                     ) : (
-                      sortedCollections.length === 0 ? (
+                      displaySortedCollections.length === 0 ? (
                         <p className="text-neutral-500">No collections yet. Add one to start.</p>
                       ) : (
                         <div data-tut="collection-list" className="grid gap-2">
-                          {sortedCollections.map((collection, idx) => {
+                          {displaySortedCollections.map((collection, idx) => {
                             const collectionAssets = assets.filter(a => a.collectionId === collection.id);
                             const collectionValue = collectionAssets.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
                             const assetCount = collectionAssets.length;
@@ -1932,12 +1988,12 @@ export default function App() {
                 </div>
 
                 <div className="p-4 border border-neutral-900 rounded-xl bg-neutral-900/50 space-y-4 min-h-[500px] transition-all duration-300">
-                  <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between">
                       <div data-tut="assets-panel">
-                        <p className="text-lg font-semibold">{selectedCollection ? "Assets" : "Collections"}</p>
-                        <h3 className="text-sm text-neutral-400">{selectedCollection ? selectedCollection.name : (selectedVault ? selectedVault.name : "Organize within a vault")}</h3>
+                        <p className="text-lg font-semibold">{displaySelectedCollection ? "Assets" : "Collections"}</p>
+                        <h3 className="text-sm text-neutral-400">{displaySelectedCollection ? displaySelectedCollection.name : (displaySelectedVault ? displaySelectedVault.name : "Organize within a vault")}</h3>
                       </div>
-                    {selectedCollection ? (
+                    {displaySelectedCollection ? (
                       <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 w-10 h-10 flex items-center justify-center" onClick={() => { setShowAssetForm((v) => !v); setShowVaultForm(false); setShowCollectionForm(false); }}>+</button>
                     ) : selectedVault ? (
                       <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 w-10 h-10 flex items-center justify-center" onClick={() => { setShowCollectionForm((v) => !v); setShowVaultForm(false); setShowAssetForm(false); }}>+</button>
@@ -1947,7 +2003,7 @@ export default function App() {
                   </div>
 
                   <div className="flex flex-wrap gap-2 text-sm">
-                    {!(showAssetForm || showVaultForm || showCollectionForm) && (selectedCollection ? (
+                    {!(showAssetForm || showVaultForm || showCollectionForm) && (displaySelectedCollection ? (
                       <>
                         <input className="px-3 py-2 rounded bg-neutral-950 border border-neutral-800 flex-1 min-w-[160px]" placeholder="Filter assets" value={assetFilter} onChange={(e) => setAssetFilter(e.target.value)} />
                         <select className="px-3 py-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={assetSort} onChange={(e) => setAssetSort(e.target.value)}>
@@ -2108,7 +2164,7 @@ export default function App() {
                         <p className="text-neutral-500">No collections yet. Add one to start.</p>
                       ) : (
                         <div data-tut="collection-list" className="grid gap-2">
-                          {sortedCollections.map((collection) => {
+                          {displaySortedCollections.map((collection) => {
                             const collectionAssets = assets.filter(a => a.collectionId === collection.id);
                             const collectionValue = collectionAssets.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
                             const assetCount = collectionAssets.length;
@@ -2153,11 +2209,11 @@ export default function App() {
                         </div>
                       )
                     ) : (
-                      sortedAssets.length === 0 ? (
+                      displaySortedAssets.length === 0 ? (
                         <div className="p-4 border border-neutral-800 rounded bg-neutral-900 text-neutral-400">No assets in this collection.</div>
                       ) : (
                         <div data-tut="asset-list" className="grid gap-2">
-                          {sortedAssets.map((asset, idx) => {
+                          {displaySortedAssets.map((asset, idx) => {
                             const normalized = normalizeAsset(asset);
                             const hero = asset.heroImage || normalized.images[0] || DEFAULT_HERO;
 
@@ -2205,7 +2261,7 @@ export default function App() {
             </div>
           )}
         </div>
-      </main>
+      </main>)}
 
       {viewAsset && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={closeViewAsset}>
