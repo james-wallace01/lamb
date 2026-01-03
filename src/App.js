@@ -140,9 +140,11 @@ export default function App() {
 
   const [selectedVaultId, setSelectedVaultId] = useState(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState(null);
-  const [newVaultName, setNewVaultName] = useState("");
-  const [newCollectionName, setNewCollectionName] = useState("");
-  const initialAssetState = { title: "", type: "", category: "", description: "", heroImage: "", images: [] };
+  const initialVaultState = { name: "", heroImage: "", images: [] };
+  const [newVault, setNewVault] = useState(initialVaultState);
+  const initialCollectionState = { name: "", heroImage: "", images: [] };
+  const [newCollection, setNewCollection] = useState(initialCollectionState);
+  const initialAssetState = { title: "", type: "", category: "", description: "", value: "", heroImage: "", images: [] };
   const [newAsset, setNewAsset] = useState(initialAssetState);
 
   const categoryOptions = {
@@ -207,7 +209,11 @@ export default function App() {
         name: "Private Vault",
         isPrivate: true,
         isDefault: true,
-        createdAt: new Date().toISOString(),
+        createdAt: user.createdAt || new Date().toISOString(),
+        lastViewed: user.createdAt || new Date().toISOString(),
+        lastEditedBy: user.username,
+        heroImage: DEFAULT_HERO,
+        images: [],
       };
       defaultVault = created;
       return [created, ...prev];
@@ -227,7 +233,11 @@ export default function App() {
         name: "Private Collection",
         isPrivate: true,
         isDefault: true,
-        createdAt: new Date().toISOString(),
+        createdAt: user.createdAt || new Date().toISOString(),
+        lastViewed: user.createdAt || new Date().toISOString(),
+        lastEditedBy: user.username,
+        heroImage: DEFAULT_HERO,
+        images: [],
       };
       return [created, ...prev];
     });
@@ -246,13 +256,13 @@ export default function App() {
       return;
     }
     if (editDialog.type === "vault" && editDialog.item) {
-      setVaults((prev) => prev.map((v) => (v.id === editDialog.item.id ? { ...v, name } : v)));
+      setVaults((prev) => prev.map((v) => (v.id === editDialog.item.id ? { ...v, name, lastEditedBy: currentUser?.username || 'Unknown' } : v)));
       if (selectedVaultId === editDialog.item.id) {
         setSelectedVaultId(editDialog.item.id);
       }
     }
     if (editDialog.type === "collection" && editDialog.item) {
-      setCollections((prev) => prev.map((c) => (c.id === editDialog.item.id ? { ...c, name } : c)));
+      setCollections((prev) => prev.map((c) => (c.id === editDialog.item.id ? { ...c, name, lastEditedBy: currentUser?.username || 'Unknown' } : c)));
       if (selectedCollectionId === editDialog.item.id) {
         setSelectedCollectionId(editDialog.item.id);
       }
@@ -331,7 +341,7 @@ export default function App() {
       return;
     }
 
-    const newUser = { id: Date.now(), firstName, lastName, email, username, password, profileImage: registerForm.profileImage || DEFAULT_AVATAR };
+    const newUser = { id: Date.now(), firstName, lastName, email, username, password, profileImage: registerForm.profileImage || DEFAULT_AVATAR, createdAt: new Date().toISOString() };
     const updatedUsers = [...users, newUser];
     setUsers(updatedUsers);
     setCurrentUser(newUser);
@@ -453,14 +463,16 @@ export default function App() {
   }, [isLoggedIn]);
 
   const handleAddVault = () => {
-    if (!newVaultName.trim()) {
+    if (!newVault.name.trim()) {
       showAlert("Vault name is required.");
       return false;
     }
     if (!currentUser) return false;
-    const vault = { id: Date.now(), ownerId: currentUser.id, name: newVaultName.trim(), isPrivate: true, isDefault: false, createdAt: new Date().toISOString() };
+    const images = trimToFour(newVault.images || []);
+    const heroImage = newVault.heroImage || images[0] || DEFAULT_HERO;
+    const vault = { id: Date.now(), ownerId: currentUser.id, name: newVault.name.trim(), isPrivate: true, isDefault: false, createdAt: new Date().toISOString(), lastViewed: new Date().toISOString(), lastEditedBy: currentUser.username, heroImage, images };
     setVaults((prev) => [vault, ...prev]);
-    setNewVaultName("");
+    setNewVault(initialVaultState);
     return true;
   };
 
@@ -469,14 +481,16 @@ export default function App() {
       showAlert("Select a vault first.");
       return false;
     }
-    if (!newCollectionName.trim()) {
+    if (!newCollection.name.trim()) {
       showAlert("Collection name is required.");
       return false;
     }
     if (!currentUser) return false;
-    const collection = { id: Date.now(), ownerId: currentUser.id, vaultId: selectedVaultId, name: newCollectionName.trim(), isPrivate: true, isDefault: false, createdAt: new Date().toISOString() };
+    const images = trimToFour(newCollection.images || []);
+    const heroImage = newCollection.heroImage || images[0] || DEFAULT_HERO;
+    const collection = { id: Date.now(), ownerId: currentUser.id, vaultId: selectedVaultId, name: newCollection.name.trim(), isPrivate: true, isDefault: false, createdAt: new Date().toISOString(), lastViewed: new Date().toISOString(), lastEditedBy: currentUser.username, heroImage, images };
     setCollections((prev) => [collection, ...prev]);
-    setNewCollectionName("");
+    setNewCollection(initialCollectionState);
     return true;
   };
 
@@ -513,9 +527,12 @@ export default function App() {
       type: newAsset.type.trim(),
       category: newAsset.category.trim(), 
       description: newAsset.description.trim(), 
+      value: parseFloat(newAsset.value) || 0,
       heroImage,
       images,
-      createdAt: new Date().toISOString() 
+      createdAt: new Date().toISOString(),
+      lastViewed: new Date().toISOString(),
+      lastEditedBy: currentUser.username
     };
     setAssets((prev) => [asset, ...prev]);
     setNewAsset(initialAssetState);
@@ -596,9 +613,11 @@ export default function App() {
       type: normalized.type || "",
       category: normalized.category || "",
       description: normalized.description || "",
+      value: normalized.value || "",
       heroImage: normalized.heroImage || normalized.images[0] || "",
       images: trimToFour(normalized.images || []),
     });
+    setAssets((prev) => prev.map((a) => (a.id === asset.id ? { ...a, lastViewed: new Date().toISOString() } : a)));
   };
   const closeViewAsset = () => {
     setViewAsset(null);
@@ -626,12 +645,12 @@ export default function App() {
     setAssets((prev) =>
       prev.map((a) =>
         a.id === viewAsset.id
-          ? { ...a, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), heroImage, images }
+          ? { ...a, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), value: parseFloat(viewAssetDraft.value) || 0, heroImage, images, lastEditedBy: currentUser?.username || 'Unknown' }
           : a
       )
     );
 
-    setViewAsset({ ...viewAsset, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), heroImage, images });
+    setViewAsset({ ...viewAsset, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), value: parseFloat(viewAssetDraft.value) || 0, heroImage, images, lastEditedBy: currentUser?.username || 'Unknown' });
     showAlert("Asset updated.");
     return true;
   };
@@ -733,11 +752,13 @@ export default function App() {
     setSelectedCollectionId(null);
     setShowCollectionForm(false);
     setShowAssetForm(false);
+    setVaults((prev) => prev.map((v) => (v.id === vaultId ? { ...v, lastViewed: new Date().toISOString() } : v)));
   };
 
   const handleSelectCollection = (collectionId) => {
     setSelectedCollectionId(collectionId);
     setShowAssetForm(false);
+    setCollections((prev) => prev.map((c) => (c.id === collectionId ? { ...c, lastViewed: new Date().toISOString() } : c)));
   };
 
   const normalizeAsset = (asset) => {
@@ -1159,20 +1180,92 @@ export default function App() {
 
                   {!selectedCollection && showVaultForm && (
                     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); const ok = handleAddVault(); if (ok) setShowVaultForm(false); }}>
-                      <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Vault name" value={newVaultName} onChange={(e) => setNewVaultName(e.target.value)} />
+                      <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Vault name" value={newVault.name} onChange={(e) => setNewVault((p) => ({ ...p, name: e.target.value }))} />
+                      
+                      <div className="space-y-3">
+                        <div className="flex flex-col items-start gap-1">
+                          <input
+                            type="file"
+                            multiple
+                            accept="image/*"
+                            className="text-sm file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                            onChange={async (e) => { await handleUploadImages(e.target.files, setNewVault); e.target.value = ""; }}
+                          />
+                          <div className="pt-1">
+                            <p className="text-sm text-neutral-400">Images (max 4)</p>
+                          </div>
+                        </div>
+
+                        {newVault.images?.length > 0 && (
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {newVault.images.map((img, idx) => {
+                              const isHero = newVault.heroImage === img;
+                              return (
+                                <div key={idx} className="relative border border-neutral-800 rounded overflow-hidden">
+                                  <img src={img} alt={`Upload ${idx + 1}`} className="w-full h-28 object-cover" />
+                                  <div className="absolute top-2 right-2 flex gap-1 items-center">
+                                    {!isHero && (
+                                      <button type="button" className="px-2 py-1 text-xs rounded bg-neutral-800 border border-neutral-700 hover:bg-neutral-700" onClick={() => handleSetHero(img, setNewVault)}>☆</button>
+                                    )}
+                                    {isHero && <span className="px-2 py-1 text-xs rounded bg-neutral-900 text-amber-400">★</span>}
+                                    <button type="button" className="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700" onClick={() => handleRemoveImage(idx, setNewVault)}>Delete</button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
                       <div className="flex gap-2">
                         <button className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700" type="submit">Create</button>
-                        <button className="px-4 py-2 rounded border border-neutral-800 hover:bg-neutral-800" type="button" onClick={() => { setShowVaultForm(false); setNewVaultName(""); }}>Cancel</button>
+                        <button className="px-4 py-2 rounded border border-neutral-800 hover:bg-neutral-800" type="button" onClick={() => { setShowVaultForm(false); setNewVault(initialVaultState); }}>Cancel</button>
                       </div>
                     </form>
                   )}
 
                   {selectedCollection && showCollectionForm && (
                     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); const ok = handleAddCollection(); if (ok) setShowCollectionForm(false); }}>
-                      <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Collection name" value={newCollectionName} onChange={(e) => setNewCollectionName(e.target.value)} />
+                      <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Collection name" value={newCollection.name} onChange={(e) => setNewCollection((p) => ({ ...p, name: e.target.value }))} />
+                      
+                      <div className="space-y-3">
+                        <div className="flex flex-col items-start gap-1">
+                          <input
+                            type="file"
+                            multiple
+                            accept="image/*"
+                            className="text-sm file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                            onChange={async (e) => { await handleUploadImages(e.target.files, setNewCollection); e.target.value = ""; }}
+                          />
+                          <div className="pt-1">
+                            <p className="text-sm text-neutral-400">Images (max 4)</p>
+                          </div>
+                        </div>
+
+                        {newCollection.images?.length > 0 && (
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {newCollection.images.map((img, idx) => {
+                              const isHero = newCollection.heroImage === img;
+                              return (
+                                <div key={idx} className="relative border border-neutral-800 rounded overflow-hidden">
+                                  <img src={img} alt={`Upload ${idx + 1}`} className="w-full h-28 object-cover" />
+                                  <div className="absolute top-2 right-2 flex gap-1 items-center">
+                                    {!isHero && (
+                                      <button type="button" className="px-2 py-1 text-xs rounded bg-neutral-800 border border-neutral-700 hover:bg-neutral-700" onClick={() => handleSetHero(img, setNewCollection)}>☆</button>
+                                    )}
+                                    {isHero && <span className="px-2 py-1 text-xs rounded bg-neutral-900 text-amber-400">★</span>}
+                                    <button type="button" className="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700" onClick={() => handleRemoveImage(idx, setNewCollection)}>Delete</button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
                       <div className="flex gap-2">
                         <button className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700" type="submit">Create</button>
-                        <button className="px-4 py-2 rounded border border-neutral-800 hover:bg-neutral-800" type="button" onClick={() => { setShowCollectionForm(false); setNewCollectionName(""); }}>Cancel</button>
+                        <button className="px-4 py-2 rounded border border-neutral-800 hover:bg-neutral-800" type="button" onClick={() => { setShowCollectionForm(false); setNewCollection(initialCollectionState); }}>Cancel</button>
                       </div>
                     </form>
                   )}
@@ -1183,26 +1276,46 @@ export default function App() {
                         <p className="text-neutral-500">No vaults yet. Add one to start.</p>
                       ) : (
                         <div className="grid gap-2">
-                          {sortedVaults.map((vault) => (
-                            <div key={vault.id} className={`flex items-center gap-2 p-3 rounded border ${vault.id === selectedVaultId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"}`}>
-                              <button className="flex-1 text-left hover:opacity-80" onClick={() => handleSelectVault(vault.id)}>
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <p className="font-semibold">{vault.name}</p>
-                                    <p className="text-xs text-neutral-500">Created {new Date(vault.createdAt).toLocaleDateString()}</p>
+                          {sortedVaults.map((vault) => {
+                            const vaultCollectionIds = collections.filter(c => c.vaultId === vault.id).map(c => c.id);
+                            const vaultAssets = assets.filter(a => vaultCollectionIds.includes(a.collectionId));
+                            const vaultValue = vaultAssets.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
+                            const collectionCount = vaultCollectionIds.length;
+                            const hero = vault.heroImage || DEFAULT_HERO;
+                            const vaultImages = vault.images || [];
+                            return (
+                            <div key={vault.id} className={`p-3 rounded border ${vault.id === selectedVaultId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"}`}>
+                              <button className="w-full text-left hover:opacity-80" onClick={() => handleSelectVault(vault.id)}>
+                                <div className="flex gap-4">
+                                  <img src={hero} alt={vault.name} className="w-32 h-32 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(vaultImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
+                                  <div className="flex-1 flex items-start justify-between">
+                                    <div className="flex-1">
+                                      <p className="font-semibold">{vault.name}</p>
+                                      <div className="flex gap-2 items-center mt-1">
+                                        <span className="text-xs px-2 py-1 rounded bg-blue-900/50 border border-blue-700 text-blue-300">Vault</span>
+                                        {vault.isDefault && <span className="text-xs px-2 py-1 rounded bg-neutral-800 border border-neutral-700">Hidden</span>}
+                                      </div>
+                                      <p className="text-xs text-neutral-500 mt-1">Created {new Date(vault.createdAt).toLocaleDateString()}</p>
+                                      <p className="text-xs text-neutral-400 mt-0.5">Collections: {collectionCount}</p>
+                                      <p className="text-xs text-green-400 font-semibold mt-0.5">Value: ${vaultValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                                    </div>
+                                    <div className="text-right text-xs text-neutral-400 ml-4">
+                                      {vault.lastViewed && <p>Viewed {new Date(vault.lastViewed).toLocaleDateString()}</p>}
+                                      {vault.lastEditedBy && <p className="mt-0.5">Edited by {vault.lastEditedBy}</p>}
+                                    </div>
                                   </div>
-                                  {vault.isDefault && <span className="text-xs px-2 py-1 rounded bg-neutral-800 border border-neutral-700">Hidden</span>}
                                 </div>
                               </button>
                               {!vault.isDefault && (
-                                <>
-                                  <button className="px-2 py-1 text-xs text-blue-300 border border-blue-800 rounded hover:bg-blue-900/40" onClick={(e) => { e.stopPropagation(); openEditVault(vault); }}>View / Edit</button>
-                                  <button className="px-2 py-1 text-xs text-green-400 border border-green-800 rounded hover:bg-green-900/50" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Vault: ${vault.name}\nCreated: ${new Date(vault.createdAt).toLocaleDateString()}`); showAlert('Vault details copied to clipboard!'); }}>Share</button>
-                                  <button className="px-2 py-1 text-xs text-red-400 border border-red-800 rounded hover:bg-red-900/50" onClick={(e) => { e.stopPropagation(); handleDeleteVault(vault); }}>Delete</button>
-                                </>
+                                <div className="flex gap-2 mt-2">
+                                  <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={(e) => { e.stopPropagation(); openEditVault(vault); }}>View / Edit</button>
+                                  <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Vault: ${vault.name}\nCreated: ${new Date(vault.createdAt).toLocaleDateString()}`); showAlert('Vault details copied to clipboard!'); }}>Share</button>
+                                  <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={(e) => { e.stopPropagation(); handleDeleteVault(vault); }}>Delete</button>
+                                </div>
                               )}
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )
                     ) : (
@@ -1210,26 +1323,45 @@ export default function App() {
                         <p className="text-neutral-500">No collections yet. Add one to start.</p>
                       ) : (
                         <div className="grid gap-2">
-                          {sortedCollections.map((collection) => (
-                            <div key={collection.id} className={`flex items-center gap-2 p-3 rounded border ${collection.id === selectedCollectionId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"}`}>
-                              <button className="flex-1 text-left hover:opacity-80" onClick={() => handleSelectCollection(collection.id)}>
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <p className="font-semibold">{collection.name}</p>
-                                    <p className="text-xs text-neutral-500">Collection · Created {new Date(collection.createdAt).toLocaleDateString()}</p>
+                          {sortedCollections.map((collection) => {
+                            const collectionAssets = assets.filter(a => a.collectionId === collection.id);
+                            const collectionValue = collectionAssets.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
+                            const assetCount = collectionAssets.length;
+                            const hero = collection.heroImage || DEFAULT_HERO;
+                            const collectionImages = collection.images || [];
+                            return (
+                            <div key={collection.id} className={`p-3 rounded border ${collection.id === selectedCollectionId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"}`}>
+                              <button className="w-full text-left hover:opacity-80" onClick={() => handleSelectCollection(collection.id)}>
+                                <div className="flex gap-4">
+                                  <img src={hero} alt={collection.name} className="w-32 h-32 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(collectionImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
+                                  <div className="flex-1 flex items-start justify-between">
+                                    <div className="flex-1">
+                                      <p className="font-semibold">{collection.name}</p>
+                                      <div className="flex gap-2 items-center mt-1">
+                                        <span className="text-xs px-2 py-1 rounded bg-purple-900/50 border border-purple-700 text-purple-300">Collection</span>
+                                        {collection.isDefault && <span className="text-xs px-2 py-1 rounded bg-neutral-800 border border-neutral-700">Hidden</span>}
+                                      </div>
+                                      <p className="text-xs text-neutral-500 mt-1">Created {new Date(collection.createdAt).toLocaleDateString()}</p>
+                                      <p className="text-xs text-neutral-400 mt-0.5">Assets: {assetCount}</p>
+                                      <p className="text-xs text-green-400 font-semibold mt-0.5">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                                    </div>
+                                    <div className="text-right text-xs text-neutral-400 ml-4">
+                                      {collection.lastViewed && <p>Viewed {new Date(collection.lastViewed).toLocaleDateString()}</p>}
+                                      {collection.lastEditedBy && <p className="mt-0.5">Edited by {collection.lastEditedBy}</p>}
+                                    </div>
                                   </div>
-                                  {collection.isDefault && <span className="text-xs px-2 py-1 rounded bg-neutral-800 border border-neutral-700">Hidden</span>}
                                 </div>
                               </button>
                               {!collection.isDefault && (
-                                <>
-                                  <button className="px-2 py-1 text-xs text-blue-300 border border-blue-800 rounded hover:bg-blue-900/40" onClick={(e) => { e.stopPropagation(); openEditCollection(collection); }}>View / Edit</button>
-                                  <button className="px-2 py-1 text-xs text-green-400 border border-green-800 rounded hover:bg-green-900/50" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Collection: ${collection.name}`); showAlert('Collection details copied to clipboard!'); }}>Share</button>
-                                  <button className="px-2 py-1 text-xs text-red-400 border border-red-800 rounded hover:bg-red-900/50" onClick={(e) => { e.stopPropagation(); handleDeleteCollection(collection); }}>Delete</button>
-                                </>
+                                <div className="flex gap-2 mt-2">
+                                  <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={(e) => { e.stopPropagation(); openEditCollection(collection); }}>View / Edit</button>
+                                  <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Collection: ${collection.name}`); showAlert('Collection details copied to clipboard!'); }}>Share</button>
+                                  <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={(e) => { e.stopPropagation(); handleDeleteCollection(collection); }}>Delete</button>
+                                </div>
                               )}
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )
                     )}
@@ -1276,10 +1408,46 @@ export default function App() {
 
                   {selectedVault && !selectedCollection && showCollectionForm && (
                     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); const ok = handleAddCollection(); if (ok) setShowCollectionForm(false); }}>
-                      <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Collection name" value={newCollectionName} onChange={(e) => setNewCollectionName(e.target.value)} />
+                      <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Collection name" value={newCollection.name} onChange={(e) => setNewCollection((p) => ({ ...p, name: e.target.value }))} />
+                      
+                      <div className="space-y-3">
+                        <div className="flex flex-col items-start gap-1">
+                          <input
+                            type="file"
+                            multiple
+                            accept="image/*"
+                            className="text-sm file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                            onChange={async (e) => { await handleUploadImages(e.target.files, setNewCollection); e.target.value = ""; }}
+                          />
+                          <div className="pt-1">
+                            <p className="text-sm text-neutral-400">Images (max 4)</p>
+                          </div>
+                        </div>
+
+                        {newCollection.images?.length > 0 && (
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {newCollection.images.map((img, idx) => {
+                              const isHero = newCollection.heroImage === img;
+                              return (
+                                <div key={idx} className="relative border border-neutral-800 rounded overflow-hidden">
+                                  <img src={img} alt={`Upload ${idx + 1}`} className="w-full h-28 object-cover" />
+                                  <div className="absolute top-2 right-2 flex gap-1 items-center">
+                                    {!isHero && (
+                                      <button type="button" className="px-2 py-1 text-xs rounded bg-neutral-800 border border-neutral-700 hover:bg-neutral-700" onClick={() => handleSetHero(img, setNewCollection)}>☆</button>
+                                    )}
+                                    {isHero && <span className="px-2 py-1 text-xs rounded bg-neutral-900 text-amber-400">★</span>}
+                                    <button type="button" className="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700" onClick={() => handleRemoveImage(idx, setNewCollection)}>Delete</button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
                       <div className="flex gap-2">
                         <button className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700" type="submit">Create</button>
-                        <button className="px-4 py-2 rounded border border-neutral-800 hover:bg-neutral-800" type="button" onClick={() => { setShowCollectionForm(false); setNewCollectionName(""); }}>Cancel</button>
+                        <button className="px-4 py-2 rounded border border-neutral-800 hover:bg-neutral-800" type="button" onClick={() => { setShowCollectionForm(false); setNewCollection(initialCollectionState); }}>Cancel</button>
                       </div>
                     </form>
                   )}
@@ -1307,6 +1475,7 @@ export default function App() {
                         ))}
                       </select>
                       <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={3} placeholder="Description" maxLength={60} value={newAsset.description} onChange={(e) => setNewAsset((p) => ({ ...p, description: e.target.value }))} />
+                      <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" type="number" step="0.01" min="0" placeholder="Value ($)" value={newAsset.value} onChange={(e) => setNewAsset((p) => ({ ...p, value: e.target.value }))} />
 
                       <div className="space-y-3">
                         <div className="flex flex-col items-start gap-1">
@@ -1358,26 +1527,45 @@ export default function App() {
                         <p className="text-neutral-500">No collections yet. Add one to start.</p>
                       ) : (
                         <div className="grid gap-2">
-                          {sortedCollections.map((collection) => (
-                            <div key={collection.id} className={`flex items-center gap-2 p-3 rounded border ${collection.id === selectedCollectionId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"}`}>
-                              <button className="flex-1 text-left hover:opacity-80" onClick={() => handleSelectCollection(collection.id)}>
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <p className="font-semibold">{collection.name}</p>
-                                    <p className="text-xs text-neutral-500">Collection · Created {new Date(collection.createdAt).toLocaleDateString()}</p>
+                          {sortedCollections.map((collection) => {
+                            const collectionAssets = assets.filter(a => a.collectionId === collection.id);
+                            const collectionValue = collectionAssets.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
+                            const assetCount = collectionAssets.length;
+                            const hero = collection.heroImage || DEFAULT_HERO;
+                            const collectionImages = collection.images || [];
+                            return (
+                            <div key={collection.id} className={`p-3 rounded border ${collection.id === selectedCollectionId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"}`}>
+                              <button className="w-full text-left hover:opacity-80" onClick={() => handleSelectCollection(collection.id)}>
+                                <div className="flex gap-4">
+                                  <img src={hero} alt={collection.name} className="w-32 h-32 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(collectionImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
+                                  <div className="flex-1 flex items-start justify-between">
+                                    <div className="flex-1">
+                                      <p className="font-semibold">{collection.name}</p>
+                                      <div className="flex gap-2 items-center mt-1">
+                                        <span className="text-xs px-2 py-1 rounded bg-purple-900/50 border border-purple-700 text-purple-300">Collection</span>
+                                        {collection.isDefault && <span className="text-xs px-2 py-1 rounded bg-neutral-800 border border-neutral-700">Hidden</span>}
+                                      </div>
+                                      <p className="text-xs text-neutral-500 mt-1">Created {new Date(collection.createdAt).toLocaleDateString()}</p>
+                                      <p className="text-xs text-neutral-400 mt-0.5">Assets: {assetCount}</p>
+                                      <p className="text-xs text-green-400 font-semibold mt-0.5">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                                    </div>
+                                    <div className="text-right text-xs text-neutral-400 ml-4">
+                                      {collection.lastViewed && <p>Viewed {new Date(collection.lastViewed).toLocaleDateString()}</p>}
+                                      {collection.lastEditedBy && <p className="mt-0.5">Edited by {collection.lastEditedBy}</p>}
+                                    </div>
                                   </div>
-                                  {collection.isDefault && <span className="text-xs px-2 py-1 rounded bg-neutral-800 border border-neutral-700">Hidden</span>}
                                 </div>
                               </button>
                               {!collection.isDefault && (
-                                <>
-                                  <button className="px-2 py-1 text-xs text-blue-300 border border-blue-800 rounded hover:bg-blue-900/40" onClick={(e) => { e.stopPropagation(); openEditCollection(collection); }}>View / Edit</button>
-                                  <button className="px-2 py-1 text-xs text-green-400 border border-green-800 rounded hover:bg-green-900/50" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Collection: ${collection.name}`); showAlert('Collection details copied to clipboard!'); }}>Share</button>
-                                  <button className="px-2 py-1 text-xs text-red-400 border border-red-800 rounded hover:bg-red-900/50" onClick={(e) => { e.stopPropagation(); handleDeleteCollection(collection); }}>Delete</button>
-                                </>
+                                <div className="flex gap-2 mt-2">
+                                  <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={(e) => { e.stopPropagation(); openEditCollection(collection); }}>View / Edit</button>
+                                  <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Collection: ${collection.name}`); showAlert('Collection details copied to clipboard!'); }}>Share</button>
+                                  <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={(e) => { e.stopPropagation(); handleDeleteCollection(collection); }}>Delete</button>
+                                </div>
                               )}
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )
                     ) : (
@@ -1390,23 +1578,28 @@ export default function App() {
                             const hero = asset.heroImage || normalized.images[0] || DEFAULT_HERO;
 
                             return (
-                              <div key={asset.id} className="border border-neutral-800 rounded bg-neutral-900 overflow-hidden flex flex-row gap-4 p-3">
-                                <img src={hero} alt={asset.title} className="w-32 h-32 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={() => openImageViewer(normalized.images, 0)} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
-                                <div className="flex-1 flex flex-col justify-between min-w-0 max-h-32">
-                                  <div className="space-y-0.5">
-                                    <p className="text-base font-semibold truncate">{asset.title}</p>
-                                    <p className="text-xs text-neutral-400">{asset.type || "No Type"} • {asset.category || "Uncategorized"}</p>
-                                    {asset.description && <p className="text-xs text-neutral-300 line-clamp-1">{asset.description}</p>}
-                                  </div>
-
-                                  <div className="flex items-center justify-between gap-2">
-                                    <p className="text-xs text-neutral-500">Added {new Date(asset.createdAt).toLocaleDateString()}</p>
-                                    <div className="flex gap-2 flex-shrink-0">
-                                      <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={() => openViewAsset(asset)}>View / Edit</button>
-                                      <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={() => { navigator.clipboard.writeText(`Asset: ${asset.title}\nCategory: ${asset.category || 'Uncategorized'}\nDescription: ${asset.description || 'No description'}`); showAlert('Asset details copied to clipboard!'); }}>Share</button>
-                                      <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={() => handleDeleteAsset(asset.id)}>Delete</button>
+                              <div key={asset.id} className="border border-neutral-800 rounded bg-neutral-900 overflow-hidden p-3">
+                                <div className="flex flex-row gap-4">
+                                  <img src={hero} alt={asset.title} className="w-32 h-32 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={() => openImageViewer(normalized.images, 0)} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
+                                  <div className="flex-1 flex justify-between min-w-0">
+                                    <div className="flex-1">
+                                      <p className="text-base font-semibold truncate">{asset.title}</p>
+                                      <span className="inline-block text-xs px-2 py-1 rounded bg-emerald-900/50 border border-emerald-700 text-emerald-300 mt-1">Asset</span>
+                                      <p className="text-xs text-neutral-400 mt-1">{asset.type || "No Type"} • {asset.category || "Uncategorized"}</p>
+                                      {asset.description && <p className="text-xs text-neutral-300 line-clamp-1">{asset.description}</p>}
+                                      <p className="text-xs text-neutral-500 mt-1">Created {new Date(asset.createdAt).toLocaleDateString()}</p>
+                                      <p className="text-xs text-green-400 font-semibold mt-0.5">Value: ${(parseFloat(asset.value) || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                                    </div>
+                                    <div className="text-right text-xs text-neutral-400 ml-4 flex-shrink-0">
+                                      {asset.lastViewed && <p>Viewed {new Date(asset.lastViewed).toLocaleDateString()}</p>}
+                                      {asset.lastEditedBy && <p className="mt-0.5">Edited by {asset.lastEditedBy}</p>}
                                     </div>
                                   </div>
+                                </div>
+                                <div className="flex gap-2 mt-2">
+                                  <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={() => openViewAsset(asset)}>View / Edit</button>
+                                  <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={() => { navigator.clipboard.writeText(`Asset: ${asset.title}\nCategory: ${asset.category || 'Uncategorized'}\nDescription: ${asset.description || 'No description'}`); showAlert('Asset details copied to clipboard!'); }}>Share</button>
+                                  <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={() => handleDeleteAsset(asset.id)}>Delete</button>
                                 </div>
                               </div>
                             );
@@ -1459,6 +1652,10 @@ export default function App() {
                 ))}
               </select>
               <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={4} placeholder="Description" maxLength={60} value={viewAssetDraft.description} onChange={(e) => setViewAssetDraft((p) => ({ ...p, description: e.target.value }))} />
+              <div>
+                <p className="text-sm text-neutral-400 mb-2">Value</p>
+                <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" type="number" step="0.01" min="0" placeholder="Value ($)" value={viewAssetDraft.value} onChange={(e) => setViewAssetDraft((p) => ({ ...p, value: e.target.value }))} />
+              </div>
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
