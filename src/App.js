@@ -180,6 +180,7 @@ export default function App() {
   const [showVaultForm, setShowVaultForm] = useState(false);
   const [showCollectionForm, setShowCollectionForm] = useState(false);
   const [showAssetForm, setShowAssetForm] = useState(false);
+  const [sharedMode, setSharedMode] = useState(false);
 
   const [confirmDialog, setConfirmDialog] = useState({ show: false, title: "", message: "", onConfirm: null });
   const [moveDialog, setMoveDialog] = useState({ show: false, assetId: null, targetVaultId: null, targetCollectionId: null });
@@ -455,6 +456,14 @@ export default function App() {
   }, []);
 
   const navigateTo = (nextView, { replace = false } = {}) => {
+    // if user asked for the shared shortcut, switch to the vault view in shared mode
+    if (nextView === "shared") {
+      setSharedMode(true);
+      nextView = "vault";
+    } else if (nextView !== "vault") {
+      // leaving the vault view clears shared mode
+      setSharedMode(false);
+    }
     // record previous view for back navigation
     try { setPreviousView(view); } catch (e) {}
     // Prevent non-logged-in users from accessing protected pages
@@ -1211,6 +1220,47 @@ export default function App() {
     return new Date(b.createdAt) - new Date(a.createdAt); // default newest
   });
 
+  // Datasets for Shared mode (items shared with current user)
+  const sharedVaultsList = currentUser ? vaults.filter(v => (v.sharedWith || []).some(s => s.userId === currentUser.id)) : [];
+  const filteredSharedVaults = sharedVaultsList.filter((v) => v.name.toLowerCase().includes(normalizeFilter(vaultFilter)));
+  const sortedSharedVaults = [...filteredSharedVaults].sort((a, b) => {
+    if (vaultSort === "name") return a.name.localeCompare(b.name);
+    if (vaultSort === "newest") return new Date(b.createdAt) - new Date(a.createdAt);
+    if (vaultSort === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
+    return sortByDefaultThenDate(a, b);
+  });
+
+  const sharedCollectionsList = currentUser ? collections.filter(c => sharedVaultsList.some(sv => sv.id === c.vaultId)) : [];
+  const filteredSharedCollections = sharedCollectionsList.filter((c) => c.name.toLowerCase().includes(normalizeFilter(collectionFilter)) && (!selectedVaultId || c.vaultId === selectedVaultId));
+  const sortedSharedCollections = [...filteredSharedCollections].sort((a, b) => {
+    if (collectionSort === "name") return a.name.localeCompare(b.name);
+    if (collectionSort === "newest") return new Date(b.createdAt) - new Date(a.createdAt);
+    if (collectionSort === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
+    return sortByDefaultThenDate(a, b);
+  });
+
+  const selectedSharedVault = sharedVaultsList.find((v) => v.id === selectedVaultId) || null;
+  const selectedSharedCollection = sharedCollectionsList.find((c) => c.id === selectedCollectionId) || null;
+
+  const sharedAssetsList = currentUser && selectedCollection ? assets.filter(a => a.collectionId === selectedCollection.id && sharedCollectionsList.some(sc => sc.id === a.collectionId)) : [];
+  const filteredSharedAssets = sharedAssetsList.filter((a) => {
+    const term = normalizeFilter(assetFilter);
+    if (!term) return true;
+    return (a.title || "").toLowerCase().includes(term) || (a.category || "").toLowerCase().includes(term);
+  });
+  const sortedSharedAssets = [...filteredSharedAssets].sort((a, b) => {
+    if (assetSort === "name") return (a.title || "").localeCompare(b.title || "");
+    if (assetSort === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
+    return new Date(b.createdAt) - new Date(a.createdAt);
+  });
+
+  // Choose display datasets depending on sharedMode
+  const displaySortedVaults = sharedMode ? sortedSharedVaults : sortedVaults;
+  const displaySelectedVault = sharedMode ? selectedSharedVault : selectedVault;
+  const displaySortedCollections = sharedMode ? sortedSharedCollections : sortedCollections;
+  const displaySelectedCollection = sharedMode ? selectedSharedCollection : selectedCollection;
+  const displaySortedAssets = sharedMode ? sortedSharedAssets : sortedAssets;
+
   const isAuthView = !isLoggedIn && (view === "login" || view === "register");
   const isLanding = !isLoggedIn && view === "landing";
   const activeCenteredView = isLanding ? "landing" : (isAuthView ? view : "other");
@@ -1219,8 +1269,8 @@ export default function App() {
   const breadcrumb = [
     { label: "Home", onClick: () => navigateTo(isLoggedIn ? "vault" : "landing") },
     { label: "Vault", onClick: isLoggedIn ? () => navigateTo("vault") : null },
-    selectedVault ? { label: selectedVault.name } : null,
-    selectedCollection ? { label: selectedCollection.name } : null,
+    displaySelectedVault ? { label: displaySelectedVault.name, onClick: () => navigateTo("vault", { shared: sharedMode }) } : null,
+    displaySelectedCollection ? { label: displaySelectedCollection.name } : null,
   ].filter(Boolean);
 
   const renderBreadcrumb = () => (
@@ -1621,14 +1671,14 @@ export default function App() {
             <div className="space-y-6">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h1 data-tut="vault-title" className="text-2xl font-semibold">{selectedVault ? (selectedCollection ? `${selectedVault.name} / ${selectedCollection.name}` : selectedVault.name) : "Vault"}</h1>
+                  <h1 data-tut="vault-title" className="text-2xl font-semibold">{displaySelectedVault ? (displaySelectedCollection ? `${displaySelectedVault.name} / ${displaySelectedCollection.name}` : displaySelectedVault.name) : "Choose a Vault"}</h1>
                   <div className="h-10 flex items-center">
-                    {!selectedCollection && (
+                    {!displaySelectedCollection && (
                       <button className="mt-2 px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => goBack()}>
                         ← Back
                       </button>
                     )}
-                    {selectedCollection && (
+                    {displaySelectedCollection && (
                       <button data-tut="back-button" className="mt-2 px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => { setSelectedCollectionId(null); setShowCollectionForm(false); setShowAssetForm(false); }}>
                         ← Back
                       </button>
@@ -1642,8 +1692,8 @@ export default function App() {
                 <div className="p-4 border border-neutral-900 rounded-xl bg-neutral-900/50 space-y-4 min-h-[500px] transition-all duration-300">
                   <div className="flex items-center justify-between">
                     <div className="flex-1 min-w-0">
-                      <p className="text-lg font-semibold">{selectedCollection ? "Collections" : "Vaults"}</p>
-                      <h3 className="text-sm text-neutral-400 truncate">{selectedCollection ? (selectedVault?.name || "Vault") : "Create or select a Vault"}</h3>
+                      <p className="text-lg font-semibold">{displaySelectedCollection ? "Collections" : "Vaults"}</p>
+                      <h3 className="text-sm text-neutral-400 truncate">{displaySelectedCollection ? (displaySelectedVault?.name || "Choose a Vault") : "Choose a Vault"}</h3>
                     </div>
                     <div className="flex items-center gap-2 ml-4">
                       <button data-tut="create-button" className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 w-10 h-10 flex items-center justify-center" onClick={() => {
@@ -1682,7 +1732,7 @@ export default function App() {
                     ))}
                   </div>
 
-                  {!selectedCollection && showVaultForm && (
+                    {!displaySelectedCollection && showVaultForm && (
                     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); const ok = handleAddVault(); if (ok) setShowVaultForm(false); }}>
                       <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Vault name" value={newVault.name} onChange={(e) => setNewVault((p) => ({ ...p, name: e.target.value }))} />
                       <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={2} placeholder="Description (optional)" maxLength={100} value={newVault.description} onChange={(e) => setNewVault((p) => ({ ...p, description: e.target.value }))} />
@@ -1730,7 +1780,7 @@ export default function App() {
                     </form>
                   )}
 
-                  {selectedCollection && showCollectionForm && (
+                  {displaySelectedCollection && showCollectionForm && (
                     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); const ok = handleAddCollection(); if (ok) setShowCollectionForm(false); }}>
                       <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Collection name" value={newCollection.name} onChange={(e) => setNewCollection((p) => ({ ...p, name: e.target.value }))} />
                       <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={2} placeholder="Description (optional)" maxLength={100} value={newCollection.description} onChange={(e) => setNewCollection((p) => ({ ...p, description: e.target.value }))} />
@@ -1780,11 +1830,11 @@ export default function App() {
 
                   <div className="space-y-2">
                     {!selectedCollection ? (
-                      sortedVaults.length === 0 ? (
+                      displaySortedVaults.length === 0 ? (
                         <p className="text-neutral-500">No vaults yet. Add one to start.</p>
                       ) : (
                         <div data-tut="vault-list" className="grid gap-2">
-                          {sortedVaults.map((vault, idx) => {
+                          {displaySortedVaults.map((vault, idx) => {
                             const vaultCollectionIds = collections.filter(c => c.vaultId === vault.id).map(c => c.id);
                             const vaultAssets = assets.filter(a => vaultCollectionIds.includes(a.collectionId));
                             const vaultValue = vaultAssets.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
@@ -1919,7 +1969,7 @@ export default function App() {
                     ))}
                   </div>
 
-                  {selectedVault && !selectedCollection && showCollectionForm && (
+                    {displaySelectedVault && !displaySelectedCollection && showCollectionForm && (
                     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); const ok = handleAddCollection(); if (ok) setShowCollectionForm(false); }}>
                       <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Collection name" value={newCollection.name} onChange={(e) => setNewCollection((p) => ({ ...p, name: e.target.value }))} />
                       <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={2} placeholder="Description (optional)" maxLength={100} value={newCollection.description} onChange={(e) => setNewCollection((p) => ({ ...p, description: e.target.value }))} />
@@ -1966,7 +2016,7 @@ export default function App() {
                     </form>
                   )}
 
-                  {selectedCollection && showAssetForm && (
+                    {displaySelectedCollection && showAssetForm && (
                     <form className="space-y-4" onSubmit={async (e) => { e.preventDefault(); const ok = await handleAddAsset(); if (ok) setShowAssetForm(false); }}>
                       <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Title" maxLength={30} value={newAsset.title} onChange={(e) => setNewAsset((p) => ({ ...p, title: e.target.value }))} />
                       <select className="w-full p-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={newAsset.type} onChange={(e) => setNewAsset((p) => ({ ...p, type: e.target.value, category: "" }))}>
@@ -2051,10 +2101,10 @@ export default function App() {
                   )}
 
                   <div className="space-y-2">
-                    {!selectedVault ? (
+                    {!displaySelectedVault ? (
                       <p className="text-neutral-500">Select a vault to view collections.</p>
-                    ) : !selectedCollection ? (
-                      sortedCollections.length === 0 ? (
+                    ) : !displaySelectedCollection ? (
+                      displaySortedCollections.length === 0 ? (
                         <p className="text-neutral-500">No collections yet. Add one to start.</p>
                       ) : (
                         <div data-tut="collection-list" className="grid gap-2">
