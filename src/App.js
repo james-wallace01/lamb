@@ -8,7 +8,7 @@ const VIEW_TO_PATH = {
   landing: "/",
   login: "/login",
   register: "/sign-up",
-  vault: "/vault",
+  vault: "/vaults",
   profile: "/profile",
 };
 
@@ -17,7 +17,7 @@ const PATH_TO_VIEW = {
   "/login": "login",
   "/sign-up": "register",
   "/register": "register",
-  "/vault": "vault",
+  "/vaults": "vault",
   "/profile": "profile",
 };
 
@@ -196,6 +196,7 @@ export default function App() {
   const ensureDefaultVaultForUser = (user) => {
     if (!user) return null;
     let defaultVault = null;
+    let defaultCollection = null;
 
     setVaults((prev) => {
       const existing = prev.find((v) => v.ownerId === user.id && v.isDefault);
@@ -206,7 +207,7 @@ export default function App() {
       const created = {
         id: Date.now(),
         ownerId: user.id,
-        name: "Private Vault",
+        name: "Example Vault",
         isPrivate: true,
         isDefault: true,
         createdAt: user.createdAt || new Date().toISOString(),
@@ -225,12 +226,15 @@ export default function App() {
       const existingCollection = prev.find(
         (c) => c.ownerId === user.id && c.vaultId === defaultVault.id && c.isDefault
       );
-      if (existingCollection) return prev;
+      if (existingCollection) {
+        defaultCollection = existingCollection;
+        return prev;
+      }
       const created = {
         id: Date.now() + 1,
         ownerId: user.id,
         vaultId: defaultVault.id,
-        name: "Private Collection",
+        name: "Example Collection",
         isPrivate: true,
         isDefault: true,
         createdAt: user.createdAt || new Date().toISOString(),
@@ -238,6 +242,32 @@ export default function App() {
         lastEditedBy: user.username,
         heroImage: DEFAULT_HERO,
         images: [],
+      };
+      defaultCollection = created;
+      return [created, ...prev];
+    });
+
+    if (!defaultCollection) return defaultVault;
+
+    setAssets((prev) => {
+      const existingAsset = prev.find(
+        (a) => a.ownerId === user.id && a.collectionId === defaultCollection.id && a.title === "Example Asset"
+      );
+      if (existingAsset) return prev;
+      const created = {
+        id: Date.now() + 2,
+        ownerId: user.id,
+        collectionId: defaultCollection.id,
+        title: "Example Asset",
+        type: "Collectables",
+        category: "Art",
+        description: "This is an example asset to get you started",
+        value: 1000,
+        heroImage: DEFAULT_HERO,
+        images: [],
+        createdAt: user.createdAt || new Date().toISOString(),
+        lastViewed: user.createdAt || new Date().toISOString(),
+        lastEditedBy: user.username,
       };
       return [created, ...prev];
     });
@@ -276,6 +306,28 @@ export default function App() {
   }, []);
 
   const navigateTo = (nextView, { replace = false } = {}) => {
+    // Prevent non-logged-in users from accessing protected pages
+    if ((nextView === "vault" || nextView === "profile") && !isLoggedIn) {
+      const nextPath = viewToPath("login");
+      if (replace) {
+        window.history.replaceState(null, "", nextPath);
+      } else {
+        window.history.pushState(null, "", nextPath);
+      }
+      setView("login");
+      return;
+    }
+    // Redirect logged-in users away from auth pages to vault
+    if ((nextView === "login" || nextView === "register") && isLoggedIn) {
+      const nextPath = viewToPath("vault");
+      if (replace) {
+        window.history.replaceState(null, "", nextPath);
+      } else {
+        window.history.pushState(null, "", nextPath);
+      }
+      setView("vault");
+      return;
+    }
     const nextPath = viewToPath(nextView);
     if (replace) {
       window.history.replaceState(null, "", nextPath);
@@ -555,11 +607,6 @@ export default function App() {
   };
 
   const handleDeleteVault = (vault) => {
-    if (vault.isDefault) {
-      showAlert("Cannot delete the Private Vault.");
-      return;
-    }
-    
     setConfirmDialog({
       show: true,
       title: "Delete Vault",
@@ -583,11 +630,6 @@ export default function App() {
   };
 
   const handleDeleteCollection = (collection) => {
-    if (collection.isDefault) {
-      showAlert("Cannot delete the Private Collection.");
-      return;
-    }
-    
     setConfirmDialog({
       show: true,
       title: "Delete Collection",
@@ -745,6 +787,22 @@ export default function App() {
       showAlert("Failed to upload profile image.");
       e.target.value = "";
     }
+  };
+
+  const handleDeleteAccount = () => {
+    setConfirmDialog({
+      show: true,
+      title: "Delete Account",
+      message: "Are you sure you want to delete your account? This will permanently delete your profile and all your vaults, collections, and assets. This action cannot be undone.",
+      onConfirm: () => {
+        setUsers((prev) => prev.filter((u) => u.id !== currentUser.id));
+        setVaults((prev) => prev.filter((v) => v.ownerId !== currentUser.id));
+        setCollections((prev) => prev.filter((c) => c.ownerId !== currentUser.id));
+        setAssets((prev) => prev.filter((a) => a.ownerId !== currentUser.id));
+        setConfirmDialog({ show: false, title: "", message: "", onConfirm: null });
+        logout();
+      }
+    });
   };
 
   const handleSelectVault = (vaultId) => {
@@ -921,7 +979,7 @@ export default function App() {
         <header className="border-b border-neutral-900 bg-neutral-950/70 backdrop-blur">
           <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <p className="font-semibold text-lg tracking-[0.15em]">LAMB</p>
+              <button className="font-semibold text-lg tracking-[0.15em] hover:opacity-80 transition" onClick={() => { setSelectedVaultId(null); setSelectedCollectionId(null); navigateTo(isLoggedIn ? "vault" : "landing"); }}>LAMB</button>
             </div>
             <div className="flex items-center gap-3">
               {isLoggedIn && currentUser ? (
@@ -1024,7 +1082,12 @@ export default function App() {
             </div>
           ) : view === "profile" && currentUser ? (
             <div className="space-y-6">
-              <button className="text-sm text-neutral-400 hover:text-neutral-200" onClick={() => navigateTo("vault")}>← Back to vault</button>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h1 className="text-2xl font-semibold">User profile</h1>
+                </div>
+              </div>
+              <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => navigateTo("vault")}>← Back</button>
               <div className="grid gap-4 md:grid-cols-3 items-start">
                 <div className="p-5 rounded-xl border border-neutral-900 bg-neutral-900/60">
                   <p className="text-sm text-neutral-400">Profile</p>
@@ -1085,7 +1148,7 @@ export default function App() {
                       <h3 className="text-lg font-semibold">Change password</h3>
                     </div>
                     <div className="mb-4">
-                      <button className="text-sm text-blue-400 hover:underline" type="button" onClick={() => setIsChangingPassword(!isChangingPassword)}>
+                      <button className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700" type="button" onClick={() => setIsChangingPassword(!isChangingPassword)}>
                         {isChangingPassword ? "Cancel password change" : "Change password"}
                       </button>
                     </div>
@@ -1115,6 +1178,15 @@ export default function App() {
                       </form>
                     )}
                   </div>
+
+                  <div className="p-5 rounded-xl border border-neutral-900 bg-neutral-900/60 space-y-4">
+                    <div>
+                      <p className="text-sm text-neutral-400">Account</p>
+                      <h3 className="text-lg font-semibold">Delete account</h3>
+                    </div>
+                    <p className="text-sm text-neutral-400">Once you delete your account, there is no going back. Please be certain.</p>
+                    <button className="px-4 py-2 rounded bg-red-600 hover:bg-red-700" onClick={handleDeleteAccount}>Delete account</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1122,7 +1194,7 @@ export default function App() {
             <div className="space-y-6">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h1 className="text-2xl font-semibold">{selectedVault ? selectedVault.name : "Vault"}</h1>
+                  <h1 className="text-2xl font-semibold">{selectedVault ? (selectedCollection ? `${selectedVault.name} / ${selectedCollection.name}` : selectedVault.name) : "Vault"}</h1>
                   <div className="h-10 flex items-center">
                     {selectedCollection && (
                       <button className="mt-2 px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => { setSelectedCollectionId(null); setShowCollectionForm(false); setShowAssetForm(false); }}>
@@ -1155,7 +1227,7 @@ export default function App() {
                   </div>
 
                   <div className="flex flex-wrap gap-2 text-sm">
-                    {selectedCollection ? (
+                    {!showVaultForm && !showCollectionForm && (selectedCollection ? (
                       <>
                         <input className="px-3 py-2 rounded bg-neutral-950 border border-neutral-800 flex-1 min-w-[160px]" placeholder="Filter collections" value={collectionFilter} onChange={(e) => setCollectionFilter(e.target.value)} />
                         <select className="px-3 py-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={collectionSort} onChange={(e) => setCollectionSort(e.target.value)}>
@@ -1175,7 +1247,7 @@ export default function App() {
                           <option value="oldest">Oldest</option>
                         </select>
                       </>
-                    )}
+                    ))}
                   </div>
 
                   {!selectedCollection && showVaultForm && (
@@ -1293,7 +1365,6 @@ export default function App() {
                                       <p className="font-semibold">{vault.name}</p>
                                       <div className="flex gap-2 items-center mt-1">
                                         <span className="text-xs px-2 py-1 rounded bg-blue-900/50 border border-blue-700 text-blue-300">Vault</span>
-                                        {vault.isDefault && <span className="text-xs px-2 py-1 rounded bg-neutral-800 border border-neutral-700">Hidden</span>}
                                       </div>
                                       <p className="text-xs text-neutral-500 mt-1">Created {new Date(vault.createdAt).toLocaleDateString()}</p>
                                       <p className="text-xs text-neutral-400 mt-0.5">Collections: {collectionCount}</p>
@@ -1306,13 +1377,11 @@ export default function App() {
                                   </div>
                                 </div>
                               </button>
-                              {!vault.isDefault && (
-                                <div className="flex gap-2 mt-2">
-                                  <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={(e) => { e.stopPropagation(); openEditVault(vault); }}>View / Edit</button>
-                                  <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Vault: ${vault.name}\nCreated: ${new Date(vault.createdAt).toLocaleDateString()}`); showAlert('Vault details copied to clipboard!'); }}>Share</button>
-                                  <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={(e) => { e.stopPropagation(); handleDeleteVault(vault); }}>Delete</button>
-                                </div>
-                              )}
+                              <div className="flex gap-2 mt-2">
+                                <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={(e) => { e.stopPropagation(); openEditVault(vault); }}>View / Edit</button>
+                                <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Vault: ${vault.name}\nCreated: ${new Date(vault.createdAt).toLocaleDateString()}`); showAlert('Vault details copied to clipboard!'); }}>Share</button>
+                                <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={(e) => { e.stopPropagation(); handleDeleteVault(vault); }}>Delete</button>
+                              </div>
                             </div>
                             );
                           })}
@@ -1339,7 +1408,6 @@ export default function App() {
                                       <p className="font-semibold">{collection.name}</p>
                                       <div className="flex gap-2 items-center mt-1">
                                         <span className="text-xs px-2 py-1 rounded bg-purple-900/50 border border-purple-700 text-purple-300">Collection</span>
-                                        {collection.isDefault && <span className="text-xs px-2 py-1 rounded bg-neutral-800 border border-neutral-700">Hidden</span>}
                                       </div>
                                       <p className="text-xs text-neutral-500 mt-1">Created {new Date(collection.createdAt).toLocaleDateString()}</p>
                                       <p className="text-xs text-neutral-400 mt-0.5">Assets: {assetCount}</p>
@@ -1352,13 +1420,11 @@ export default function App() {
                                   </div>
                                 </div>
                               </button>
-                              {!collection.isDefault && (
-                                <div className="flex gap-2 mt-2">
-                                  <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={(e) => { e.stopPropagation(); openEditCollection(collection); }}>View / Edit</button>
-                                  <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Collection: ${collection.name}`); showAlert('Collection details copied to clipboard!'); }}>Share</button>
-                                  <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={(e) => { e.stopPropagation(); handleDeleteCollection(collection); }}>Delete</button>
-                                </div>
-                              )}
+                              <div className="flex gap-2 mt-2">
+                                <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={(e) => { e.stopPropagation(); openEditCollection(collection); }}>View / Edit</button>
+                                <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Collection: ${collection.name}`); showAlert('Collection details copied to clipboard!'); }}>Share</button>
+                                <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={(e) => { e.stopPropagation(); handleDeleteCollection(collection); }}>Delete</button>
+                              </div>
                             </div>
                             );
                           })}
@@ -1375,16 +1441,16 @@ export default function App() {
                       <h3 className="text-lg font-semibold">{selectedCollection ? selectedCollection.name : (selectedVault ? selectedVault.name : "Organize within a vault")}</h3>
                     </div>
                     {selectedCollection ? (
-                      <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700" onClick={() => { setShowAssetForm((v) => !v); setShowVaultForm(false); setShowCollectionForm(false); }}>+</button>
+                      <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 w-10 h-10 flex items-center justify-center" onClick={() => { setShowAssetForm((v) => !v); setShowVaultForm(false); setShowCollectionForm(false); }}>+</button>
                     ) : selectedVault ? (
-                      <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700" onClick={() => { setShowCollectionForm((v) => !v); setShowVaultForm(false); setShowAssetForm(false); }}>+</button>
+                      <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 w-10 h-10 flex items-center justify-center" onClick={() => { setShowCollectionForm((v) => !v); setShowVaultForm(false); setShowAssetForm(false); }}>+</button>
                     ) : (
-                      <button className="px-3 py-2 rounded bg-blue-600/40 cursor-not-allowed" disabled>+</button>
+                      <button className="px-3 py-2 rounded bg-blue-600/40 cursor-not-allowed w-10 h-10 flex items-center justify-center" disabled>+</button>
                     )}
                   </div>
 
                   <div className="flex flex-wrap gap-2 text-sm">
-                    {selectedCollection ? (
+                    {!showAssetForm && (selectedCollection ? (
                       <>
                         <input className="px-3 py-2 rounded bg-neutral-950 border border-neutral-800 flex-1 min-w-[160px]" placeholder="Filter assets" value={assetFilter} onChange={(e) => setAssetFilter(e.target.value)} />
                         <select className="px-3 py-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={assetSort} onChange={(e) => setAssetSort(e.target.value)}>
@@ -1403,7 +1469,7 @@ export default function App() {
                           <option value="oldest">Oldest</option>
                         </select>
                       </>
-                    )}
+                    ))}
                   </div>
 
                   {selectedVault && !selectedCollection && showCollectionForm && (
@@ -1454,20 +1520,18 @@ export default function App() {
 
                   {selectedCollection && showAssetForm && (
                     <form className="space-y-4" onSubmit={async (e) => { e.preventDefault(); const ok = await handleAddAsset(); if (ok) setShowAssetForm(false); }}>
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Title" maxLength={30} value={newAsset.title} onChange={(e) => setNewAsset((p) => ({ ...p, title: e.target.value }))} />
-                        <select className="w-full p-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={newAsset.type} onChange={(e) => setNewAsset((p) => ({ ...p, type: e.target.value, category: "" }))}>
-                          <option value="">Select Type</option>
-                          <option value="Vehicle">Vehicle</option>
-                          <option value="Property">Property</option>
-                          <option value="Collectables">Collectables</option>
-                          <option value="Business">Business</option>
-                          <option value="Materials">Materials</option>
-                          <option value="Specialty">Specialty</option>
-                          <option value="Digital">Digital</option>
-                          <option value="Other">Other</option>
-                        </select>
-                      </div>
+                      <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Title" maxLength={30} value={newAsset.title} onChange={(e) => setNewAsset((p) => ({ ...p, title: e.target.value }))} />
+                      <select className="w-full p-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={newAsset.type} onChange={(e) => setNewAsset((p) => ({ ...p, type: e.target.value, category: "" }))}>
+                        <option value="">Select Type</option>
+                        <option value="Vehicle">Vehicle</option>
+                        <option value="Property">Property</option>
+                        <option value="Collectables">Collectables</option>
+                        <option value="Business">Business</option>
+                        <option value="Materials">Materials</option>
+                        <option value="Specialty">Specialty</option>
+                        <option value="Digital">Digital</option>
+                        <option value="Other">Other</option>
+                      </select>
                       <select className="w-full p-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={newAsset.category} onChange={(e) => setNewAsset((p) => ({ ...p, category: e.target.value }))} disabled={!newAsset.type}>
                         <option value="">Select Category</option>
                         {newAsset.type && categoryOptions[newAsset.type]?.map((cat) => (
@@ -1543,7 +1607,6 @@ export default function App() {
                                       <p className="font-semibold">{collection.name}</p>
                                       <div className="flex gap-2 items-center mt-1">
                                         <span className="text-xs px-2 py-1 rounded bg-purple-900/50 border border-purple-700 text-purple-300">Collection</span>
-                                        {collection.isDefault && <span className="text-xs px-2 py-1 rounded bg-neutral-800 border border-neutral-700">Hidden</span>}
                                       </div>
                                       <p className="text-xs text-neutral-500 mt-1">Created {new Date(collection.createdAt).toLocaleDateString()}</p>
                                       <p className="text-xs text-neutral-400 mt-0.5">Assets: {assetCount}</p>
@@ -1556,13 +1619,11 @@ export default function App() {
                                   </div>
                                 </div>
                               </button>
-                              {!collection.isDefault && (
-                                <div className="flex gap-2 mt-2">
-                                  <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={(e) => { e.stopPropagation(); openEditCollection(collection); }}>View / Edit</button>
-                                  <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Collection: ${collection.name}`); showAlert('Collection details copied to clipboard!'); }}>Share</button>
-                                  <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={(e) => { e.stopPropagation(); handleDeleteCollection(collection); }}>Delete</button>
-                                </div>
-                              )}
+                              <div className="flex gap-2 mt-2">
+                                <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={(e) => { e.stopPropagation(); openEditCollection(collection); }}>View / Edit</button>
+                                <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Collection: ${collection.name}`); showAlert('Collection details copied to clipboard!'); }}>Share</button>
+                                <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={(e) => { e.stopPropagation(); handleDeleteCollection(collection); }}>Delete</button>
+                              </div>
                             </div>
                             );
                           })}
