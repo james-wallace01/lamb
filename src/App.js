@@ -177,6 +177,8 @@ export default function App() {
   const [showAssetForm, setShowAssetForm] = useState(false);
 
   const [confirmDialog, setConfirmDialog] = useState({ show: false, title: "", message: "", onConfirm: null });
+  const [moveDialog, setMoveDialog] = useState({ show: false, assetId: null, targetVaultId: null, targetCollectionId: null });
+  const [collectionMoveDialog, setCollectionMoveDialog] = useState({ show: false, collectionId: null, targetVaultId: null });
   const [viewAsset, setViewAsset] = useState(null);
   const [viewAssetDraft, setViewAssetDraft] = useState(initialAssetState);
   const [imageViewer, setImageViewer] = useState({ show: false, images: [], currentIndex: 0 });
@@ -806,6 +808,46 @@ export default function App() {
         setConfirmDialog({ show: false, title: "", message: "", onConfirm: null });
       }
     });
+  };
+
+  const openMoveDialog = (asset) => {
+    const currentCollectionId = asset.collectionId;
+    const currentVaultId = collections.find(c => c.id === currentCollectionId)?.vaultId || null;
+    setMoveDialog({ show: true, assetId: asset.id, targetVaultId: null, targetCollectionId: null, sourceCollectionId: currentCollectionId, sourceVaultId: currentVaultId });
+  };
+
+  const closeMoveDialog = () => setMoveDialog({ show: false, assetId: null, targetVaultId: null, targetCollectionId: null });
+
+  const handleMoveConfirm = () => {
+    const targetId = moveDialog.targetCollectionId;
+    if (!targetId) {
+      showAlert("Select a collection to move to.");
+      return;
+    }
+    setAssets((prev) => prev.map((a) => (a.id === moveDialog.assetId ? { ...a, collectionId: targetId, lastEditedBy: currentUser?.username || 'Unknown' } : a)));
+    closeMoveDialog();
+    showAlert("Asset moved.");
+  };
+
+  const openCollectionMoveDialog = (collection) => {
+    const sourceVaultId = collection.vaultId || null;
+    setCollectionMoveDialog({ show: true, collectionId: collection.id, targetVaultId: null, sourceVaultId });
+  };
+
+  const closeCollectionMoveDialog = () => setCollectionMoveDialog({ show: false, collectionId: null, targetVaultId: null });
+
+  const handleCollectionMoveConfirm = () => {
+    const targetVault = collectionMoveDialog.targetVaultId;
+    if (!targetVault) {
+      showAlert("Select a vault to move this collection into.");
+      return;
+    }
+    setCollections((prev) => prev.map((c) => (c.id === collectionMoveDialog.collectionId ? { ...c, vaultId: targetVault, lastEditedBy: currentUser?.username || 'Unknown' } : c)));
+    // if the moved collection is currently selected, switch view to the destination vault
+    setSelectedVaultId(targetVault);
+    setSelectedCollectionId(collectionMoveDialog.collectionId);
+    closeCollectionMoveDialog();
+    showAlert("Collection moved.");
   };
 
   const openViewAsset = (asset) => {
@@ -1598,7 +1640,7 @@ export default function App() {
                                       {vault.lastEditedBy && <p className="mt-0.5">Edited by {vault.lastEditedBy}</p>}
                                       <p className="mt-0.5">Manager: {vault.manager || `${currentUser?.firstName} ${currentUser?.lastName}`}</p>
                                       <p className="mt-0.5">Collections: {collectionCount}</p>
-                                      {vaultValue > 0 && <p className="mt-0.5 text-green-400 font-semibold">Value: ${vaultValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
+                                      {Number.isFinite(vaultValue) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${vaultValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
                                     </div>
                                   </div>
                                 </div>
@@ -1646,7 +1688,7 @@ export default function App() {
                                       {collection.lastEditedBy && <p className="mt-0.5">Edited by {collection.lastEditedBy}</p>}
                                       <p className="mt-0.5">Manager: {collection.manager || `${currentUser?.firstName} ${currentUser?.lastName}`}</p>
                                       <p className="mt-0.5">Assets: {assetCount}</p>
-                                      {collectionValue > 0 && <p className="mt-0.5 text-green-400 font-semibold">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
+                                      {Number.isFinite(collectionValue) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
                                     </div>
                                   </div>
                                 </div>
@@ -1654,6 +1696,7 @@ export default function App() {
                               <div className="flex gap-2 mt-2">
                                 <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={(e) => { e.stopPropagation(); openEditCollection(collection); }}>View / Edit</button>
                                 <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Collection: ${collection.name}`); showAlert('Collection details copied to clipboard!'); }}>Share</button>
+                                <button className="px-2 py-0.5 bg-yellow-600 text-white rounded text-xs hover:bg-yellow-700" onClick={(e) => { e.stopPropagation(); openCollectionMoveDialog(collection); }}>Move</button>
                                 <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={(e) => { e.stopPropagation(); handleDeleteCollection(collection); }}>Delete</button>
                               </div>
                               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="absolute right-2 bottom-2 h-8 w-8 opacity-100 pointer-events-none" fill="white" aria-hidden="true">
@@ -1870,7 +1913,7 @@ export default function App() {
                                       {collection.lastEditedBy && <p className="mt-0.5">Edited by {collection.lastEditedBy}</p>}
                                       <p className="mt-0.5">Manager: {collection.manager || `${currentUser?.firstName} ${currentUser?.lastName}`}</p>
                                       <p className="mt-0.5">Assets: {assetCount}</p>
-                                      {collectionValue > 0 && <p className="mt-0.5 text-green-400 font-semibold">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
+                                      {Number.isFinite(collectionValue) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
                                     </div>
                                   </div>
                                 </div>
@@ -1878,6 +1921,7 @@ export default function App() {
                               <div className="flex gap-2 mt-2">
                                 <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={(e) => { e.stopPropagation(); openEditCollection(collection); }}>View / Edit</button>
                                 <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Collection: ${collection.name}`); showAlert('Collection details copied to clipboard!'); }}>Share</button>
+                                <button className="px-2 py-0.5 bg-yellow-600 text-white rounded text-xs hover:bg-yellow-700" onClick={(e) => { e.stopPropagation(); openCollectionMoveDialog(collection); }}>Move</button>
                                 <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={(e) => { e.stopPropagation(); handleDeleteCollection(collection); }}>Delete</button>
                               </div>
                               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="absolute right-2 bottom-2 h-8 w-8 opacity-100 pointer-events-none" fill="white" aria-hidden="true">
@@ -1916,13 +1960,14 @@ export default function App() {
                                       {asset.lastEditedBy && <p className="mt-0.5">Edited by {asset.lastEditedBy}</p>}
                                       <p className="mt-0.5">Manager: {asset.manager || `${currentUser?.firstName} ${currentUser?.lastName}`}</p>
                                       <p className="mt-0.5 text-xs text-neutral-300 text-right">Quantity: {asset.quantity || 1}</p>
-                                      {((parseFloat(asset.value) || 0) > 0) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${(parseFloat(asset.value) || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
+                                      {(() => { const v = parseFloat(asset.value); return Number.isFinite(v) ? <p className="mt-0.5 text-green-400 font-semibold">Value: ${v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p> : null; })()}
                                     </div>
                                   </div>
                                 </div>
                                 <div className="flex gap-2 mt-2">
                                   <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={() => openViewAsset(asset)}>View / Edit</button>
                                   <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={() => { navigator.clipboard.writeText(`Asset: ${asset.title}\nCategory: ${asset.category || 'Uncategorized'}\nDescription: ${asset.description || 'No description'}`); showAlert('Asset details copied to clipboard!'); }}>Share</button>
+                                  <button className="px-2 py-0.5 bg-yellow-600 text-white rounded text-xs hover:bg-yellow-700" onClick={(e) => { e.stopPropagation(); openMoveDialog(asset); }}>Move</button>
                                   <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={() => handleDeleteAsset(asset.id)}>Delete</button>
                                 </div>
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="absolute right-2 bottom-2 h-8 w-8 opacity-100 pointer-events-none" fill="white" aria-hidden="true">
@@ -2056,6 +2101,80 @@ export default function App() {
                   )}
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {moveDialog.show && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-60 p-4" onClick={closeMoveDialog}>
+          <div className="bg-neutral-900 border border-neutral-800 rounded p-4 text-sm text-neutral-200 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-2">Move Asset</h3>
+            <p className="text-xs text-neutral-400 mb-3">Choose a collection to move this asset into.</p>
+            <div className="mb-3">
+              <label className="block text-xs text-neutral-400 mb-1">Select Vault</label>
+              <select
+                value={moveDialog.targetVaultId || ""}
+                onChange={(e) => setMoveDialog((d) => ({ ...d, targetVaultId: e.target.value ? parseInt(e.target.value) : null, targetCollectionId: null }))}
+                className="w-full p-2 pr-8 rounded bg-blue-600 text-white cursor-pointer"
+                style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}}
+              >
+                <option value="">Select vault</option>
+                {vaults.map((v) => (
+                  <option key={v.id} value={v.id}>{v.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="mb-3">
+              <label className="block text-xs text-neutral-400 mb-1">Select Collection</label>
+              <select
+                value={moveDialog.targetCollectionId || ""}
+                onChange={(e) => setMoveDialog((d) => ({ ...d, targetCollectionId: e.target.value ? parseInt(e.target.value) : null }))}
+                className="w-full p-2 pr-8 rounded bg-blue-600 text-white cursor-pointer disabled:opacity-50"
+                style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}}
+                disabled={!moveDialog.targetVaultId}
+              >
+                <option value="">{moveDialog.targetVaultId ? "Select collection" : "Select a vault first"}</option>
+                {collections
+                  .filter(c => c.vaultId === moveDialog.targetVaultId && c.id !== (assets.find(a => a.id === moveDialog.assetId)?.collectionId))
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+              </select>
+              {moveDialog.targetVaultId && collections.filter(c => c.vaultId === moveDialog.targetVaultId && c.id !== (assets.find(a => a.id === moveDialog.assetId)?.collectionId)).length === 0 && (
+                <p className="text-xs text-neutral-500 mt-2">No other collections in this vault.</p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button className="px-3 py-1 rounded border border-neutral-700 hover:bg-neutral-800" onClick={closeMoveDialog}>Cancel</button>
+              <button className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700" onClick={handleMoveConfirm}>Move</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {collectionMoveDialog.show && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-60 p-4" onClick={closeCollectionMoveDialog}>
+          <div className="bg-neutral-900 border border-neutral-800 rounded p-4 text-sm text-neutral-200 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-2">Move Collection</h3>
+            <p className="text-xs text-neutral-400 mb-3">Choose a vault to move this collection into.</p>
+            <div className="mb-3">
+              <label className="block text-xs text-neutral-400 mb-1">Select Vault</label>
+              <select
+                value={collectionMoveDialog.targetVaultId || ""}
+                onChange={(e) => setCollectionMoveDialog((d) => ({ ...d, targetVaultId: e.target.value ? parseInt(e.target.value) : null }))}
+                className="w-full p-2 pr-8 rounded bg-blue-600 text-white cursor-pointer"
+                style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}}
+              >
+                <option value="">Select vault</option>
+                {vaults.filter(v => v.id !== (collections.find(c => c.id === collectionMoveDialog.collectionId)?.vaultId)).map((v) => (
+                  <option key={v.id} value={v.id}>{v.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button className="px-3 py-1 rounded border border-neutral-700 hover:bg-neutral-800" onClick={closeCollectionMoveDialog}>Cancel</button>
+              <button className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700" onClick={handleCollectionMoveConfirm}>Move</button>
             </div>
           </div>
         </div>
