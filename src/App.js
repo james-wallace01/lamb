@@ -140,11 +140,11 @@ export default function App() {
 
   const [selectedVaultId, setSelectedVaultId] = useState(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState(null);
-  const initialVaultState = { name: "", description: "", heroImage: "", images: [] };
+  const initialVaultState = { name: "", description: "", manager: "", heroImage: "", images: [] };
   const [newVault, setNewVault] = useState(initialVaultState);
-  const initialCollectionState = { name: "", description: "", heroImage: "", images: [] };
+  const initialCollectionState = { name: "", description: "", manager: "", heroImage: "", images: [] };
   const [newCollection, setNewCollection] = useState(initialCollectionState);
-  const initialAssetState = { title: "", type: "", category: "", description: "", value: "", heroImage: "", images: [] };
+  const initialAssetState = { title: "", type: "", category: "", description: "", manager: "", value: "", quantity: 1, heroImage: "", images: [] };
   const [newAsset, setNewAsset] = useState(initialAssetState);
 
   const categoryOptions = {
@@ -180,7 +180,7 @@ export default function App() {
   const [viewAsset, setViewAsset] = useState(null);
   const [viewAssetDraft, setViewAssetDraft] = useState(initialAssetState);
   const [imageViewer, setImageViewer] = useState({ show: false, images: [], currentIndex: 0 });
-  const [editDialog, setEditDialog] = useState({ show: false, type: null, item: null, name: "", description: "" });
+  const [editDialog, setEditDialog] = useState({ show: false, type: null, item: null, name: "", description: "", manager: "", images: [], heroImage: "" });
 
   const [alert, setAlert] = useState("");
   const alertTimeoutRef = useRef(null);
@@ -270,8 +270,8 @@ export default function App() {
     return vault;
   };
 
-  const openEditVault = (vault) => setEditDialog({ show: true, type: "vault", item: vault, name: vault.name, description: vault.description || "" });
-  const openEditCollection = (collection) => setEditDialog({ show: true, type: "collection", item: collection, name: collection.name, description: collection.description || "" });
+  const openEditVault = (vault) => setEditDialog({ show: true, type: "vault", item: vault, name: vault.name, description: vault.description || "", manager: vault.manager || "", images: vault.images || [], heroImage: vault.heroImage || "" });
+  const openEditCollection = (collection) => setEditDialog({ show: true, type: "collection", item: collection, name: collection.name, description: collection.description || "", manager: collection.manager || "", images: collection.images || [], heroImage: collection.heroImage || "" });
   const closeEditDialog = () => setEditDialog({ show: false, type: null, item: null, name: "", description: "" });
 
   const saveEditDialog = () => {
@@ -282,14 +282,20 @@ export default function App() {
     }
     if (editDialog.type === "vault" && editDialog.item) {
       const description = (editDialog.description || "").trim();
-      setVaults((prev) => prev.map((v) => (v.id === editDialog.item.id ? { ...v, name, description, lastEditedBy: currentUser?.username || 'Unknown' } : v)));
+      const manager = (editDialog.manager || "").trim();
+      const images = trimToFour(editDialog.images || []);
+      const heroImage = editDialog.heroImage || images[0] || DEFAULT_HERO;
+      setVaults((prev) => prev.map((v) => (v.id === editDialog.item.id ? { ...v, name, description, manager, images, heroImage, lastEditedBy: currentUser?.username || 'Unknown' } : v)));
       if (selectedVaultId === editDialog.item.id) {
         setSelectedVaultId(editDialog.item.id);
       }
     }
     if (editDialog.type === "collection" && editDialog.item) {
       const description = (editDialog.description || "").trim();
-      setCollections((prev) => prev.map((c) => (c.id === editDialog.item.id ? { ...c, name, description, lastEditedBy: currentUser?.username || 'Unknown' } : c)));
+      const manager = (editDialog.manager || "").trim();
+      const images = trimToFour(editDialog.images || []);
+      const heroImage = editDialog.heroImage || images[0] || DEFAULT_HERO;
+      setCollections((prev) => prev.map((c) => (c.id === editDialog.item.id ? { ...c, name, description, manager, images, heroImage, lastEditedBy: currentUser?.username || 'Unknown' } : c)));
       if (selectedCollectionId === editDialog.item.id) {
         setSelectedCollectionId(editDialog.item.id);
       }
@@ -519,7 +525,7 @@ export default function App() {
     if (!currentUser) return false;
     const images = trimToFour(newVault.images || []);
     const heroImage = newVault.heroImage || images[0] || DEFAULT_HERO;
-    const vault = { id: Date.now(), ownerId: currentUser.id, name: newVault.name.trim(), description: newVault.description.trim(), isPrivate: true, isDefault: false, createdAt: new Date().toISOString(), lastViewed: new Date().toISOString(), lastEditedBy: currentUser.username, heroImage, images };
+    const vault = { id: Date.now(), ownerId: currentUser.id, name: newVault.name.trim(), description: newVault.description.trim(), manager: (newVault.manager || "").trim(), isPrivate: true, isDefault: false, createdAt: new Date().toISOString(), lastViewed: new Date().toISOString(), lastEditedBy: currentUser.username, heroImage, images };
     setVaults((prev) => [vault, ...prev]);
     setNewVault(initialVaultState);
     return true;
@@ -537,7 +543,7 @@ export default function App() {
     if (!currentUser) return false;
     const images = trimToFour(newCollection.images || []);
     const heroImage = newCollection.heroImage || images[0] || DEFAULT_HERO;
-    const collection = { id: Date.now(), ownerId: currentUser.id, vaultId: selectedVaultId, name: newCollection.name.trim(), description: newCollection.description.trim(), isPrivate: true, isDefault: false, createdAt: new Date().toISOString(), lastViewed: new Date().toISOString(), lastEditedBy: currentUser.username, heroImage, images };
+    const collection = { id: Date.now(), ownerId: currentUser.id, vaultId: selectedVaultId, name: newCollection.name.trim(), description: newCollection.description.trim(), manager: (newCollection.manager || "").trim(), isPrivate: true, isDefault: false, createdAt: new Date().toISOString(), lastViewed: new Date().toISOString(), lastEditedBy: currentUser.username, heroImage, images };
     setCollections((prev) => [collection, ...prev]);
     setNewCollection(initialCollectionState);
     return true;
@@ -576,7 +582,9 @@ export default function App() {
       type: newAsset.type.trim(),
       category: newAsset.category.trim(), 
       description: newAsset.description.trim(), 
+      manager: (newAsset.manager || "").trim(),
       value: parseFloat(newAsset.value) || 0,
+      quantity: parseInt(newAsset.quantity) || 1,
       heroImage,
       images,
       createdAt: new Date().toISOString(),
@@ -586,6 +594,15 @@ export default function App() {
     setAssets((prev) => [asset, ...prev]);
     setNewAsset(initialAssetState);
     return true;
+  };
+
+  const updateAssetQuantity = (id, qty) => {
+    const n = parseInt(qty) || 1;
+    setAssets((prev) => prev.map((a) => (a.id === id ? { ...a, quantity: n } : a)));
+    if (viewAsset && viewAsset.id === id) {
+      setViewAsset((v) => ({ ...v, quantity: n }));
+      setViewAssetDraft((d) => ({ ...d, quantity: n }));
+    }
   };
 
   const handleDeleteAsset = (id) => {
@@ -653,6 +670,7 @@ export default function App() {
       category: normalized.category || "",
       description: normalized.description || "",
       value: normalized.value || "",
+      quantity: normalized.quantity || 1,
       heroImage: normalized.heroImage || normalized.images[0] || "",
       images: trimToFour(normalized.images || []),
     });
@@ -684,12 +702,12 @@ export default function App() {
     setAssets((prev) =>
       prev.map((a) =>
         a.id === viewAsset.id
-          ? { ...a, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), value: parseFloat(viewAssetDraft.value) || 0, heroImage, images, lastEditedBy: currentUser?.username || 'Unknown' }
+          ? { ...a, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), value: parseFloat(viewAssetDraft.value) || 0, quantity: parseInt(viewAssetDraft.quantity) || 1, heroImage, images, lastEditedBy: currentUser?.username || 'Unknown' }
           : a
       )
     );
 
-    setViewAsset({ ...viewAsset, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), value: parseFloat(viewAssetDraft.value) || 0, heroImage, images, lastEditedBy: currentUser?.username || 'Unknown' });
+    setViewAsset({ ...viewAsset, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), value: parseFloat(viewAssetDraft.value) || 0, quantity: parseInt(viewAssetDraft.quantity) || 1, heroImage, images, lastEditedBy: currentUser?.username || 'Unknown' });
     showAlert("Asset updated.");
     return true;
   };
@@ -895,7 +913,19 @@ export default function App() {
     });
   };
 
-  const handleSetHero = (image, setter) => setter((prev) => ({ ...prev, heroImage: image }));
+  const handleSetHero = (image, setter) => setter((prev) => {
+    const existing = [...(prev.images || [])];
+    // Move image to front (left-most). If not present, add it to front.
+    const idx = existing.indexOf(image);
+    if (idx === -1) {
+      existing.unshift(image);
+    } else {
+      existing.splice(idx, 1);
+      existing.unshift(image);
+    }
+    const nextImages = trimToFour(existing);
+    return { ...prev, images: nextImages, heroImage: image };
+  });
 
   const sortByDefaultThenDate = (a, b) => {
     if (a.isDefault && !b.isDefault) return -1;
@@ -1258,6 +1288,7 @@ export default function App() {
                       <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Vault name" value={newVault.name} onChange={(e) => setNewVault((p) => ({ ...p, name: e.target.value }))} />
                       <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={2} placeholder="Description (optional)" maxLength={100} value={newVault.description} onChange={(e) => setNewVault((p) => ({ ...p, description: e.target.value }))} />
                       
+                            <input disabled className="w-full p-2 rounded bg-neutral-950 border border-neutral-800 mt-2 disabled:opacity-60 cursor-not-allowed" placeholder="Manager (optional)" value={newVault.manager} onChange={(e) => setNewVault((p) => ({ ...p, manager: e.target.value }))} />
                       <div className="space-y-3">
                         <div className="flex flex-col items-start gap-1">
                           <input
@@ -1305,6 +1336,7 @@ export default function App() {
                       <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Collection name" value={newCollection.name} onChange={(e) => setNewCollection((p) => ({ ...p, name: e.target.value }))} />
                       <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={2} placeholder="Description (optional)" maxLength={100} value={newCollection.description} onChange={(e) => setNewCollection((p) => ({ ...p, description: e.target.value }))} />
                       
+                      <input disabled className="w-full p-2 rounded bg-neutral-950 border border-neutral-800 mt-2 disabled:opacity-60 cursor-not-allowed" placeholder="Manager (optional)" value={newCollection.manager} onChange={(e) => setNewCollection((p) => ({ ...p, manager: e.target.value }))} />
                       <div className="space-y-3">
                         <div className="flex flex-col items-start gap-1">
                           <input
@@ -1361,24 +1393,25 @@ export default function App() {
                             const hero = vault.heroImage || DEFAULT_HERO;
                             const vaultImages = vault.images || [];
                             return (
-                            <div key={vault.id} className={`p-3 rounded border ${vault.id === selectedVaultId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"}`}>
+                            <div key={vault.id} className={`relative overflow-hidden p-3 rounded border ${vault.id === selectedVaultId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"} flex flex-col justify-between h-48`}>
                               <button className="w-full text-left hover:opacity-80" onClick={() => handleSelectVault(vault.id)}>
                                 <div className="flex gap-4">
-                                  <img src={hero} alt={vault.name} className="w-32 h-32 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(vaultImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
+                                  <img src={hero} alt={vault.name} className="w-24 h-24 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(vaultImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
                                   <div className="flex-1 flex items-start justify-between">
                                     <div className="flex-1">
                                       <p className="font-semibold">{vault.name}</p>
                                       <div className="flex gap-2 items-center mt-1">
                                         <span className="text-xs px-2 py-1 rounded bg-blue-900/50 border border-blue-700 text-blue-300">Vault</span>
                                       </div>
-                                      <p className="text-xs text-neutral-500 mt-1">Created {new Date(vault.createdAt).toLocaleDateString()}</p>
                                       {vault.description && <p className="text-xs text-neutral-300 mt-0.5">{vault.description}</p>}
-                                      <p className="text-xs text-neutral-400 mt-0.5">Collections: {collectionCount}</p>
-                                      <p className="text-xs text-green-400 font-semibold mt-0.5">Value: ${vaultValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
                                     </div>
                                     <div className="text-right text-xs text-neutral-400 ml-4">
-                                      {vault.lastViewed && <p>Viewed {new Date(vault.lastViewed).toLocaleDateString()}</p>}
+                                      <p>Created {new Date(vault.createdAt).toLocaleDateString()}</p>
+                                      {vault.lastViewed && <p className="mt-0.5">Viewed {new Date(vault.lastViewed).toLocaleDateString()}</p>}
                                       {vault.lastEditedBy && <p className="mt-0.5">Edited by {vault.lastEditedBy}</p>}
+                                      <p className="mt-0.5">Manager: {vault.manager || `${currentUser?.firstName} ${currentUser?.lastName}`}</p>
+                                      <p className="mt-0.5">Collections: {collectionCount}</p>
+                                      {vaultValue > 0 && <p className="mt-0.5 text-green-400 font-semibold">Value: ${vaultValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
                                     </div>
                                   </div>
                                 </div>
@@ -1388,6 +1421,9 @@ export default function App() {
                                 <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Vault: ${vault.name}\nCreated: ${new Date(vault.createdAt).toLocaleDateString()}`); showAlert('Vault details copied to clipboard!'); }}>Share</button>
                                 <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={(e) => { e.stopPropagation(); handleDeleteVault(vault); }}>Delete</button>
                               </div>
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="absolute right-2 bottom-2 h-8 w-8 opacity-100 pointer-events-none" fill="white" aria-hidden="true">
+                                <path d="M12 17a2 2 0 100-4 2 2 0 000 4zm6-7h-1V7a5 5 0 00-10 0v3H6a2 2 0 00-2 2v7a2 2 0 002 2h12a2 2 0 002-2v-7a2 2 0 00-2-2zm-8-3a3 3 0 016 0v3H10V7z" />
+                              </svg>
                             </div>
                             );
                           })}
@@ -1405,23 +1441,25 @@ export default function App() {
                             const hero = collection.heroImage || DEFAULT_HERO;
                             const collectionImages = collection.images || [];
                             return (
-                            <div key={collection.id} className={`p-3 rounded border ${collection.id === selectedCollectionId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"}`}>
+                            <div key={collection.id} className={`relative overflow-hidden p-3 rounded border ${collection.id === selectedCollectionId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"} flex flex-col justify-between h-48`}>
                               <button className="w-full text-left hover:opacity-80" onClick={() => handleSelectCollection(collection.id)}>
                                 <div className="flex gap-4">
-                                  <img src={hero} alt={collection.name} className="w-32 h-32 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(collectionImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
+                                  <img src={hero} alt={collection.name} className="w-24 h-24 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(collectionImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
                                   <div className="flex-1 flex items-start justify-between">
                                     <div className="flex-1">
                                       <p className="font-semibold">{collection.name}</p>
                                       <div className="flex gap-2 items-center mt-1">
                                         <span className="text-xs px-2 py-1 rounded bg-purple-900/50 border border-purple-700 text-purple-300">Collection</span>
                                       </div>
-                                      <p className="text-xs text-neutral-500 mt-1">Created {new Date(collection.createdAt).toLocaleDateString()}</p>
-                                      <p className="text-xs text-neutral-400 mt-0.5">Assets: {assetCount}</p>
-                                      <p className="text-xs text-green-400 font-semibold mt-0.5">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                                      {collection.description && <p className="text-xs text-neutral-300 mt-0.5">{collection.description}</p>}
                                     </div>
                                     <div className="text-right text-xs text-neutral-400 ml-4">
-                                      {collection.lastViewed && <p>Viewed {new Date(collection.lastViewed).toLocaleDateString()}</p>}
+                                      <p>Created {new Date(collection.createdAt).toLocaleDateString()}</p>
+                                      {collection.lastViewed && <p className="mt-0.5">Viewed {new Date(collection.lastViewed).toLocaleDateString()}</p>}
                                       {collection.lastEditedBy && <p className="mt-0.5">Edited by {collection.lastEditedBy}</p>}
+                                      <p className="mt-0.5">Manager: {collection.manager || `${currentUser?.firstName} ${currentUser?.lastName}`}</p>
+                                      <p className="mt-0.5">Assets: {assetCount}</p>
+                                      {collectionValue > 0 && <p className="mt-0.5 text-green-400 font-semibold">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
                                     </div>
                                   </div>
                                 </div>
@@ -1431,6 +1469,9 @@ export default function App() {
                                 <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Collection: ${collection.name}`); showAlert('Collection details copied to clipboard!'); }}>Share</button>
                                 <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={(e) => { e.stopPropagation(); handleDeleteCollection(collection); }}>Delete</button>
                               </div>
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="absolute right-2 bottom-2 h-8 w-8 opacity-100 pointer-events-none" fill="white" aria-hidden="true">
+                                <path d="M12 17a2 2 0 100-4 2 2 0 000 4zm6-7h-1V7a5 5 0 00-10 0v3H6a2 2 0 00-2 2v7a2 2 0 002 2h12a2 2 0 002-2v-7a2 2 0 00-2-2zm-8-3a3 3 0 016 0v3H10V7z" />
+                              </svg>
                             </div>
                             );
                           })}
@@ -1456,7 +1497,7 @@ export default function App() {
                   </div>
 
                   <div className="flex flex-wrap gap-2 text-sm">
-                    {!showAssetForm && (selectedCollection ? (
+                    {!(showAssetForm || showVaultForm || showCollectionForm) && (selectedCollection ? (
                       <>
                         <input className="px-3 py-2 rounded bg-neutral-950 border border-neutral-800 flex-1 min-w-[160px]" placeholder="Filter assets" value={assetFilter} onChange={(e) => setAssetFilter(e.target.value)} />
                         <select className="px-3 py-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={assetSort} onChange={(e) => setAssetSort(e.target.value)}>
@@ -1545,22 +1586,27 @@ export default function App() {
                           <option key={cat} value={cat}>{cat}</option>
                         ))}
                       </select>
-                      <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={3} placeholder="Description" maxLength={60} value={newAsset.description} onChange={(e) => setNewAsset((p) => ({ ...p, description: e.target.value }))} />
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400">$</span>
-                        <input 
-                          className="w-full p-2 pl-7 rounded bg-neutral-950 border border-neutral-800" 
-                          type="text" 
-                          placeholder="0.00" 
-                          value={formatCurrency(newAsset.value)} 
-                          onChange={(e) => {
-                            const cleaned = parseCurrency(e.target.value);
-                            if (cleaned === "" || !isNaN(parseFloat(cleaned))) {
-                              setNewAsset((p) => ({ ...p, value: cleaned }));
-                            }
-                          }} 
-                        />
-                      </div>
+                          <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={3} placeholder="Description" maxLength={60} value={newAsset.description} onChange={(e) => setNewAsset((p) => ({ ...p, description: e.target.value }))} />
+                          <input disabled className="w-full p-2 rounded bg-neutral-950 border border-neutral-800 mt-2 disabled:opacity-60 cursor-not-allowed" placeholder="Manager (optional)" value={newAsset.manager} onChange={(e) => setNewAsset((p) => ({ ...p, manager: e.target.value }))} />
+                          <div>
+                            <label className="text-sm text-neutral-400">Quantity</label>
+                            <input type="number" min={1} className="w-24 p-2 mt-1 rounded bg-neutral-950 border border-neutral-800" value={newAsset.quantity || 1} onChange={(e) => setNewAsset((p) => ({ ...p, quantity: e.target.value }))} />
+                          </div>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400">$</span>
+                            <input 
+                              className="w-full p-2 pl-7 rounded bg-neutral-950 border border-neutral-800" 
+                              type="text" 
+                              placeholder="0.00" 
+                              value={formatCurrency(newAsset.value)} 
+                              onChange={(e) => {
+                                const cleaned = parseCurrency(e.target.value);
+                                if (cleaned === "" || !isNaN(parseFloat(cleaned))) {
+                                  setNewAsset((p) => ({ ...p, value: cleaned }));
+                                }
+                              }} 
+                            />
+                          </div>
 
                       <div className="space-y-3">
                         <div className="flex flex-col items-start gap-1">
@@ -1619,24 +1665,25 @@ export default function App() {
                             const hero = collection.heroImage || DEFAULT_HERO;
                             const collectionImages = collection.images || [];
                             return (
-                            <div key={collection.id} className={`p-3 rounded border ${collection.id === selectedCollectionId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"}`}>
+                            <div key={collection.id} className={`relative overflow-hidden p-3 rounded border ${collection.id === selectedCollectionId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"} flex flex-col justify-between h-48`}>
                               <button className="w-full text-left hover:opacity-80" onClick={() => handleSelectCollection(collection.id)}>
                                 <div className="flex gap-4">
-                                  <img src={hero} alt={collection.name} className="w-32 h-32 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(collectionImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
+                                  <img src={hero} alt={collection.name} className="w-24 h-24 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(collectionImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
                                   <div className="flex-1 flex items-start justify-between">
                                     <div className="flex-1">
                                       <p className="font-semibold">{collection.name}</p>
                                       <div className="flex gap-2 items-center mt-1">
                                         <span className="text-xs px-2 py-1 rounded bg-purple-900/50 border border-purple-700 text-purple-300">Collection</span>
                                       </div>
-                                      <p className="text-xs text-neutral-500 mt-1">Created {new Date(collection.createdAt).toLocaleDateString()}</p>
                                       {collection.description && <p className="text-xs text-neutral-300 mt-0.5">{collection.description}</p>}
-                                      <p className="text-xs text-neutral-400 mt-0.5">Assets: {assetCount}</p>
-                                      <p className="text-xs text-green-400 font-semibold mt-0.5">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
                                     </div>
                                     <div className="text-right text-xs text-neutral-400 ml-4">
-                                      {collection.lastViewed && <p>Viewed {new Date(collection.lastViewed).toLocaleDateString()}</p>}
+                                      <p>Created {new Date(collection.createdAt).toLocaleDateString()}</p>
+                                      {collection.lastViewed && <p className="mt-0.5">Viewed {new Date(collection.lastViewed).toLocaleDateString()}</p>}
                                       {collection.lastEditedBy && <p className="mt-0.5">Edited by {collection.lastEditedBy}</p>}
+                                      <p className="mt-0.5">Manager: {collection.manager || `${currentUser?.firstName} ${currentUser?.lastName}`}</p>
+                                      <p className="mt-0.5">Assets: {assetCount}</p>
+                                      {collectionValue > 0 && <p className="mt-0.5 text-green-400 font-semibold">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
                                     </div>
                                   </div>
                                 </div>
@@ -1646,6 +1693,9 @@ export default function App() {
                                 <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Collection: ${collection.name}`); showAlert('Collection details copied to clipboard!'); }}>Share</button>
                                 <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={(e) => { e.stopPropagation(); handleDeleteCollection(collection); }}>Delete</button>
                               </div>
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="absolute right-2 bottom-2 h-8 w-8 opacity-100 pointer-events-none" fill="white" aria-hidden="true">
+                                <path d="M12 17a2 2 0 100-4 2 2 0 000 4zm6-7h-1V7a5 5 0 00-10 0v3H6a2 2 0 00-2 2v7a2 2 0 002 2h12a2 2 0 002-2v-7a2 2 0 00-2-2zm-8-3a3 3 0 016 0v3H10V7z" />
+                              </svg>
                             </div>
                             );
                           })}
@@ -1661,9 +1711,9 @@ export default function App() {
                             const hero = asset.heroImage || normalized.images[0] || DEFAULT_HERO;
 
                             return (
-                              <div key={asset.id} className="p-3 rounded border border-neutral-800 bg-neutral-950">
+                              <div key={asset.id} className="relative overflow-hidden p-3 rounded border border-neutral-800 bg-neutral-950 flex flex-col justify-between h-48">
                                 <div className="flex gap-4">
-                                  <img src={hero} alt={asset.title} className="w-32 h-32 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={() => openImageViewer(normalized.images, 0)} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
+                                  <img src={hero} alt={asset.title} className="w-24 h-24 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={() => openImageViewer(normalized.images, 0)} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
                                   <div className="flex-1 flex items-start justify-between">
                                     <div className="flex-1">
                                       <p className="font-semibold">{asset.title}</p>
@@ -1672,12 +1722,14 @@ export default function App() {
                                       </div>
                                       <p className="text-xs text-neutral-400 mt-1">{asset.type || "No Type"} • {asset.category || "Uncategorized"}</p>
                                       {asset.description && <p className="text-xs text-neutral-300 mt-0.5">{asset.description}</p>}
-                                      <p className="text-xs text-neutral-500 mt-1">Created {new Date(asset.createdAt).toLocaleDateString()}</p>
-                                      <p className="text-xs text-green-400 font-semibold mt-0.5">Value: ${(parseFloat(asset.value) || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
                                     </div>
                                     <div className="text-right text-xs text-neutral-400 ml-4">
-                                      {asset.lastViewed && <p>Viewed {new Date(asset.lastViewed).toLocaleDateString()}</p>}
+                                      <p>Created {new Date(asset.createdAt).toLocaleDateString()}</p>
+                                      {asset.lastViewed && <p className="mt-0.5">Viewed {new Date(asset.lastViewed).toLocaleDateString()}</p>}
                                       {asset.lastEditedBy && <p className="mt-0.5">Edited by {asset.lastEditedBy}</p>}
+                                      <p className="mt-0.5">Manager: {asset.manager || `${currentUser?.firstName} ${currentUser?.lastName}`}</p>
+                                      <p className="mt-0.5 text-xs text-neutral-300 text-right">Quantity: {asset.quantity || 1}</p>
+                                      {((parseFloat(asset.value) || 0) > 0) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${(parseFloat(asset.value) || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
                                     </div>
                                   </div>
                                 </div>
@@ -1686,6 +1738,9 @@ export default function App() {
                                   <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={() => { navigator.clipboard.writeText(`Asset: ${asset.title}\nCategory: ${asset.category || 'Uncategorized'}\nDescription: ${asset.description || 'No description'}`); showAlert('Asset details copied to clipboard!'); }}>Share</button>
                                   <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={() => handleDeleteAsset(asset.id)}>Delete</button>
                                 </div>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="absolute right-2 bottom-2 h-8 w-8 opacity-100 pointer-events-none" fill="white" aria-hidden="true">
+                                  <path d="M12 17a2 2 0 100-4 2 2 0 000 4zm6-7h-1V7a5 5 0 00-10 0v3H6a2 2 0 00-2 2v7a2 2 0 002 2h12a2 2 0 002-2v-7a2 2 0 00-2-2zm-8-3a3 3 0 016 0v3H10V7z" />
+                                </svg>
                               </div>
                             );
                           })}
@@ -1716,7 +1771,7 @@ export default function App() {
             </div>
 
             <div className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-3">
                 <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Title" maxLength={30} value={viewAssetDraft.title} onChange={(e) => setViewAssetDraft((p) => ({ ...p, title: e.target.value }))} />
                 <select className="w-full p-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={viewAssetDraft.type} onChange={(e) => setViewAssetDraft((p) => ({ ...p, type: e.target.value, category: "" }))}>
                   <option value="">Select Type</option>
@@ -1738,11 +1793,15 @@ export default function App() {
               </select>
               <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={4} placeholder="Description" maxLength={60} value={viewAssetDraft.description} onChange={(e) => setViewAssetDraft((p) => ({ ...p, description: e.target.value }))} />
               <div>
+                <p className="text-sm text-neutral-400 mb-2">Quantity</p>
+                <input type="number" min={1} className="w-24 p-2 rounded bg-neutral-950 border border-neutral-800" value={viewAssetDraft.quantity || 1} onChange={(e) => setViewAssetDraft((p) => ({ ...p, quantity: e.target.value }))} />
+              </div>
+              <div>
                 <p className="text-sm text-neutral-400 mb-2">Value</p>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400">$</span>
                   <input 
-                    className="w-full p-2 pl-7 rounded bg-neutral-950 border border-neutral-800" 
+                    className="w-48 p-2 pl-7 rounded bg-neutral-950 border border-neutral-800" 
                     type="text" 
                     placeholder="0.00" 
                     value={formatCurrency(viewAssetDraft.value)} 
@@ -1852,6 +1911,44 @@ export default function App() {
                   value={editDialog.description}
                   onChange={(e) => setEditDialog((prev) => ({ ...prev, description: e.target.value }))}
                 />
+              </div>
+              <div>
+                <label className="text-sm text-neutral-400">Manager</label>
+                <input disabled className="w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800 disabled:opacity-60 cursor-not-allowed" placeholder="Manager (optional)" value={editDialog.manager} onChange={(e) => setEditDialog((prev) => ({ ...prev, manager: e.target.value }))} />
+              </div>
+              <div className="space-y-3">
+                <div className="flex flex-col items-start gap-1">
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    className="text-sm file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                    onChange={async (e) => { await handleUploadImages(e.target.files, setEditDialog); e.target.value = ""; }}
+                  />
+                  <div className="pt-1">
+                    <p className="text-sm text-neutral-400">Images (max 4)</p>
+                  </div>
+                </div>
+
+                {editDialog.images?.length > 0 && (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {editDialog.images.map((img, idx) => {
+                      const isHero = editDialog.heroImage === img;
+                      return (
+                        <div key={idx} className="relative border border-neutral-800 rounded overflow-hidden">
+                          <img src={img} alt={`Upload ${idx + 1}`} className="w-full h-28 object-cover" />
+                          <div className="absolute top-2 right-2 flex gap-1 items-center">
+                            {!isHero && (
+                              <button type="button" title="Set as hero" className="px-2 py-1 text-xs rounded bg-neutral-800 border border-neutral-700 hover:bg-neutral-700" onClick={() => handleSetHero(img, setEditDialog)}>☆</button>
+                            )}
+                            {isHero && <span className="px-2 py-1 text-xs rounded bg-neutral-900 text-amber-400">★</span>}
+                            <button type="button" title="Delete image" aria-label={`Delete image ${idx+1}`} className="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700" onClick={() => handleRemoveImage(idx, setEditDialog)}>Delete</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
               <div className="flex gap-3 justify-end">
                 <button className="px-4 py-2 rounded border border-neutral-700 hover:bg-neutral-800" onClick={closeEditDialog}>Cancel</button>
