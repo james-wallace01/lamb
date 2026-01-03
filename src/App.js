@@ -11,7 +11,6 @@ const VIEW_TO_PATH = {
   login: "/login",
   register: "/sign-up",
   vault: "/vaults",
-  sharedPicker: "/shared-vaults",
   profile: "/profile",
 };
 
@@ -23,7 +22,6 @@ const PATH_TO_VIEW = {
   "/sign-up": "register",
   "/register": "register",
   "/vaults": "vault",
-  "/shared-vaults": "sharedPicker",
   "/profile": "profile",
 };
 
@@ -188,7 +186,7 @@ export default function App() {
   const [confirmDialog, setConfirmDialog] = useState({ show: false, title: "", message: "", onConfirm: null });
   const [moveDialog, setMoveDialog] = useState({ show: false, assetId: null, targetVaultId: null, targetCollectionId: null });
   const [collectionMoveDialog, setCollectionMoveDialog] = useState({ show: false, collectionId: null, targetVaultId: null });
-  const [shareDialog, setShareDialog] = useState({ show: false, vaultId: null, username: "", permission: "view" });
+  const [shareDialog, setShareDialog] = useState({ show: false, vaultId: null, username: "", permission: "view", includeContents: false });
   const [showShareSuggestions, setShowShareSuggestions] = useState(false);
   const [viewAsset, setViewAsset] = useState(null);
   const [viewAssetDraft, setViewAssetDraft] = useState(initialAssetState);
@@ -196,11 +194,11 @@ export default function App() {
   const [editDialog, setEditDialog] = useState({ show: false, type: null, item: null, name: "", description: "", manager: "", images: [], heroImage: "" });
 
   const openShareDialog = (vault) => {
-    setShareDialog({ show: true, vaultId: vault.id, username: "", permission: "view" });
+    setShareDialog({ show: true, vaultId: vault.id, username: "", permission: "view", includeContents: false });
     setShowShareSuggestions(false);
   };
 
-  const closeShareDialog = () => { setShareDialog({ show: false, vaultId: null, username: "", permission: "view" }); setShowShareSuggestions(false); };
+  const closeShareDialog = () => { setShareDialog({ show: false, vaultId: null, username: "", permission: "view", includeContents: false }); setShowShareSuggestions(false); };
 
   const handleShareConfirm = () => {
     if (!shareDialog.username) return showAlert("Enter a username to share with.");
@@ -210,7 +208,7 @@ export default function App() {
       if (v.id !== shareDialog.vaultId) return v;
       const existing = v.sharedWith || [];
       if (existing.find(s => s.userId === user.id)) return v;
-      return { ...v, sharedWith: [...existing, { userId: user.id, username: user.username, permission: shareDialog.permission }] };
+      return { ...v, sharedWith: [...existing, { userId: user.id, username: user.username, permission: shareDialog.permission, includeContents: !!shareDialog.includeContents }] };
     }));
     showAlert(`Shared with ${user.username}`);
     // Keep the dialog open after sharing; allow further shares or edits.
@@ -334,6 +332,57 @@ export default function App() {
     }, 160);
   };
 
+  // Permission helpers: interpret permission strings (single or combined) and
+  // check vault-level permissions for the current user.
+  const permissionIncludes = (perm, verb) => {
+    if (!perm) return false;
+    if (perm === "owner") return true;
+    try {
+      const tokens = String(perm).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+      return tokens.includes(verb);
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const getPermissionForVault = (vault) => {
+    if (!vault || !currentUser) return "";
+    if (vault.ownerId === currentUser.id) return "owner";
+    const shared = vault.sharedWith || [];
+    const entry = shared.find(s => s.userId === currentUser.id || s.username === currentUser.username || s.email === currentUser.email);
+    return entry ? (entry.permission || "") : "";
+  };
+
+  const canCreateInVault = (vault) => {
+    if (!vault) return false;
+    const p = getPermissionForVault(vault);
+    return p === "owner" || permissionIncludes(p, "create");
+  };
+
+  const canEditInVault = (vault) => {
+    if (!vault) return false;
+    const p = getPermissionForVault(vault);
+    return p === "owner" || permissionIncludes(p, "edit");
+  };
+
+  const canMoveInVault = (vault) => {
+    if (!vault) return false;
+    const p = getPermissionForVault(vault);
+    return p === "owner" || permissionIncludes(p, "move");
+  };
+
+  const canDeleteInVault = (vault) => {
+    if (!vault) return false;
+    const p = getPermissionForVault(vault);
+    return p === "owner" || permissionIncludes(p, "delete");
+  };
+
+  const getVaultForCollection = (collection) => (collection ? vaults.find(v => v.id === collection.vaultId) || null : null);
+  const getVaultForAsset = (asset) => {
+    const col = asset ? collections.find(c => c.id === asset.collectionId) : null;
+    return col ? vaults.find(v => v.id === col.vaultId) || null : null;
+  };
+
   const skipTutorial = () => {
     if (currentUser) {
       try { localStorage.setItem(`tutorialShown_${currentUser.id}`, "true"); } catch (e) {}
@@ -431,6 +480,14 @@ export default function App() {
       return;
     }
     if (editDialog.type === "vault" && editDialog.item) {
+      // enforce vault-level edit permission
+      const vault = editDialog.item;
+      const permOk = (vault.ownerId === currentUser?.id) || canEditInVault(vault);
+      if (!permOk) {
+        showAlert("You don't have permission to edit this vault.");
+        closeEditDialog();
+        return;
+      }
       const description = (editDialog.description || "").trim();
       const manager = (editDialog.manager || "").trim();
       const images = trimToFour(editDialog.images || []);
@@ -441,6 +498,14 @@ export default function App() {
       }
     }
     if (editDialog.type === "collection" && editDialog.item) {
+      // enforce collection-level edit permission via vault
+      const vault = getVaultForCollection(editDialog.item);
+      const permOk = (editDialog.item.ownerId === currentUser?.id) || (vault && (vault.ownerId === currentUser?.id || canEditInVault(vault)));
+      if (!permOk) {
+        showAlert("You don't have permission to edit this collection.");
+        closeEditDialog();
+        return;
+      }
       const description = (editDialog.description || "").trim();
       const manager = (editDialog.manager || "").trim();
       const images = trimToFour(editDialog.images || []);
@@ -461,10 +526,9 @@ export default function App() {
   const navigateTo = (nextView, { replace = false } = {}) => {
     // if user asked for the shared shortcut, open the shared-owner picker first
     if (nextView === "shared") {
-      try { setPreviousView(view); } catch (e) {}
-      // clear any previously-selected owner when opening the picker
+      setSharedMode(false);
       setSharedOwnerId(null);
-      const nextPath = viewToPath("sharedPicker");
+      const nextPath = "/shared-vaults";
       if (replace) {
         window.history.replaceState(null, "", nextPath);
       } else {
@@ -472,10 +536,8 @@ export default function App() {
       }
       setView("sharedPicker");
       return;
-    }
-
-    // leaving the vault view clears shared mode
-    if (nextView !== "vault") {
+    } else if (nextView !== "vault") {
+      // leaving the vault view clears shared mode
       setSharedMode(false);
       setSharedOwnerId(null);
     }
@@ -941,6 +1003,13 @@ export default function App() {
 
   const handleUpdateViewAsset = async () => {
     if (!viewAsset) return false;
+    // enforce asset edit permission via vault
+    const vault = getVaultForAsset(viewAsset);
+    const permOk = (viewAsset.ownerId === currentUser?.id) || (vault && (vault.ownerId === currentUser?.id || canEditInVault(vault)));
+    if (!permOk) {
+      showAlert("You don't have permission to edit this asset.");
+      return false;
+    }
     if (!viewAssetDraft.title.trim()) {
       showAlert("Asset title is required.");
       return false;
@@ -1223,6 +1292,18 @@ export default function App() {
   });
   const selectedCollection = userCollections.find((c) => c.id === selectedCollectionId) || null;
 
+  const userAssets = currentUser && selectedCollection ? assets.filter((a) => a.ownerId === currentUser.id && a.collectionId === selectedCollection.id) : [];
+  const filteredAssets = userAssets.filter((a) => {
+    const term = normalizeFilter(assetFilter);
+    if (!term) return true;
+    return (a.title || "").toLowerCase().includes(term) || (a.category || "").toLowerCase().includes(term);
+  });
+  const sortedAssets = [...filteredAssets].sort((a, b) => {
+    if (assetSort === "name") return (a.title || "").localeCompare(b.title || "");
+    if (assetSort === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
+    return new Date(b.createdAt) - new Date(a.createdAt); // default newest
+  });
+
   // Datasets for Shared mode (items shared with current user)
   const sharedVaultsList = currentUser ? vaults.filter(v => (v.sharedWith || []).some(s => s.userId === currentUser.id) && (!sharedOwnerId || v.ownerId === sharedOwnerId)) : [];
   const filteredSharedVaults = sharedVaultsList.filter((v) => v.name.toLowerCase().includes(normalizeFilter(vaultFilter)));
@@ -1243,22 +1324,15 @@ export default function App() {
   });
 
   const selectedSharedVault = sharedVaultsList.find((v) => v.id === selectedVaultId) || null;
-
-  // Effective selected collection depending on shared mode (defined after shared lists)
   const selectedSharedCollection = sharedCollectionsList.find((c) => c.id === selectedCollectionId) || null;
-  const effectiveSelectedCollection = sharedMode ? selectedSharedCollection : selectedCollection;
 
-  // Assets for the currently selected collection (owner filtered when not in shared mode)
-  const assetsForSelectedCollection = effectiveSelectedCollection ? assets.filter((a) => a.collectionId === effectiveSelectedCollection.id) : [];
-  const userAssetsForSelected = !sharedMode && currentUser && effectiveSelectedCollection ? assetsForSelectedCollection.filter((a) => a.ownerId === currentUser.id) : [];
-  const sharedAssetsForSelected = sharedMode && currentUser && effectiveSelectedCollection ? assetsForSelectedCollection : [];
-
-  const filteredAssets = (sharedMode ? sharedAssetsForSelected : userAssetsForSelected).filter((a) => {
+  const sharedAssetsList = currentUser && selectedSharedCollection ? assets.filter(a => a.collectionId === selectedSharedCollection.id && sharedCollectionsList.some(sc => sc.id === a.collectionId)) : [];
+  const filteredSharedAssets = sharedAssetsList.filter((a) => {
     const term = normalizeFilter(assetFilter);
     if (!term) return true;
     return (a.title || "").toLowerCase().includes(term) || (a.category || "").toLowerCase().includes(term);
   });
-  const sortedAssets = [...filteredAssets].sort((a, b) => {
+  const sortedSharedAssets = [...filteredSharedAssets].sort((a, b) => {
     if (assetSort === "name") return (a.title || "").localeCompare(b.title || "");
     if (assetSort === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
     return new Date(b.createdAt) - new Date(a.createdAt);
@@ -1269,7 +1343,7 @@ export default function App() {
   const displaySelectedVault = sharedMode ? selectedSharedVault : selectedVault;
   const displaySortedCollections = sharedMode ? sortedSharedCollections : sortedCollections;
   const displaySelectedCollection = sharedMode ? selectedSharedCollection : selectedCollection;
-  const displaySortedAssets = sortedAssets;
+  const displaySortedAssets = sharedMode ? sortedSharedAssets : sortedAssets;
 
   const isAuthView = !isLoggedIn && (view === "login" || view === "register");
   const isLanding = !isLoggedIn && view === "landing";
@@ -1297,6 +1371,20 @@ export default function App() {
       ))}
     </div>
   );
+
+  // compute permission booleans used by modals
+  const assetCanEdit = viewAsset ? ((viewAsset.ownerId === currentUser?.id) || (getVaultForAsset(viewAsset) && (getVaultForAsset(viewAsset).ownerId === currentUser?.id || canEditInVault(getVaultForAsset(viewAsset))))) : true;
+  const editCanEdit = (editDialog && editDialog.show && editDialog.item) ? (() => {
+    if (editDialog.type === "vault") {
+      const vault = editDialog.item;
+      return (vault.ownerId === currentUser?.id) || canEditInVault(vault);
+    }
+    if (editDialog.type === "collection") {
+      const vault = getVaultForCollection(editDialog.item);
+      return (editDialog.item.ownerId === currentUser?.id) || (vault && (vault.ownerId === currentUser?.id || canEditInVault(vault)));
+    }
+    return true;
+  })() : true;
 
   return (
     <div className="min-h-screen bg-neutral-950 text-white">
@@ -1367,52 +1455,6 @@ export default function App() {
         </header>
       )}
 
-      {view === "sharedPicker" && (
-        <div className="max-w-6xl mx-auto px-4 py-10">
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-semibold">Shared Vaults</h1>
-                <p className="text-sm text-neutral-400">Choose a user who has shared vaults with you.</p>
-              </div>
-            </div>
-            <div className="mt-3">
-              <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => goBack()}>← Back</button>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              {(() => {
-                if (!currentUser) return <p className="text-neutral-500">Please log in.</p>;
-                const owners = users.filter(u => vaults.some(v => v.ownerId === u.id && (v.sharedWith || []).some(s => s.userId === currentUser.id)));
-                if (!owners || owners.length === 0) {
-                  return <div className="p-4 rounded border border-neutral-800 bg-neutral-950 text-neutral-400">No users have shared vaults with you.</div>;
-                }
-                return owners.map((owner) => {
-                  const ownerVaults = vaults.filter(v => v.ownerId === owner.id && (v.sharedWith || []).some(s => s.userId === currentUser.id));
-                  return (
-                    <div key={owner.id} className="p-4 rounded border border-neutral-800 bg-neutral-950 flex items-center justify-between">
-                      <div>
-                        <div className="font-medium">{owner.username}</div>
-                        <div className="text-xs text-neutral-400">{ownerVaults.length} vault(s) shared</div>
-                      </div>
-                      <div className="flex gap-2">
-                        <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => {
-                          setSharedOwnerId(owner.id);
-                          setSharedMode(true);
-                          setSelectedVaultId(null);
-                          setSelectedCollectionId(null);
-                          setView("vault");
-                        }}>View</button>
-                      </div>
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {view !== "sharedPicker" && (
       <main className={`${shouldCenter ? "flex items-center justify-center min-h-screen" : ""}`}>
         <div className={`${shouldCenter ? "max-w-3xl w-full mx-auto" : "max-w-6xl mx-auto"} px-4 py-10`}>
           {shouldCenter ? (
@@ -1642,6 +1684,36 @@ export default function App() {
                 </button>
               </div>
             </div>
+          ) : view === "sharedPicker" && currentUser ? (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-2xl font-semibold">Shared Vaults — Choose Owner</h1>
+                  <p className="text-sm text-neutral-400">Select the user whose shared vaults you want to browse.</p>
+                </div>
+              </div>
+              <div className="mt-3">
+                <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => goBack()}>← Back</button>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                {(() => {
+                  const ownerIds = Array.from(new Set(vaults.filter(v => (v.sharedWith || []).some(s => s.userId === currentUser.id)).map(v => v.ownerId)));
+                  if (ownerIds.length === 0) return (<p className="text-neutral-500">No users have shared vaults with you.</p>);
+                  const owners = ownerIds.map(id => users.find(u => u.id === id)).filter(Boolean);
+                  return owners.map((owner) => (
+                    <div key={owner.id} className="p-4 rounded border border-neutral-800 bg-neutral-950/40 flex items-center justify-between">
+                      <div>
+                        <div className="font-medium">{owner.firstName} {owner.lastName}</div>
+                        <div className="text-xs text-neutral-400">{owner.email || owner.username}</div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button className="px-3 py-2 rounded bg-blue-600 text-white" onClick={() => { setSharedOwnerId(owner.id); setSharedMode(true); navigateTo("vault"); }}>Open</button>
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </div>
           ) : view === "shared" && currentUser ? (
             <div className="space-y-6">
               <div className="flex items-center justify-between">
@@ -1753,7 +1825,8 @@ export default function App() {
                     </div>
                     <div className="flex items-center gap-2 ml-4">
                       <button data-tut="create-button" className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 w-10 h-10 flex items-center justify-center" onClick={() => {
-                        if (selectedCollection) {
+                        const activeCollection = displaySelectedCollection;
+                        if (activeCollection) {
                           setShowCollectionForm((v) => !v);
                           setShowVaultForm(false);
                         } else {
@@ -1923,8 +1996,19 @@ export default function App() {
                               </button>
                               <div className="flex gap-2 mt-2">
                                 <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={(e) => { e.stopPropagation(); openEditVault(vault); }}>View / Edit</button>
-                                <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); openShareDialog(vault); }}>Share</button>
-                                <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={(e) => { e.stopPropagation(); handleDeleteVault(vault); }}>Delete</button>
+                                {!sharedMode && (
+                                  <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); openShareDialog(vault); }}>Share</button>
+                                )}
+                                {(() => {
+                                  const canDel = (vault.ownerId === currentUser?.id) || canDeleteInVault(vault);
+                                  return (
+                                    <button
+                                      className={`px-2 py-0.5 rounded text-xs ${canDel ? "bg-red-700 text-white hover:bg-red-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
+                                      onClick={(e) => { e.stopPropagation(); if (!canDel) return; handleDeleteVault(vault); }}
+                                      title={canDel ? "" : "Delete permission required on the vault"}
+                                    >Delete</button>
+                                  );
+                                })()}
                               </div>
                               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="absolute right-2 bottom-2 h-8 w-8 opacity-100 pointer-events-none" fill="white" aria-hidden="true">
                                 <path d="M12 17a2 2 0 100-4 2 2 0 000 4zm6-7h-1V7a5 5 0 00-10 0v3H6a2 2 0 00-2 2v7a2 2 0 002 2h12a2 2 0 002-2v-7a2 2 0 00-2-2zm-8-3a3 3 0 016 0v3H10V7z" />
@@ -1934,7 +2018,7 @@ export default function App() {
                           })}
                         </div>
                       )
-                    ) : (
+                      ) : (
                       displaySortedCollections.length === 0 ? (
                         <p className="text-neutral-500">No collections yet. Add one to start.</p>
                       ) : (
@@ -1970,10 +2054,37 @@ export default function App() {
                                 </div>
                               </button>
                               <div className="flex gap-2 mt-2">
-                                <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={(e) => { e.stopPropagation(); openEditCollection(collection); }}>View / Edit</button>
-                                <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Collection: ${collection.name}`); showAlert('Collection details copied to clipboard!'); }}>Share</button>
-                                <button className="px-2 py-0.5 bg-yellow-600 text-white rounded text-xs hover:bg-yellow-700" onClick={(e) => { e.stopPropagation(); openCollectionMoveDialog(collection); }}>Move</button>
-                                <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={(e) => { e.stopPropagation(); handleDeleteCollection(collection); }}>Delete</button>
+                                {(() => {
+                                  const vault = getVaultForCollection(collection) || displaySelectedVault;
+                                  const canEdit = canEditInVault(vault) || (collection.ownerId === currentUser?.id);
+                                  const canDelete = canDeleteInVault(vault) || (collection.ownerId === currentUser?.id);
+                                  const isOwner = vault && vault.ownerId === currentUser?.id;
+                                  return (
+                                    <>
+                                      <button
+                                        className={`px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800`}
+                                        onClick={(e) => { e.stopPropagation(); openEditCollection(collection); }}
+                                      >View / Edit</button>
+                                      {!sharedMode && (
+                                        <button
+                                          className={`px-2 py-0.5 rounded text-xs ${isOwner ? "bg-green-700 text-white hover:bg-green-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
+                                          onClick={(e) => { e.stopPropagation(); if (!isOwner) return; navigator.clipboard.writeText(`Collection: ${collection.name}`); showAlert('Collection details copied to clipboard!'); }}
+                                          title={isOwner ? "" : "Only the vault owner can change sharing"}
+                                        >Share</button>
+                                      )}
+                                      <button
+                                        className={`px-2 py-0.5 rounded text-xs ${canMoveInVault(vault) ? "bg-yellow-600 text-white hover:bg-yellow-700" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
+                                        onClick={(e) => { e.stopPropagation(); if (!canMoveInVault(vault)) return; openCollectionMoveDialog(collection); }}
+                                        title={canMoveInVault(vault) ? "" : "Move permission required on the vault"}
+                                      >Move</button>
+                                      <button
+                                        className={`px-2 py-0.5 rounded text-xs ${canDelete ? "bg-red-700 text-white hover:bg-red-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
+                                        onClick={(e) => { e.stopPropagation(); if (!canDelete) return; handleDeleteCollection(collection); }}
+                                        title={canDelete ? "" : "Delete permission required on the vault"}
+                                      >Delete</button>
+                                    </>
+                                  );
+                                })()}
                               </div>
                               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="absolute right-2 bottom-2 h-8 w-8 opacity-100 pointer-events-none" fill="white" aria-hidden="true">
                                 <path d="M12 17a2 2 0 100-4 2 2 0 000 4zm6-7h-1V7a5 5 0 00-10 0v3H6a2 2 0 00-2 2v7a2 2 0 002 2h12a2 2 0 002-2v-7a2 2 0 00-2-2zm-8-3a3 3 0 016 0v3H10V7z" />
@@ -1988,15 +2099,34 @@ export default function App() {
                 </div>
 
                 <div className="p-4 border border-neutral-900 rounded-xl bg-neutral-900/50 space-y-4 min-h-[500px] transition-all duration-300">
-                      <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between">
                       <div data-tut="assets-panel">
                         <p className="text-lg font-semibold">{displaySelectedCollection ? "Assets" : "Collections"}</p>
                         <h3 className="text-sm text-neutral-400">{displaySelectedCollection ? displaySelectedCollection.name : (displaySelectedVault ? displaySelectedVault.name : "Organize within a vault")}</h3>
                       </div>
                     {displaySelectedCollection ? (
-                      <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 w-10 h-10 flex items-center justify-center" onClick={() => { setShowAssetForm((v) => !v); setShowVaultForm(false); setShowCollectionForm(false); }}>+</button>
+                      <button
+                        className={`px-3 py-2 rounded w-10 h-10 flex items-center justify-center ${canCreateInVault(getVaultForCollection(displaySelectedCollection || selectedCollection) || displaySelectedVault) ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-600/40 cursor-not-allowed"}`}
+                        disabled={!canCreateInVault(getVaultForCollection(displaySelectedCollection || selectedCollection) || displaySelectedVault)}
+                        onClick={(e) => {
+                          const vault = getVaultForCollection(displaySelectedCollection || selectedCollection) || displaySelectedVault;
+                          if (!canCreateInVault(vault)) { e.stopPropagation(); return; }
+                          setShowAssetForm((v) => !v); setShowVaultForm(false); setShowCollectionForm(false);
+                        }}
+                        title={canCreateInVault(getVaultForCollection(displaySelectedCollection || selectedCollection) || displaySelectedVault) ? "" : "Create permission required on the vault"}
+                      >+
+                      </button>
                     ) : selectedVault ? (
-                      <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 w-10 h-10 flex items-center justify-center" onClick={() => { setShowCollectionForm((v) => !v); setShowVaultForm(false); setShowAssetForm(false); }}>+</button>
+                      <button
+                        className={`px-3 py-2 rounded w-10 h-10 flex items-center justify-center ${canCreateInVault(displaySelectedVault) ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-600/40 cursor-not-allowed"}`}
+                        disabled={!canCreateInVault(displaySelectedVault)}
+                        onClick={(e) => {
+                          if (!canCreateInVault(displaySelectedVault)) { e.stopPropagation(); return; }
+                          setShowCollectionForm((v) => !v); setShowVaultForm(false); setShowAssetForm(false);
+                        }}
+                        title={canCreateInVault(displaySelectedVault) ? "" : "Create permission required on the vault"}
+                      >+
+                      </button>
                     ) : (
                       <button className="px-3 py-2 rounded bg-blue-600/40 cursor-not-allowed w-10 h-10 flex items-center justify-center" disabled>+</button>
                     )}
@@ -2195,10 +2325,37 @@ export default function App() {
                                 </div>
                               </button>
                               <div className="flex gap-2 mt-2">
-                                <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={(e) => { e.stopPropagation(); openEditCollection(collection); }}>View / Edit</button>
-                                <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Collection: ${collection.name}`); showAlert('Collection details copied to clipboard!'); }}>Share</button>
-                                <button className="px-2 py-0.5 bg-yellow-600 text-white rounded text-xs hover:bg-yellow-700" onClick={(e) => { e.stopPropagation(); openCollectionMoveDialog(collection); }}>Move</button>
-                                <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={(e) => { e.stopPropagation(); handleDeleteCollection(collection); }}>Delete</button>
+                                {(() => {
+                                  const vault = getVaultForCollection(collection) || displaySelectedVault;
+                                  const canEdit = canEditInVault(vault) || (collection.ownerId === currentUser?.id);
+                                  const canDelete = canDeleteInVault(vault) || (collection.ownerId === currentUser?.id);
+                                  const isOwner = vault && vault.ownerId === currentUser?.id;
+                                  return (
+                                    <>
+                                      <button
+                                        className={`px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800`}
+                                        onClick={(e) => { e.stopPropagation(); openEditCollection(collection); }}
+                                      >View / Edit</button>
+                                      {!sharedMode && (
+                                        <button
+                                          className={`px-2 py-0.5 rounded text-xs ${isOwner ? "bg-green-700 text-white hover:bg-green-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
+                                          onClick={(e) => { e.stopPropagation(); if (!isOwner) return; navigator.clipboard.writeText(`Collection: ${collection.name}`); showAlert('Collection details copied to clipboard!'); }}
+                                          title={isOwner ? "" : "Only the vault owner can change sharing"}
+                                        >Share</button>
+                                      )}
+                                      <button
+                                        className={`px-2 py-0.5 rounded text-xs ${canEdit ? "bg-yellow-600 text-white hover:bg-yellow-700" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
+                                        onClick={(e) => { e.stopPropagation(); if (!canEdit) return; openCollectionMoveDialog(collection); }}
+                                        title={canEdit ? "" : "Edit permission required on the vault"}
+                                      >Move</button>
+                                      <button
+                                        className={`px-2 py-0.5 rounded text-xs ${canDelete ? "bg-red-700 text-white hover:bg-red-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
+                                        onClick={(e) => { e.stopPropagation(); if (!canDelete) return; handleDeleteCollection(collection); }}
+                                        title={canDelete ? "" : "Delete permission required on the vault"}
+                                      >Delete</button>
+                                    </>
+                                  );
+                                })()}
                               </div>
                               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="absolute right-2 bottom-2 h-8 w-8 opacity-100 pointer-events-none" fill="white" aria-hidden="true">
                                 <path d="M12 17a2 2 0 100-4 2 2 0 000 4zm6-7h-1V7a5 5 0 00-10 0v3H6a2 2 0 00-2 2v7a2 2 0 002 2h12a2 2 0 002-2v-7a2 2 0 00-2-2zm-8-3a3 3 0 016 0v3H10V7z" />
@@ -2208,7 +2365,7 @@ export default function App() {
                           })}
                         </div>
                       )
-                    ) : (
+                      ) : (
                       displaySortedAssets.length === 0 ? (
                         <div className="p-4 border border-neutral-800 rounded bg-neutral-900 text-neutral-400">No assets in this collection.</div>
                       ) : (
@@ -2241,10 +2398,37 @@ export default function App() {
                                   </div>
                                 </div>
                                 <div className="flex gap-2 mt-2">
-                                  <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={() => openViewAsset(asset)}>View / Edit</button>
-                                  <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={() => { navigator.clipboard.writeText(`Asset: ${asset.title}\nCategory: ${asset.category || 'Uncategorized'}\nDescription: ${asset.description || 'No description'}`); showAlert('Asset details copied to clipboard!'); }}>Share</button>
-                                  <button className="px-2 py-0.5 bg-yellow-600 text-white rounded text-xs hover:bg-yellow-700" onClick={(e) => { e.stopPropagation(); openMoveDialog(asset); }}>Move</button>
-                                  <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={() => handleDeleteAsset(asset.id)}>Delete</button>
+                                  {(() => {
+                                    const vault = getVaultForAsset(asset) || getVaultForCollection(displaySelectedCollection) || displaySelectedVault;
+                                    const canEdit = canEditInVault(vault) || (asset.ownerId === currentUser?.id);
+                                    const canDelete = canDeleteInVault(vault) || (asset.ownerId === currentUser?.id);
+                                    const isOwner = vault && vault.ownerId === currentUser?.id;
+                                    return (
+                                      <>
+                                        <button
+                                          className={`px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800`}
+                                          onClick={() => { openViewAsset(asset); }}
+                                        >View / Edit</button>
+                                        {!sharedMode && (
+                                          <button
+                                            className={`px-2 py-0.5 rounded text-xs ${isOwner ? "bg-green-700 text-white hover:bg-green-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
+                                            onClick={() => { if (!isOwner) return; navigator.clipboard.writeText(`Asset: ${asset.title}\nCategory: ${asset.category || 'Uncategorized'}\nDescription: ${asset.description || 'No description'}`); showAlert('Asset details copied to clipboard!'); }}
+                                            title={isOwner ? "" : "Only the vault owner can change sharing"}
+                                          >Share</button>
+                                        )}
+                                        <button
+                                          className={`px-2 py-0.5 rounded text-xs ${canMoveInVault(vault) ? "bg-yellow-600 text-white hover:bg-yellow-700" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
+                                          onClick={(e) => { e.stopPropagation(); if (!canMoveInVault(vault)) return; openMoveDialog(asset); }}
+                                          title={canMoveInVault(vault) ? "" : "Move permission required on the vault"}
+                                        >Move</button>
+                                        <button
+                                          className={`px-2 py-0.5 rounded text-xs ${canDelete ? "bg-red-700 text-white hover:bg-red-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
+                                          onClick={() => { if (!canDelete) return; handleDeleteAsset(asset.id); }}
+                                          title={canDelete ? "" : "Delete permission required on the vault"}
+                                        >Delete</button>
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="absolute right-2 bottom-2 h-8 w-8 opacity-100 pointer-events-none" fill="white" aria-hidden="true">
                                   <path d="M12 17a2 2 0 100-4 2 2 0 000 4zm6-7h-1V7a5 5 0 00-10 0v3H6a2 2 0 00-2 2v7a2 2 0 002 2h12a2 2 0 002-2v-7a2 2 0 00-2-2zm-8-3a3 3 0 016 0v3H10V7z" />
@@ -2261,7 +2445,7 @@ export default function App() {
             </div>
           )}
         </div>
-      </main>)}
+      </main>
 
       {viewAsset && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={closeViewAsset}>
@@ -2274,14 +2458,14 @@ export default function App() {
               </div>
               <div className="flex gap-2 flex-shrink-0">
                 <button className="px-3 py-1 rounded border border-neutral-700 hover:bg-neutral-800" onClick={closeViewAsset}>Close</button>
-                <button className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700" onClick={handleUpdateViewAsset}>Save</button>
+                <button disabled={!assetCanEdit} className={`px-3 py-1 rounded ${assetCanEdit ? 'bg-blue-600 hover:bg-blue-700' : 'bg-neutral-800 text-neutral-500 cursor-not-allowed'}`} onClick={handleUpdateViewAsset}>Save</button>
               </div>
             </div>
 
             <div className="space-y-4">
               <div className="space-y-3">
-                <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Title" maxLength={30} value={viewAssetDraft.title} onChange={(e) => setViewAssetDraft((p) => ({ ...p, title: e.target.value }))} />
-                <select className="w-full p-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={viewAssetDraft.type} onChange={(e) => setViewAssetDraft((p) => ({ ...p, type: e.target.value, category: "" }))}>
+                <input disabled={!assetCanEdit} className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Title" maxLength={30} value={viewAssetDraft.title} onChange={(e) => setViewAssetDraft((p) => ({ ...p, title: e.target.value }))} />
+                <select disabled={!assetCanEdit} className="w-full p-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={viewAssetDraft.type} onChange={(e) => setViewAssetDraft((p) => ({ ...p, type: e.target.value, category: "" }))}>
                   <option value="">Select Type</option>
                   <option value="Vehicle">Vehicle</option>
                   <option value="Property">Property</option>
@@ -2293,22 +2477,23 @@ export default function App() {
                   <option value="Other">Other</option>
                 </select>
               </div>
-              <select className="w-full p-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={viewAssetDraft.category} onChange={(e) => setViewAssetDraft((p) => ({ ...p, category: e.target.value }))} disabled={!viewAssetDraft.type}>
+              <select className="w-full p-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={viewAssetDraft.category} onChange={(e) => setViewAssetDraft((p) => ({ ...p, category: e.target.value }))} disabled={!assetCanEdit || !viewAssetDraft.type}>
                 <option value="">Select Category</option>
                 {viewAssetDraft.type && categoryOptions[viewAssetDraft.type]?.map((cat) => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>
-              <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={4} placeholder="Description" maxLength={60} value={viewAssetDraft.description} onChange={(e) => setViewAssetDraft((p) => ({ ...p, description: e.target.value }))} />
+              <textarea disabled={!assetCanEdit} className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={4} placeholder="Description" maxLength={60} value={viewAssetDraft.description} onChange={(e) => setViewAssetDraft((p) => ({ ...p, description: e.target.value }))} />
               <div>
                 <p className="text-sm text-neutral-400 mb-2">Quantity</p>
-                <input type="number" min={1} className="w-24 p-2 rounded bg-neutral-950 border border-neutral-800" value={viewAssetDraft.quantity || 1} onChange={(e) => setViewAssetDraft((p) => ({ ...p, quantity: e.target.value }))} />
+                <input disabled={!assetCanEdit} type="number" min={1} className="w-24 p-2 rounded bg-neutral-950 border border-neutral-800" value={viewAssetDraft.quantity || 1} onChange={(e) => setViewAssetDraft((p) => ({ ...p, quantity: e.target.value }))} />
               </div>
               <div>
                 <p className="text-sm text-neutral-400 mb-2">Value</p>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400">$</span>
                   <input 
+                    disabled={!assetCanEdit}
                     className="w-48 p-2 pl-7 rounded bg-neutral-950 border border-neutral-800" 
                     type="text" 
                     placeholder="0.00" 
@@ -2354,24 +2539,25 @@ export default function App() {
                         <img src={img} alt={`Edit ${idx + 1}`} className="w-full h-28 object-cover cursor-pointer hover:opacity-90 transition-opacity" onClick={() => openImageViewer(viewAssetDraft.images, originalIdx)} />
                         <div className="absolute top-2 right-2 flex gap-1 items-center">
                           {!isHero && (
-                            <button type="button" className="px-2 py-1 text-xs rounded bg-neutral-800 border border-neutral-700 hover:bg-neutral-700" onClick={() => handleSetHero(img, setViewAssetDraft)}>☆</button>
+                            <button disabled={!assetCanEdit} type="button" className={`px-2 py-1 text-xs rounded ${assetCanEdit ? 'bg-neutral-800 border border-neutral-700 hover:bg-neutral-700' : 'bg-neutral-800 text-neutral-500 cursor-not-allowed'}`} onClick={() => handleSetHero(img, setViewAssetDraft)}>☆</button>
                           )}
                           {isHero && <span className="px-2 py-1 text-xs rounded bg-neutral-900 text-amber-400">★</span>}
-                          <button type="button" className="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700" onClick={() => handleRemoveImage(originalIdx, setViewAssetDraft)}>Delete</button>
+                          <button disabled={!assetCanEdit} type="button" className={`px-2 py-1 text-xs rounded ${assetCanEdit ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-neutral-800 text-neutral-500 cursor-not-allowed'}`} onClick={() => handleRemoveImage(originalIdx, setViewAssetDraft)}>Delete</button>
                         </div>
                       </div>
                     );
                   })}
                   
                   {(!viewAssetDraft.images || viewAssetDraft.images.length < 4) && (
-                    <label className="relative border-2 border-dashed border-neutral-700 rounded bg-neutral-800/50 hover:bg-neutral-800 hover:border-neutral-600 cursor-pointer transition-colors flex items-center justify-center h-28">
+                    <label className={`relative border-2 border-dashed border-neutral-700 rounded bg-neutral-800/50 ${assetCanEdit ? 'hover:bg-neutral-800 hover:border-neutral-600 cursor-pointer' : 'opacity-60 cursor-not-allowed' } transition-colors flex items-center justify-center h-28`}>
                       <span className="text-5xl text-neutral-500">+</span>
                       <input
                         type="file"
                         multiple
                         accept="image/*"
-                        className="hidden"
-                        onChange={async (e) => { await handleUploadImages(e.target.files, setViewAssetDraft); e.target.value = ""; }}
+                          className="hidden"
+                          disabled={!assetCanEdit}
+                          onChange={async (e) => { await handleUploadImages(e.target.files, setViewAssetDraft); e.target.value = ""; }}
                       />
                     </label>
                   )}
@@ -2510,8 +2696,17 @@ export default function App() {
                 <label className="text-sm text-neutral-400">Permission</label>
                 <select className="w-full mt-1 p-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer text-white" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={shareDialog.permission} onChange={(e) => setShareDialog((d) => ({ ...d, permission: e.target.value }))}>
                   <option value="view">View</option>
-                  <option value="edit">Edit</option>
+                  <option value="view+edit">View + Edit</option>
+                  <option value="view+edit+create">View + Edit + Create</option>
+                  <option value="view+edit+create+move">View + Edit + Create + Move</option>
+                  <option value="view+edit+create+move+delete">View + Edit + Create + Move + Delete</option>
                 </select>
+              </div>
+              <div>
+                <label className="inline-flex items-center gap-2 mt-2 text-sm">
+                  <input type="checkbox" className="form-checkbox" checked={!!shareDialog.includeContents} onChange={(e) => setShareDialog((d) => ({ ...d, includeContents: e.target.checked }))} />
+                  <span className="text-sm text-neutral-400">Also share all contents (collections & assets) and future items</span>
+                </label>
               </div>
               <div>
                 <p className="text-sm text-neutral-400">Currently shared with:</p>
@@ -2533,8 +2728,22 @@ export default function App() {
                             showAlert(`Permission updated for ${u.username}`);
                           }} className="px-2 py-1 text-xs pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer text-white" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.35rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.1em 1.1em', appearance: 'none'}}>
                             <option value="view">View</option>
-                            <option value="edit">Edit</option>
+                            <option value="view+edit">View + Edit</option>
+                            <option value="view+edit+create">View + Edit + Create</option>
+                            <option value="view+edit+create+move">View + Edit + Create + Move</option>
+                            <option value="view+edit+create+move+delete">View + Edit + Create + Move + Delete</option>
                           </select>
+                          <label className="inline-flex items-center gap-2 text-xs">
+                            <input type="checkbox" checked={!!s.includeContents} onChange={(e) => {
+                              const checked = e.target.checked;
+                              setVaults(prev => prev.map(v => {
+                                if (v.id !== shareDialog.vaultId) return v;
+                                return { ...v, sharedWith: (v.sharedWith || []).map(x => x.userId === s.userId ? { ...x, includeContents: checked } : x) };
+                              }));
+                              showAlert(`${u.username} include contents ${checked ? 'enabled' : 'disabled'}`);
+                            }} className="cursor-pointer" />
+                            <span className="text-neutral-400">Contents</span>
+                          </label>
                           <button className="px-2 py-1 text-xs rounded bg-red-600 hover:bg-red-700" onClick={() => {
                             setVaults(prev => prev.map(v => v.id === shareDialog.vaultId ? { ...v, sharedWith: (v.sharedWith || []).filter(x => x.userId !== s.userId) } : v));
                             showAlert(`Removed ${u.username}`);
@@ -2562,7 +2771,8 @@ export default function App() {
               <div>
                 <label className="text-sm text-neutral-400">Name</label>
                 <input
-                  className="w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800"
+                  disabled={!editCanEdit}
+                  className={`w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800 ${!editCanEdit ? 'opacity-60 cursor-not-allowed' : ''}`}
                   value={editDialog.name}
                   onChange={(e) => setEditDialog((prev) => ({ ...prev, name: e.target.value }))}
                   autoFocus
@@ -2571,7 +2781,8 @@ export default function App() {
               <div>
                 <label className="text-sm text-neutral-400">Description</label>
                 <textarea
-                  className="w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800"
+                  disabled={!editCanEdit}
+                  className={`w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800 ${!editCanEdit ? 'opacity-60 cursor-not-allowed' : ''}`}
                   rows={3}
                   maxLength={100}
                   placeholder="Optional description"
@@ -2586,6 +2797,7 @@ export default function App() {
               <div className="space-y-3">
                 <div className="flex flex-col items-start gap-1">
                   <input
+                    disabled={!editCanEdit}
                     type="file"
                     multiple
                     accept="image/*"
@@ -2606,10 +2818,10 @@ export default function App() {
                           <img src={img} alt={`Upload ${idx + 1}`} className="w-full h-28 object-cover" />
                           <div className="absolute top-2 right-2 flex gap-1 items-center">
                             {!isHero && (
-                              <button type="button" title="Set as hero" className="px-2 py-1 text-xs rounded bg-neutral-800 border border-neutral-700 hover:bg-neutral-700" onClick={() => handleSetHero(img, setEditDialog)}>☆</button>
+                              <button disabled={!editCanEdit} type="button" title="Set as hero" className={`px-2 py-1 text-xs rounded ${editCanEdit ? 'bg-neutral-800 border border-neutral-700 hover:bg-neutral-700' : 'bg-neutral-800 text-neutral-500 cursor-not-allowed'}`} onClick={() => handleSetHero(img, setEditDialog)}>☆</button>
                             )}
                             {isHero && <span className="px-2 py-1 text-xs rounded bg-neutral-900 text-amber-400">★</span>}
-                            <button type="button" title="Delete image" aria-label={`Delete image ${idx+1}`} className="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700" onClick={() => handleRemoveImage(idx, setEditDialog)}>Delete</button>
+                            <button disabled={!editCanEdit} type="button" title="Delete image" aria-label={`Delete image ${idx+1}`} className={`px-2 py-1 text-xs rounded ${editCanEdit ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-neutral-800 text-neutral-500 cursor-not-allowed'}`} onClick={() => handleRemoveImage(idx, setEditDialog)}>Delete</button>
                           </div>
                         </div>
                       );
@@ -2619,7 +2831,7 @@ export default function App() {
               </div>
               <div className="flex gap-3 justify-end">
                 <button className="px-4 py-2 rounded border border-neutral-700 hover:bg-neutral-800" onClick={closeEditDialog}>Cancel</button>
-                <button className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700" onClick={saveEditDialog}>Save</button>
+                <button disabled={!editCanEdit} className={`px-4 py-2 rounded ${editCanEdit ? 'bg-blue-600 hover:bg-blue-700' : 'bg-neutral-800 text-neutral-500 cursor-not-allowed'}`} onClick={saveEditDialog}>Save</button>
               </div>
             </div>
           </div>
