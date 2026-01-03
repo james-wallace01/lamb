@@ -958,7 +958,7 @@ export default function App() {
         <header className="border-b border-neutral-900 bg-neutral-950/70 backdrop-blur">
           <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <button className="hover:opacity-80 transition" onClick={() => { setSelectedVaultId(null); setSelectedCollectionId(null); navigateTo(isLoggedIn ? "vault" : "landing"); }}>
+              <button className="hover:opacity-80 transition text-left" onClick={() => { setSelectedVaultId(null); setSelectedCollectionId(null); navigateTo(isLoggedIn ? "vault" : "landing"); }}>
                 <div className="font-semibold text-lg tracking-[0.15em]">LAMB</div>
                 <div className="text-[8px] tracking-[0.2em] text-neutral-500">LIQUID ASSET MANAGEMENT BOARD</div>
               </button>
