@@ -142,7 +142,7 @@ export default function App() {
   const [selectedCollectionId, setSelectedCollectionId] = useState(null);
   const [newVaultName, setNewVaultName] = useState("");
   const [newCollectionName, setNewCollectionName] = useState("");
-  const initialAssetState = { title: "", category: "", description: "", heroImage: "", images: [] };
+  const initialAssetState = { title: "", type: "", category: "", description: "", heroImage: "", images: [] };
   const [newAsset, setNewAsset] = useState(initialAssetState);
 
   const [loginForm, setLoginForm] = useState({ username: "", password: "" });
@@ -491,6 +491,7 @@ export default function App() {
       ownerId: currentUser.id, 
       collectionId: selectedCollectionId, 
       title: newAsset.title.trim(), 
+      type: newAsset.type.trim(),
       category: newAsset.category.trim(), 
       description: newAsset.description.trim(), 
       heroImage,
@@ -573,6 +574,7 @@ export default function App() {
     setViewAsset(normalized);
     setViewAssetDraft({
       title: normalized.title || "",
+      type: normalized.type || "",
       category: normalized.category || "",
       description: normalized.description || "",
       heroImage: normalized.heroImage || normalized.images[0] || "",
@@ -597,12 +599,12 @@ export default function App() {
     setAssets((prev) =>
       prev.map((a) =>
         a.id === viewAsset.id
-          ? { ...a, title: viewAssetDraft.title.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), heroImage, images }
+          ? { ...a, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), heroImage, images }
           : a
       )
     );
 
-    setViewAsset({ ...viewAsset, title: viewAssetDraft.title.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), heroImage, images });
+    setViewAsset({ ...viewAsset, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), heroImage, images });
     showAlert("Asset updated.");
     return true;
   };
@@ -1106,7 +1108,7 @@ export default function App() {
                     {selectedCollection ? (
                       <>
                         <input className="px-3 py-2 rounded bg-neutral-950 border border-neutral-800 flex-1 min-w-[160px]" placeholder="Filter collections" value={collectionFilter} onChange={(e) => setCollectionFilter(e.target.value)} />
-                        <select className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer appearance-none" value={collectionSort} onChange={(e) => setCollectionSort(e.target.value)}>
+                        <select className="px-3 py-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={collectionSort} onChange={(e) => setCollectionSort(e.target.value)}>
                           <option value="default">Default</option>
                           <option value="name">Name</option>
                           <option value="newest">Newest</option>
@@ -1116,7 +1118,7 @@ export default function App() {
                     ) : (
                       <>
                         <input className="px-3 py-2 rounded bg-neutral-950 border border-neutral-800 flex-1 min-w-[160px]" placeholder="Filter vaults" value={vaultFilter} onChange={(e) => setVaultFilter(e.target.value)} />
-                        <select className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer appearance-none" value={vaultSort} onChange={(e) => setVaultSort(e.target.value)}>
+                        <select className="px-3 py-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={vaultSort} onChange={(e) => setVaultSort(e.target.value)}>
                           <option value="default">Default</option>
                           <option value="name">Name</option>
                           <option value="newest">Newest</option>
@@ -1224,7 +1226,7 @@ export default function App() {
                     {selectedCollection ? (
                       <>
                         <input className="px-3 py-2 rounded bg-neutral-950 border border-neutral-800 flex-1 min-w-[160px]" placeholder="Filter assets" value={assetFilter} onChange={(e) => setAssetFilter(e.target.value)} />
-                        <select className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer appearance-none" value={assetSort} onChange={(e) => setAssetSort(e.target.value)}>
+                        <select className="px-3 py-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={assetSort} onChange={(e) => setAssetSort(e.target.value)}>
                           <option value="newest">Newest</option>
                           <option value="oldest">Oldest</option>
                           <option value="name">Name</option>
@@ -1233,7 +1235,7 @@ export default function App() {
                     ) : (
                       <>
                         <input className="px-3 py-2 rounded bg-neutral-950 border border-neutral-800 flex-1 min-w-[160px]" placeholder="Filter collections" value={collectionFilter} onChange={(e) => setCollectionFilter(e.target.value)} />
-                        <select className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer appearance-none" value={collectionSort} onChange={(e) => setCollectionSort(e.target.value)}>
+                        <select className="px-3 py-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={collectionSort} onChange={(e) => setCollectionSort(e.target.value)}>
                           <option value="default">Default</option>
                           <option value="name">Name</option>
                           <option value="newest">Newest</option>
@@ -1257,8 +1259,22 @@ export default function App() {
                     <form className="space-y-4" onSubmit={async (e) => { e.preventDefault(); const ok = await handleAddAsset(); if (ok) setShowAssetForm(false); }}>
                       <div className="grid gap-3 md:grid-cols-2">
                         <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Title" maxLength={30} value={newAsset.title} onChange={(e) => setNewAsset((p) => ({ ...p, title: e.target.value }))} />
-                        <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Category" value={newAsset.category} onChange={(e) => setNewAsset((p) => ({ ...p, category: e.target.value }))} />
+                        <select className="w-full p-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={newAsset.type} onChange={(e) => setNewAsset((p) => ({ ...p, type: e.target.value, category: "" }))}>
+                          <option value="">Select Type</option>
+                          <option value="Vehicle">Vehicle</option>
+                          <option value="Property">Property</option>
+                          <option value="Collectables">Collectables</option>
+                          <option value="Business">Business</option>
+                          <option value="Materials">Materials</option>
+                          <option value="Specialty">Specialty</option>
+                          <option value="Digital">Digital</option>
+                          <option value="Other">Other</option>
+                        </select>
                       </div>
+                      <select className="w-full p-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={newAsset.category} onChange={(e) => setNewAsset((p) => ({ ...p, category: e.target.value }))} disabled={!newAsset.type}>
+                        <option value="">Select Category</option>
+                        <option value="Other">Other</option>
+                      </select>
                       <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={3} placeholder="Description" maxLength={60} value={newAsset.description} onChange={(e) => setNewAsset((p) => ({ ...p, description: e.target.value }))} />
 
                       <div className="space-y-3">
@@ -1348,7 +1364,7 @@ export default function App() {
                                 <div className="flex-1 flex flex-col justify-between min-w-0 max-h-32">
                                   <div className="space-y-0.5">
                                     <p className="text-base font-semibold truncate">{asset.title}</p>
-                                    <p className="text-xs text-neutral-400">{asset.category || "Uncategorized"}</p>
+                                    <p className="text-xs text-neutral-400">{asset.type || "No Type"} • {asset.category || "Uncategorized"}</p>
                                     {asset.description && <p className="text-xs text-neutral-300 line-clamp-1">{asset.description}</p>}
                                   </div>
 
@@ -1393,8 +1409,22 @@ export default function App() {
             <div className="space-y-4">
               <div className="grid gap-3 md:grid-cols-2">
                 <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Title" maxLength={30} value={viewAssetDraft.title} onChange={(e) => setViewAssetDraft((p) => ({ ...p, title: e.target.value }))} />
-                <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Category" value={viewAssetDraft.category} onChange={(e) => setViewAssetDraft((p) => ({ ...p, category: e.target.value }))} />
+                <select className="w-full p-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={viewAssetDraft.type} onChange={(e) => setViewAssetDraft((p) => ({ ...p, type: e.target.value, category: "" }))}>
+                  <option value="">Select Type</option>
+                  <option value="Vehicle">Vehicle</option>
+                  <option value="Property">Property</option>
+                  <option value="Collectables">Collectables</option>
+                  <option value="Business">Business</option>
+                  <option value="Materials">Materials</option>
+                  <option value="Specialty">Specialty</option>
+                  <option value="Digital">Digital</option>
+                  <option value="Other">Other</option>
+                </select>
               </div>
+              <select className="w-full p-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={viewAssetDraft.category} onChange={(e) => setViewAssetDraft((p) => ({ ...p, category: e.target.value }))} disabled={!viewAssetDraft.type}>
+                <option value="">Select Category</option>
+                <option value="Other">Other</option>
+              </select>
               <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={4} placeholder="Description" maxLength={60} value={viewAssetDraft.description} onChange={(e) => setViewAssetDraft((p) => ({ ...p, description: e.target.value }))} />
 
               <div className="space-y-3">
