@@ -6,6 +6,8 @@ const MAX_IMAGE_SIZE = 30 * 1024 * 1024; // 30MB limit per image
 
 const VIEW_TO_PATH = {
   landing: "/",
+  home: "/home",
+  settings: "/settings",
   login: "/login",
   register: "/sign-up",
   vault: "/vaults",
@@ -14,6 +16,8 @@ const VIEW_TO_PATH = {
 
 const PATH_TO_VIEW = {
   "/": "landing",
+  "/home": "home",
+  "/settings": "settings",
   "/login": "login",
   "/sign-up": "register",
   "/register": "register",
@@ -126,7 +130,7 @@ export default function App() {
   const initialPathView = pathToView(window.location.pathname);
   const initialView = (() => {
     if ((initialPathView === "vault" || initialPathView === "profile") && !storedUser) return "login";
-    if (storedUser && (initialPathView === "login" || initialPathView === "landing")) return "vault";
+    if (storedUser && (initialPathView === "login" || initialPathView === "landing")) return "home";
     return initialPathView;
   })();
 
@@ -134,6 +138,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(() => storedUser);
   const [isLoggedIn, setIsLoggedIn] = useState(() => !!storedUser);
   const [view, setView] = useState(initialView);
+  const [previousView, setPreviousView] = useState(null);
   const [vaults, setVaults] = useState(() => safeParse("vaults", []));
   const [collections, setCollections] = useState(() => safeParse("collections", []));
   const [assets, setAssets] = useState(() => safeParse("assets", []));
@@ -427,6 +432,8 @@ export default function App() {
   }, []);
 
   const navigateTo = (nextView, { replace = false } = {}) => {
+    // record previous view for back navigation
+    try { setPreviousView(view); } catch (e) {}
     // Prevent non-logged-in users from accessing protected pages
     if ((nextView === "vault" || nextView === "profile") && !isLoggedIn) {
       const nextPath = viewToPath("login");
@@ -458,6 +465,20 @@ export default function App() {
     setView(nextView);
   };
 
+  const goBack = () => {
+    if (previousView && previousView !== view) {
+      navigateTo(previousView);
+      return;
+    }
+    try {
+      if (window.history.length > 1) {
+        window.history.back();
+        return;
+      }
+    } catch (e) {}
+    navigateTo("home");
+  };
+
   const logout = () => {
     setIsLoggedIn(false);
     setCurrentUser(null);
@@ -486,7 +507,7 @@ export default function App() {
     setShowVaultForm(false);
     setShowCollectionForm(false);
     setShowAssetForm(false);
-    navigateTo("vault");
+    navigateTo("home");
   };
 
   const handleRegister = (e) => {
@@ -525,7 +546,7 @@ export default function App() {
     setShowVaultForm(false);
     setShowCollectionForm(false);
     setShowAssetForm(false);
-    navigateTo("vault");
+    navigateTo("home");
     setRegisterForm(initialRegisterForm);
   };
 
@@ -1235,7 +1256,7 @@ export default function App() {
         <header className="border-b border-neutral-900 bg-neutral-950/70 backdrop-blur">
           <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <button className="hover:opacity-80 transition text-left" onClick={() => { setSelectedVaultId(null); setSelectedCollectionId(null); navigateTo(isLoggedIn ? "vault" : "landing"); }}>
+              <button className="hover:opacity-80 transition text-left" onClick={() => { setSelectedVaultId(null); setSelectedCollectionId(null); navigateTo(isLoggedIn ? "home" : "landing"); }}>
                 <div className="font-semibold text-lg tracking-[0.15em]">LAMB</div>
                 <div className="text-sm tracking-[0.2em] text-neutral-500">LIQUID ASSET MANAGEMENT BOARD</div>
               </button>
@@ -1349,7 +1370,7 @@ export default function App() {
                   <h1 className="text-2xl font-semibold">User profile</h1>
                 </div>
               </div>
-              <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => navigateTo("vault")}>← Back</button>
+              <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => goBack()}>← Back</button>
               <div className="grid gap-4 md:grid-cols-3 items-start">
                 <div className="p-5 rounded-xl border border-neutral-900 bg-neutral-900/60">
                   <p className="text-sm text-neutral-400">Profile</p>
@@ -1404,6 +1425,20 @@ export default function App() {
                     )}
                   </form>
 
+                  
+                </div>
+              </div>
+            </div>
+          ) : view === "settings" && currentUser ? (
+            <div className="space-y-6">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h1 className="text-2xl font-semibold">Security</h1>
+                </div>
+              </div>
+              <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => goBack()}>← Back</button>
+              <div className="grid gap-4 md:grid-cols-3 items-start">
+                <div className="md:col-span-2 space-y-4">
                   <div className="p-5 rounded-xl border border-neutral-900 bg-neutral-900/60 space-y-4">
                     <div>
                       <p className="text-sm text-neutral-400">Security</p>
@@ -1439,17 +1474,42 @@ export default function App() {
                         </div>
                       </form>
                     )}
+
+                    <div className="pt-4 border-t border-neutral-800 space-y-3">
+                      <div>
+                        <p className="text-sm text-neutral-400">Account</p>
+                        <h3 className="text-lg font-semibold">Delete account</h3>
+                      </div>
+                      <p className="text-sm text-neutral-400">Once you delete your account, there is no going back. Please be certain.</p>
+                      <button className="px-4 py-2 rounded bg-red-600 hover:bg-red-700" onClick={handleDeleteAccount}>Delete account</button>
+                    </div>
                   </div>
 
-                  <div className="p-5 rounded-xl border border-neutral-900 bg-neutral-900/60 space-y-4">
-                    <div>
-                      <p className="text-sm text-neutral-400">Account</p>
-                      <h3 className="text-lg font-semibold">Delete account</h3>
-                    </div>
-                    <p className="text-sm text-neutral-400">Once you delete your account, there is no going back. Please be certain.</p>
-                    <button className="px-4 py-2 rounded bg-red-600 hover:bg-red-700" onClick={handleDeleteAccount}>Delete account</button>
-                  </div>
                 </div>
+              </div>
+            </div>
+          ) : view === "home" && currentUser ? (
+            <div className="space-y-6">
+              <div>
+                <h1 className="text-2xl font-semibold">Home</h1>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <button className="p-6 rounded-xl border border-neutral-900 bg-neutral-900/50 hover:bg-neutral-900/70 text-left" onClick={() => { navigateTo("vault"); }}>
+                  <h3 className="text-lg font-semibold">My Vaults</h3>
+                  <p className="text-sm text-neutral-400 mt-2">View and manage your vaults and collections.</p>
+                </button>
+                <button className="p-6 rounded-xl border border-neutral-900 bg-neutral-900/50 hover:bg-neutral-900/70 text-left" onClick={() => { /* no-op for now */ }}>
+                  <h3 className="text-lg font-semibold">Shared Vaults</h3>
+                  <p className="text-sm text-neutral-400 mt-2">Vaults shared with you by others.</p>
+                </button>
+                <button className="p-6 rounded-xl border border-neutral-900 bg-neutral-900/50 hover:bg-neutral-900/70 text-left" onClick={() => { navigateTo("settings"); }}>
+                  <h3 className="text-lg font-semibold">Settings</h3>
+                  <p className="text-sm text-neutral-400 mt-2">Account settings and preferences.</p>
+                </button>
+                <button className="p-6 rounded-xl border border-neutral-900 bg-neutral-900/50 hover:bg-neutral-900/70 text-left" onClick={() => { navigateTo("profile"); }}>
+                  <h3 className="text-lg font-semibold">Profile</h3>
+                  <p className="text-sm text-neutral-400 mt-2">View and edit your profile details.</p>
+                </button>
               </div>
             </div>
           ) : (
@@ -1458,7 +1518,12 @@ export default function App() {
                 <div>
                   <h1 data-tut="vault-title" className="text-2xl font-semibold">{selectedVault ? (selectedCollection ? `${selectedVault.name} / ${selectedCollection.name}` : selectedVault.name) : "Vault"}</h1>
                   <div className="h-10 flex items-center">
-                      {selectedCollection && (
+                    {!selectedCollection && (
+                      <button className="mt-2 px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => goBack()}>
+                        ← Back
+                      </button>
+                    )}
+                    {selectedCollection && (
                       <button data-tut="back-button" className="mt-2 px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => { setSelectedCollectionId(null); setShowCollectionForm(false); setShowAssetForm(false); }}>
                         ← Back
                       </button>
