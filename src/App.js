@@ -1824,16 +1824,23 @@ export default function App() {
                       <h3 className="text-sm text-neutral-400 truncate">{displaySelectedCollection ? (displaySelectedVault?.name || "Choose a Vault") : "Choose a Vault"}</h3>
                     </div>
                     <div className="flex items-center gap-2 ml-4">
-                      <button data-tut="create-button" className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 w-10 h-10 flex items-center justify-center" onClick={() => {
-                        const activeCollection = displaySelectedCollection;
-                        if (activeCollection) {
-                          setShowCollectionForm((v) => !v);
-                          setShowVaultForm(false);
-                        } else {
-                          setShowVaultForm((v) => !v);
-                        }
-                        setShowAssetForm(false);
-                      }}>+</button>
+                      {(() => {
+                        const headerTargetVault = displaySelectedCollection ? (getVaultForCollection(displaySelectedCollection) || displaySelectedVault) : (displaySelectedVault || null);
+                        const headerCanCreate = headerTargetVault ? canCreateInVault(headerTargetVault) : true;
+                        return (
+                          <button data-tut="create-button" className={`px-3 py-2 rounded w-10 h-10 flex items-center justify-center ${headerCanCreate ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-600/40 cursor-not-allowed'}`} disabled={!headerCanCreate} onClick={() => {
+                            if (!headerCanCreate) return;
+                            const activeCollection = displaySelectedCollection;
+                            if (activeCollection) {
+                              setShowCollectionForm((v) => !v);
+                              setShowVaultForm(false);
+                            } else {
+                              setShowVaultForm((v) => !v);
+                            }
+                            setShowAssetForm(false);
+                          }}>+</button>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -2104,32 +2111,39 @@ export default function App() {
                         <p className="text-lg font-semibold">{displaySelectedCollection ? "Assets" : "Collections"}</p>
                         <h3 className="text-sm text-neutral-400">{displaySelectedCollection ? displaySelectedCollection.name : (displaySelectedVault ? displaySelectedVault.name : "Organize within a vault")}</h3>
                       </div>
-                    {displaySelectedCollection ? (
-                      <button
-                        className={`px-3 py-2 rounded w-10 h-10 flex items-center justify-center ${canCreateInVault(getVaultForCollection(displaySelectedCollection || selectedCollection) || displaySelectedVault) ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-600/40 cursor-not-allowed"}`}
-                        disabled={!canCreateInVault(getVaultForCollection(displaySelectedCollection || selectedCollection) || displaySelectedVault)}
-                        onClick={(e) => {
-                          const vault = getVaultForCollection(displaySelectedCollection || selectedCollection) || displaySelectedVault;
-                          if (!canCreateInVault(vault)) { e.stopPropagation(); return; }
-                          setShowAssetForm((v) => !v); setShowVaultForm(false); setShowCollectionForm(false);
-                        }}
-                        title={canCreateInVault(getVaultForCollection(displaySelectedCollection || selectedCollection) || displaySelectedVault) ? "" : "Create permission required on the vault"}
-                      >+
-                      </button>
-                    ) : selectedVault ? (
-                      <button
-                        className={`px-3 py-2 rounded w-10 h-10 flex items-center justify-center ${canCreateInVault(displaySelectedVault) ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-600/40 cursor-not-allowed"}`}
-                        disabled={!canCreateInVault(displaySelectedVault)}
-                        onClick={(e) => {
-                          if (!canCreateInVault(displaySelectedVault)) { e.stopPropagation(); return; }
-                          setShowCollectionForm((v) => !v); setShowVaultForm(false); setShowAssetForm(false);
-                        }}
-                        title={canCreateInVault(displaySelectedVault) ? "" : "Create permission required on the vault"}
-                      >+
-                      </button>
-                    ) : (
-                      <button className="px-3 py-2 rounded bg-blue-600/40 cursor-not-allowed w-10 h-10 flex items-center justify-center" disabled>+</button>
-                    )}
+                    {(() => {
+                      const targetVault = displaySelectedCollection ? (getVaultForCollection(displaySelectedCollection || selectedCollection) || displaySelectedVault) : (displaySelectedVault || null);
+                      const canCreate = targetVault ? canCreateInVault(targetVault) : false;
+                      if (displaySelectedCollection) {
+                        return (
+                          <button
+                            className={`px-3 py-2 rounded w-10 h-10 flex items-center justify-center ${canCreate ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-600/40 cursor-not-allowed"}`}
+                            disabled={!canCreate}
+                            onClick={(e) => {
+                              if (!canCreate) { e.stopPropagation(); return; }
+                              setShowAssetForm((v) => !v); setShowVaultForm(false); setShowCollectionForm(false);
+                            }}
+                            title={canCreate ? "" : "Create permission required on the vault"}
+                          >+
+                          </button>
+                        );
+                      }
+                      if (displaySelectedVault) {
+                        return (
+                          <button
+                            className={`px-3 py-2 rounded w-10 h-10 flex items-center justify-center ${canCreate ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-600/40 cursor-not-allowed"}`}
+                            disabled={!canCreate}
+                            onClick={(e) => {
+                              if (!canCreate) { e.stopPropagation(); return; }
+                              setShowCollectionForm((v) => !v); setShowVaultForm(false); setShowAssetForm(false);
+                            }}
+                            title={canCreate ? "" : "Create permission required on the vault"}
+                          >+
+                          </button>
+                        );
+                      }
+                      return <button className="px-3 py-2 rounded bg-blue-600/40 cursor-not-allowed w-10 h-10 flex items-center justify-center" disabled>+</button>;
+                    })()}
                   </div>
 
                   <div className="flex flex-wrap gap-2 text-sm">
@@ -2344,9 +2358,9 @@ export default function App() {
                                         >Share</button>
                                       )}
                                       <button
-                                        className={`px-2 py-0.5 rounded text-xs ${canEdit ? "bg-yellow-600 text-white hover:bg-yellow-700" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
-                                        onClick={(e) => { e.stopPropagation(); if (!canEdit) return; openCollectionMoveDialog(collection); }}
-                                        title={canEdit ? "" : "Edit permission required on the vault"}
+                                        className={`px-2 py-0.5 rounded text-xs ${canMoveInVault(vault) ? "bg-yellow-600 text-white hover:bg-yellow-700" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
+                                        onClick={(e) => { e.stopPropagation(); if (!canMoveInVault(vault)) return; openCollectionMoveDialog(collection); }}
+                                        title={canMoveInVault(vault) ? "" : "Move permission required on the vault"}
                                       >Move</button>
                                       <button
                                         className={`px-2 py-0.5 rounded text-xs ${canDelete ? "bg-red-700 text-white hover:bg-red-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
