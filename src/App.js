@@ -1209,8 +1209,8 @@ export default function App() {
                 <div className="p-4 border border-neutral-900 rounded-xl bg-neutral-900/50 space-y-4 min-h-[500px] transition-all duration-300">
                   <div className="flex items-center justify-between">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-neutral-400">{selectedCollection ? "Collections" : "Vaults"}</p>
-                      <h3 className="text-lg font-semibold truncate">{selectedCollection ? (selectedVault?.name || "Vault") : "Create or select a Vault"}</h3>
+                      <p className="text-lg font-semibold">{selectedCollection ? "Collections" : "Vaults"}</p>
+                      <h3 className="text-sm text-neutral-400 truncate">{selectedCollection ? (selectedVault?.name || "Vault") : "Create or select a Vault"}</h3>
                     </div>
                     <div className="flex items-center gap-2 ml-4">
                       <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 w-10 h-10 flex items-center justify-center" onClick={() => {
@@ -1436,8 +1436,8 @@ export default function App() {
                 <div className="p-4 border border-neutral-900 rounded-xl bg-neutral-900/50 space-y-4 min-h-[500px] transition-all duration-300">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-neutral-400">{selectedCollection ? "Assets" : "Collections"}</p>
-                      <h3 className="text-lg font-semibold">{selectedCollection ? selectedCollection.name : (selectedVault ? selectedVault.name : "Organize within a vault")}</h3>
+                      <p className="text-lg font-semibold">{selectedCollection ? "Assets" : "Collections"}</p>
+                      <h3 className="text-sm text-neutral-400">{selectedCollection ? selectedCollection.name : (selectedVault ? selectedVault.name : "Organize within a vault")}</h3>
                     </div>
                     {selectedCollection ? (
                       <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 w-10 h-10 flex items-center justify-center" onClick={() => { setShowAssetForm((v) => !v); setShowVaultForm(false); setShowCollectionForm(false); }}>+</button>
