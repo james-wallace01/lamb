@@ -958,7 +958,10 @@ export default function App() {
         <header className="border-b border-neutral-900 bg-neutral-950/70 backdrop-blur">
           <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <button className="font-semibold text-lg tracking-[0.15em] hover:opacity-80 transition" onClick={() => { setSelectedVaultId(null); setSelectedCollectionId(null); navigateTo(isLoggedIn ? "vault" : "landing"); }}>LAMB</button>
+              <button className="hover:opacity-80 transition" onClick={() => { setSelectedVaultId(null); setSelectedCollectionId(null); navigateTo(isLoggedIn ? "vault" : "landing"); }}>
+                <div className="font-semibold text-lg tracking-[0.15em]">LAMB</div>
+                <div className="text-[8px] tracking-[0.2em] text-neutral-500">LIQUID ASSET MANAGEMENT BOARD</div>
+              </button>
             </div>
             <div className="flex items-center gap-3">
               {isLoggedIn && currentUser ? (
@@ -990,6 +993,7 @@ export default function App() {
                 <div className="p-8 rounded-2xl border border-neutral-900 bg-neutral-900/50 shadow-lg space-y-6 text-center flex flex-col items-center">
                   <div className="space-y-2">
                     <p className="text-4xl font-bold text-white tracking-[0.15em]">LAMB</p>
+                    <p className="text-xs tracking-[0.2em] text-neutral-500">LIQUID ASSET MANAGEMENT BOARD</p>
                     <p className="text-sm uppercase tracking-[0.2em] text-blue-400">Secure by default</p>
                     <h1 className="text-xl font-bold mt-2">Your private vault for liquid assets.</h1>
                     <p className="text-neutral-400 mt-3 max-w-xl">Organize vaults, collections, and assets with privacy-first defaults. No feeds, no distractions.</p>
@@ -1005,6 +1009,7 @@ export default function App() {
                 <form className="p-8 rounded-2xl border border-neutral-900 bg-neutral-900/50 shadow-lg space-y-5" onSubmit={handleLogin}>
                   <div className="space-y-2">
                     <p className="text-4xl font-bold text-white tracking-[0.15em]">LAMB</p>
+                    <p className="text-xs tracking-[0.2em] text-neutral-500">LIQUID ASSET MANAGEMENT BOARD</p>
                     <h2 className="text-2xl font-semibold">Login</h2>
                   </div>
                   <div className="space-y-3">
@@ -1028,6 +1033,7 @@ export default function App() {
                 <form className="p-8 rounded-2xl border border-neutral-900 bg-neutral-900/50 shadow-lg space-y-5" onSubmit={handleRegister}>
                   <div className="space-y-2">
                     <p className="text-4xl font-bold text-white tracking-[0.15em]">LAMB</p>
+                    <p className="text-xs tracking-[0.2em] text-neutral-500">LIQUID ASSET MANAGEMENT BOARD</p>
                     <h2 className="text-2xl font-semibold">Sign up</h2>
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
