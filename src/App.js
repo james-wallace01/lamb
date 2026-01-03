@@ -184,10 +184,33 @@ export default function App() {
   const [confirmDialog, setConfirmDialog] = useState({ show: false, title: "", message: "", onConfirm: null });
   const [moveDialog, setMoveDialog] = useState({ show: false, assetId: null, targetVaultId: null, targetCollectionId: null });
   const [collectionMoveDialog, setCollectionMoveDialog] = useState({ show: false, collectionId: null, targetVaultId: null });
+  const [shareDialog, setShareDialog] = useState({ show: false, vaultId: null, username: "", permission: "view" });
+  const [showShareSuggestions, setShowShareSuggestions] = useState(false);
   const [viewAsset, setViewAsset] = useState(null);
   const [viewAssetDraft, setViewAssetDraft] = useState(initialAssetState);
   const [imageViewer, setImageViewer] = useState({ show: false, images: [], currentIndex: 0 });
   const [editDialog, setEditDialog] = useState({ show: false, type: null, item: null, name: "", description: "", manager: "", images: [], heroImage: "" });
+
+  const openShareDialog = (vault) => {
+    setShareDialog({ show: true, vaultId: vault.id, username: "", permission: "view" });
+    setShowShareSuggestions(false);
+  };
+
+  const closeShareDialog = () => { setShareDialog({ show: false, vaultId: null, username: "", permission: "view" }); setShowShareSuggestions(false); };
+
+  const handleShareConfirm = () => {
+    if (!shareDialog.username) return showAlert("Enter a username to share with.");
+    const user = users.find(u => u.username === shareDialog.username || `${u.firstName} ${u.lastName}` === shareDialog.username || u.email === shareDialog.username);
+    if (!user) return showAlert("User not found.");
+    setVaults((prev) => prev.map(v => {
+      if (v.id !== shareDialog.vaultId) return v;
+      const existing = v.sharedWith || [];
+      if (existing.find(s => s.userId === user.id)) return v;
+      return { ...v, sharedWith: [...existing, { userId: user.id, username: user.username, permission: shareDialog.permission }] };
+    }));
+    showAlert(`Shared with ${user.username}`);
+    // Keep the dialog open after sharing; allow further shares or edits.
+  };
 
   const [alert, setAlert] = useState("");
   const alertTimeoutRef = useRef(null);
@@ -614,9 +637,10 @@ export default function App() {
     if (isLoggedIn && currentUser) ensureDefaultVaultForUser(currentUser);
   }, [isLoggedIn, currentUser]);
 
-  // Start tutorial for users who haven't seen it yet
+  // Start tutorial for users who haven't seen it yet — only when viewing Vaults
   useEffect(() => {
     if (!isLoggedIn || !currentUser) return;
+    if (view !== "vault") return; // don't auto-start on Home or other pages
     try {
       const seen = localStorage.getItem(`tutorialShown_${currentUser.id}`);
       if (!seen) {
@@ -629,7 +653,7 @@ export default function App() {
     } catch (e) {
       // ignore storage errors
     }
-  }, [isLoggedIn, currentUser]);
+  }, [isLoggedIn, currentUser, view]);
 
   // Update spotlight rect when step changes or on resize/scroll
   useEffect(() => {
@@ -1712,7 +1736,7 @@ export default function App() {
                               </button>
                               <div className="flex gap-2 mt-2">
                                 <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={(e) => { e.stopPropagation(); openEditVault(vault); }}>View / Edit</button>
-                                <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`Vault: ${vault.name}\nCreated: ${new Date(vault.createdAt).toLocaleDateString()}`); showAlert('Vault details copied to clipboard!'); }}>Share</button>
+                                <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); openShareDialog(vault); }}>Share</button>
                                 <button className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-800" onClick={(e) => { e.stopPropagation(); handleDeleteVault(vault); }}>Delete</button>
                               </div>
                               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="absolute right-2 bottom-2 h-8 w-8 opacity-100 pointer-events-none" fill="white" aria-hidden="true">
@@ -2253,6 +2277,91 @@ export default function App() {
             <div className="flex gap-3 justify-end">
               <button className="px-4 py-2 rounded border border-neutral-700 hover:bg-neutral-800" onClick={() => setConfirmDialog({ show: false, title: "", message: "", onConfirm: null })}>Cancel</button>
               <button className="px-4 py-2 rounded bg-red-600 hover:bg-red-700" onClick={confirmDialog.onConfirm}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {shareDialog.show && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={closeShareDialog}>
+          <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-xl font-semibold mb-3">Share {vaults.find(v => v.id === shareDialog.vaultId)?.name || "Vault"}</h3>
+            <p className="text-sm text-neutral-400 mb-4">Share this vault with another LAMB user by username, email, or full name.</p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm text-neutral-400">User</label>
+                <div className="relative">
+                  <input autoComplete="off" className="w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="username or email" value={shareDialog.username} onChange={(e) => { setShareDialog((d) => ({ ...d, username: e.target.value })); setShowShareSuggestions(true); }} onFocus={() => setShowShareSuggestions(true)} />
+                  {shareDialog.username && showShareSuggestions && (
+                    (() => {
+                      const q = shareDialog.username.toLowerCase();
+                      const currentVault = vaults.find(v => v.id === shareDialog.vaultId);
+                      const sharedIds = (currentVault?.sharedWith || []).map(s => s.userId);
+                      const matches = (users || []).filter(u => {
+                        if (sharedIds.includes(u.id)) return false; // exclude already-shared users
+                        const full = `${u.firstName || ""} ${u.lastName || ""}`.toLowerCase();
+                        return (u.username || "").toLowerCase().includes(q) || (u.email || "").toLowerCase().includes(q) || full.includes(q);
+                      }).slice(0, 6);
+                      if (matches.length === 0) return null;
+                      return (
+                        <div className="absolute left-0 right-0 mt-1 bg-neutral-900 border border-neutral-800 rounded max-h-40 overflow-auto z-30">
+                          {matches.map((u) => (
+                            <button key={u.id} type="button" className="w-full text-left px-3 py-2 hover:bg-neutral-800 flex justify-between items-start" onClick={() => { setShareDialog((d) => ({ ...d, username: u.username })); setShowShareSuggestions(false); }}>
+                              <div>
+                                <div className="font-medium">{u.username}</div>
+                                <div className="text-xs text-neutral-400">{u.email || `${u.firstName || ""} ${u.lastName || ""}`}</div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="text-sm text-neutral-400">Permission</label>
+                <select className="w-full mt-1 p-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer text-white" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={shareDialog.permission} onChange={(e) => setShareDialog((d) => ({ ...d, permission: e.target.value }))}>
+                  <option value="view">View</option>
+                  <option value="edit">Edit</option>
+                </select>
+              </div>
+              <div>
+                <p className="text-sm text-neutral-400">Currently shared with:</p>
+                <div className="mt-2 space-y-1 max-h-40 overflow-auto">
+                  {(vaults.find(v => v.id === shareDialog.vaultId)?.sharedWith || []).map((s) => {
+                    const u = users.find(u => u.id === s.userId) || { username: s.username };
+                    return (
+                      <div key={s.userId} className="flex items-center justify-between bg-neutral-950/40 p-2 rounded">
+                        <div>
+                          <div className="text-sm font-medium">{u.username}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <select value={s.permission} onChange={(e) => {
+                            const newPerm = e.target.value;
+                            setVaults(prev => prev.map(v => {
+                              if (v.id !== shareDialog.vaultId) return v;
+                              return { ...v, sharedWith: (v.sharedWith || []).map(x => x.userId === s.userId ? { ...x, permission: newPerm } : x) };
+                            }));
+                            showAlert(`Permission updated for ${u.username}`);
+                          }} className="px-2 py-1 text-xs pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer text-white" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.35rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.1em 1.1em', appearance: 'none'}}>
+                            <option value="view">View</option>
+                            <option value="edit">Edit</option>
+                          </select>
+                          <button className="px-2 py-1 text-xs rounded bg-red-600 hover:bg-red-700" onClick={() => {
+                            setVaults(prev => prev.map(v => v.id === shareDialog.vaultId ? { ...v, sharedWith: (v.sharedWith || []).filter(x => x.userId !== s.userId) } : v));
+                            showAlert(`Removed ${u.username}`);
+                          }}>Remove</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end mt-4">
+              <button className="px-3 py-1 rounded border border-neutral-700 hover:bg-neutral-800" onClick={closeShareDialog}>Close</button>
+              <button className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700" onClick={handleShareConfirm}>Share</button>
             </div>
           </div>
         </div>
