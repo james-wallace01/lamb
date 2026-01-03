@@ -193,6 +193,20 @@ export default function App() {
     }
   };
 
+  // Format number with commas for thousands separators
+  const formatCurrency = (value) => {
+    if (!value && value !== 0) return "";
+    const num = typeof value === "string" ? parseFloat(value.replace(/,/g, "")) : value;
+    if (isNaN(num)) return "";
+    return num.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  };
+
+  // Parse formatted currency string to number
+  const parseCurrency = (value) => {
+    if (!value) return "";
+    return value.replace(/,/g, "");
+  };
+
   const ensureDefaultVaultForUser = (user) => {
     if (!user) return null;
 
@@ -1524,7 +1538,21 @@ export default function App() {
                         ))}
                       </select>
                       <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={3} placeholder="Description" maxLength={60} value={newAsset.description} onChange={(e) => setNewAsset((p) => ({ ...p, description: e.target.value }))} />
-                      <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" type="number" step="0.01" min="0" placeholder="Value ($)" value={newAsset.value} onChange={(e) => setNewAsset((p) => ({ ...p, value: e.target.value }))} />
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400">$</span>
+                        <input 
+                          className="w-full p-2 pl-7 rounded bg-neutral-950 border border-neutral-800" 
+                          type="text" 
+                          placeholder="0.00" 
+                          value={formatCurrency(newAsset.value)} 
+                          onChange={(e) => {
+                            const cleaned = parseCurrency(e.target.value);
+                            if (cleaned === "" || !isNaN(parseFloat(cleaned))) {
+                              setNewAsset((p) => ({ ...p, value: cleaned }));
+                            }
+                          }} 
+                        />
+                      </div>
 
                       <div className="space-y-3">
                         <div className="flex flex-col items-start gap-1">
@@ -1700,7 +1728,21 @@ export default function App() {
               <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={4} placeholder="Description" maxLength={60} value={viewAssetDraft.description} onChange={(e) => setViewAssetDraft((p) => ({ ...p, description: e.target.value }))} />
               <div>
                 <p className="text-sm text-neutral-400 mb-2">Value</p>
-                <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" type="number" step="0.01" min="0" placeholder="Value ($)" value={viewAssetDraft.value} onChange={(e) => setViewAssetDraft((p) => ({ ...p, value: e.target.value }))} />
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400">$</span>
+                  <input 
+                    className="w-full p-2 pl-7 rounded bg-neutral-950 border border-neutral-800" 
+                    type="text" 
+                    placeholder="0.00" 
+                    value={formatCurrency(viewAssetDraft.value)} 
+                    onChange={(e) => {
+                      const cleaned = parseCurrency(e.target.value);
+                      if (cleaned === "" || !isNaN(parseFloat(cleaned))) {
+                        setViewAssetDraft((p) => ({ ...p, value: cleaned }));
+                      }
+                    }} 
+                  />
+                </div>
               </div>
 
               <div className="space-y-3">
