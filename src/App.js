@@ -161,9 +161,9 @@ export default function App() {
   const [loginForm, setLoginForm] = useState({ username: "", password: "" });
   const initialRegisterForm = { firstName: "", lastName: "", email: "", username: "", password: "", profileImage: DEFAULT_AVATAR };
   const [registerForm, setRegisterForm] = useState(initialRegisterForm);
-  const [vaultSort, setVaultSort] = useState("default");
+  const [vaultSort, setVaultSort] = useState("newest");
   const [vaultFilter, setVaultFilter] = useState("");
-  const [collectionSort, setCollectionSort] = useState("default");
+  const [collectionSort, setCollectionSort] = useState("newest");
   const [collectionFilter, setCollectionFilter] = useState("");
   const [assetSort, setAssetSort] = useState("newest");
   const [assetFilter, setAssetFilter] = useState("");
