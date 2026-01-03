@@ -185,12 +185,128 @@ export default function App() {
   const [alert, setAlert] = useState("");
   const alertTimeoutRef = useRef(null);
 
+  // Tutorial / onboarding state
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState(0);
+  const [tutorialRect, setTutorialRect] = useState(null);
+  const tutorialTargets = ["vault-list", "collection-list", "assets-panel", "asset-list", "back-button"];
+  const tutorialMessages = [
+    "This column shows your Vaults — select one to view its Collections.",
+    "This column shows Collections — select one to view its Assets.",
+    "You clicked a Collection — the view switched to Collections and Assets.",
+    "This column shows Assets — open one to view and edit details.",
+    "If you want to go back to Vaults, click this Back button."
+  ];
+
   const showAlert = (message, duration = 2400) => {
     if (alertTimeoutRef.current) clearTimeout(alertTimeoutRef.current);
     setAlert(message);
     if (message) {
       alertTimeoutRef.current = setTimeout(() => setAlert(""), duration);
     }
+  };
+
+  const updateTutorialRect = (targetKey) => {
+    try {
+      const el = document.querySelector(`[data-tut="${targetKey}"]`);
+      if (!el) {
+        setTutorialRect(null);
+        return;
+      }
+      const r = el.getBoundingClientRect();
+      setTutorialRect({ top: r.top + window.scrollY, left: r.left + window.scrollX, width: r.width, height: r.height });
+    } catch (err) {
+      setTutorialRect(null);
+    }
+  };
+
+  // Poll for the target element for a short timeout so tutorial works even if DOM is still rendering
+  const ensureTutorialRect = (targetKey, timeout = 2000, interval = 150) => {
+    if (!targetKey) return;
+    let elapsed = 0;
+    updateTutorialRect(targetKey);
+    if (tutorialRect) return;
+    const id = setInterval(() => {
+      try {
+        const el = document.querySelector(`[data-tut="${targetKey}"]`);
+        if (el) {
+          const r = el.getBoundingClientRect();
+          setTutorialRect({ top: r.top + window.scrollY, left: r.left + window.scrollX, width: r.width, height: r.height });
+          clearInterval(id);
+          return;
+        }
+      } catch (e) {
+        // ignore
+      }
+      elapsed += interval;
+      if (elapsed >= timeout) {
+        clearInterval(id);
+        // leave tutorialRect null so UI shows preparing message
+      }
+    }, interval);
+  };
+
+  const nextTutorial = () => {
+    const next = tutorialStep + 1;
+    if (next >= tutorialTargets.length) {
+      // finish
+      if (currentUser) {
+        try { localStorage.setItem(`tutorialShown_${currentUser.id}`, "true"); } catch (e) {}
+      }
+      setShowTutorial(false);
+      setTutorialStep(0);
+      setTutorialRect(null);
+      return;
+    }
+    // If advancing to the Collection step, open the first vault so collections are visible
+    if (next === 1) {
+      try {
+        const firstVault = (typeof sortedVaults !== 'undefined' && sortedVaults && sortedVaults.length > 0) ? sortedVaults[0] : null;
+        if (firstVault) {
+          handleSelectVault(firstVault.id);
+          // delay a bit to allow collections to render, then move spotlight
+          setTimeout(() => {
+            setTutorialStep(next);
+            ensureTutorialRect("collection-list");
+          }, 220);
+          return;
+        }
+      } catch (err) {
+        // ignore and proceed
+      }
+    }
+
+    // If advancing to the assets-panel step, auto-select the first collection in the current vault
+    if (next === 2) {
+      try {
+        const vaultId = selectedVaultId || (sortedVaults && sortedVaults[0] && sortedVaults[0].id);
+        const firstCollection = collections.find((c) => c.vaultId === vaultId);
+        if (firstCollection && !selectedCollectionId) {
+          handleSelectCollection(firstCollection.id);
+          setTimeout(() => {
+            setTutorialStep(next);
+            ensureTutorialRect("assets-panel");
+          }, 220);
+          return;
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    setTutorialStep(next);
+    // ensure spotlight updates for the newly selected step
+    setTimeout(() => {
+      try { ensureTutorialRect(tutorialTargets[next]); } catch (e) { /* ignore */ }
+    }, 160);
+  };
+
+  const skipTutorial = () => {
+    if (currentUser) {
+      try { localStorage.setItem(`tutorialShown_${currentUser.id}`, "true"); } catch (e) {}
+    }
+    setShowTutorial(false);
+    setTutorialStep(0);
+    setTutorialRect(null);
   };
 
   // Format number with commas for thousands separators
@@ -474,6 +590,37 @@ export default function App() {
   useEffect(() => {
     if (isLoggedIn && currentUser) ensureDefaultVaultForUser(currentUser);
   }, [isLoggedIn, currentUser]);
+
+  // Start tutorial for users who haven't seen it yet
+  useEffect(() => {
+    if (!isLoggedIn || !currentUser) return;
+    try {
+      const seen = localStorage.getItem(`tutorialShown_${currentUser.id}`);
+      if (!seen) {
+        // small delay so DOM settles
+        setTimeout(() => {
+          setShowTutorial(true);
+          setTutorialStep(0);
+        }, 800);
+      }
+    } catch (e) {
+      // ignore storage errors
+    }
+  }, [isLoggedIn, currentUser]);
+
+  // Update spotlight rect when step changes or on resize/scroll
+  useEffect(() => {
+    if (!showTutorial) return;
+    const key = tutorialTargets[tutorialStep];
+    ensureTutorialRect(key);
+    const handler = () => ensureTutorialRect(key);
+    window.addEventListener("resize", handler);
+    window.addEventListener("scroll", handler, { passive: true });
+    return () => {
+      window.removeEventListener("resize", handler);
+      window.removeEventListener("scroll", handler);
+    };
+  }, [showTutorial, tutorialStep]);
 
   useEffect(() => {
     if (view === "register") {
@@ -830,8 +977,18 @@ export default function App() {
 
   const handleSelectCollection = (collectionId) => {
     setSelectedCollectionId(collectionId);
+    const col = collections.find((c) => c.id === collectionId);
+    if (col && col.vaultId) {
+      setSelectedVaultId(col.vaultId);
+    }
     setShowAssetForm(false);
     setCollections((prev) => prev.map((c) => (c.id === collectionId ? { ...c, lastViewed: new Date().toISOString() } : c)));
+    // During tutorial, advance to the asset highlight after user clicks a collection
+    if (showTutorial && tutorialStep === 1) {
+      // show the explanatory panel that the view switched
+      setTutorialStep(2);
+      setTimeout(() => ensureTutorialRect("assets-panel"), 150);
+    }
   };
 
   const normalizeAsset = (asset) => {
@@ -999,6 +1156,36 @@ export default function App() {
       {alert && (
         <div className="fixed top-4 inset-x-0 flex justify-center z-[60]">
           <div className="px-4 py-2 bg-blue-700 text-white rounded shadow">{alert}</div>
+        </div>
+      )}
+
+      {showTutorial && (
+        <div className="fixed inset-0 z-50">
+          {tutorialRect ? (
+            <>
+              <div style={{ position: 'absolute', left: 0, top: 0, right: 0, height: `${tutorialRect.top}px`, background: 'rgba(0,0,0,0.6)' }} />
+              <div style={{ position: 'absolute', left: 0, top: `${tutorialRect.top}px`, width: `${tutorialRect.left}px`, height: `${tutorialRect.height}px`, background: 'rgba(0,0,0,0.6)' }} />
+              <div style={{ position: 'absolute', left: `${tutorialRect.left + tutorialRect.width}px`, top: `${tutorialRect.top}px`, right: 0, height: `${tutorialRect.height}px`, background: 'rgba(0,0,0,0.6)' }} />
+              <div style={{ position: 'absolute', left: 0, top: `${tutorialRect.top + tutorialRect.height}px`, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)' }} />
+              <div style={{ position: 'absolute', left: `${tutorialRect.left}px`, top: `${tutorialRect.top}px`, width: `${tutorialRect.width}px`, height: `${tutorialRect.height}px`, boxShadow: '0 0 0 3px rgba(255,255,255,0.12) inset', borderRadius: 6, pointerEvents: 'none' }} />
+              <div style={{ position: 'absolute', left: Math.max(12, tutorialRect.left), top: tutorialRect.top + tutorialRect.height + 12, maxWidth: 360 }} className="bg-neutral-900 border border-neutral-700 rounded p-3 text-sm text-neutral-200">
+                <div className="mb-2">{tutorialMessages[tutorialStep]}</div>
+                <div className="flex gap-2 justify-end">
+                  <button className="px-3 py-1 rounded border border-neutral-700 hover:bg-neutral-800 text-xs" onClick={skipTutorial}>Skip</button>
+                  <button className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-xs" onClick={nextTutorial}>{tutorialStep === tutorialTargets.length - 1 ? "Done" : "Next"}</button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+              <div className="bg-neutral-900 border border-neutral-700 rounded p-3 text-sm text-neutral-200">
+                <div className="mb-2">Preparing tutorial...</div>
+                <div className="flex gap-2 justify-end">
+                  <button className="px-3 py-1 rounded border border-neutral-700 hover:bg-neutral-800 text-xs" onClick={skipTutorial}>Skip</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1227,10 +1414,10 @@ export default function App() {
             <div className="space-y-6">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h1 className="text-2xl font-semibold">{selectedVault ? (selectedCollection ? `${selectedVault.name} / ${selectedCollection.name}` : selectedVault.name) : "Vault"}</h1>
+                  <h1 data-tut="vault-title" className="text-2xl font-semibold">{selectedVault ? (selectedCollection ? `${selectedVault.name} / ${selectedCollection.name}` : selectedVault.name) : "Vault"}</h1>
                   <div className="h-10 flex items-center">
-                    {selectedCollection && (
-                      <button className="mt-2 px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => { setSelectedCollectionId(null); setShowCollectionForm(false); setShowAssetForm(false); }}>
+                      {selectedCollection && (
+                      <button data-tut="back-button" className="mt-2 px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => { setSelectedCollectionId(null); setShowCollectionForm(false); setShowAssetForm(false); }}>
                         ← Back
                       </button>
                     )}
@@ -1247,7 +1434,7 @@ export default function App() {
                       <h3 className="text-sm text-neutral-400 truncate">{selectedCollection ? (selectedVault?.name || "Vault") : "Create or select a Vault"}</h3>
                     </div>
                     <div className="flex items-center gap-2 ml-4">
-                      <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 w-10 h-10 flex items-center justify-center" onClick={() => {
+                      <button data-tut="create-button" className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 w-10 h-10 flex items-center justify-center" onClick={() => {
                         if (selectedCollection) {
                           setShowCollectionForm((v) => !v);
                           setShowVaultForm(false);
@@ -1384,8 +1571,8 @@ export default function App() {
                       sortedVaults.length === 0 ? (
                         <p className="text-neutral-500">No vaults yet. Add one to start.</p>
                       ) : (
-                        <div className="grid gap-2">
-                          {sortedVaults.map((vault) => {
+                        <div data-tut="vault-list" className="grid gap-2">
+                          {sortedVaults.map((vault, idx) => {
                             const vaultCollectionIds = collections.filter(c => c.vaultId === vault.id).map(c => c.id);
                             const vaultAssets = assets.filter(a => vaultCollectionIds.includes(a.collectionId));
                             const vaultValue = vaultAssets.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
@@ -1393,7 +1580,7 @@ export default function App() {
                             const hero = vault.heroImage || DEFAULT_HERO;
                             const vaultImages = vault.images || [];
                             return (
-                            <div key={vault.id} className={`relative overflow-hidden p-3 rounded border ${vault.id === selectedVaultId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"} flex flex-col justify-between h-48`}>
+                            <div key={vault.id} data-tut={idx === 0 ? "vault-frame" : undefined} className={`relative overflow-hidden p-3 rounded border ${vault.id === selectedVaultId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"} flex flex-col justify-between h-48`}>
                               <button className="w-full text-left hover:opacity-80" onClick={() => handleSelectVault(vault.id)}>
                                 <div className="flex gap-4">
                                   <img src={hero} alt={vault.name} className="w-24 h-24 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(vaultImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
@@ -1433,15 +1620,15 @@ export default function App() {
                       sortedCollections.length === 0 ? (
                         <p className="text-neutral-500">No collections yet. Add one to start.</p>
                       ) : (
-                        <div className="grid gap-2">
-                          {sortedCollections.map((collection) => {
+                        <div data-tut="collection-list" className="grid gap-2">
+                          {sortedCollections.map((collection, idx) => {
                             const collectionAssets = assets.filter(a => a.collectionId === collection.id);
                             const collectionValue = collectionAssets.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
                             const assetCount = collectionAssets.length;
                             const hero = collection.heroImage || DEFAULT_HERO;
                             const collectionImages = collection.images || [];
                             return (
-                            <div key={collection.id} className={`relative overflow-hidden p-3 rounded border ${collection.id === selectedCollectionId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"} flex flex-col justify-between h-48`}>
+                            <div key={collection.id} data-tut={idx === 0 ? "collection-frame" : undefined} className={`relative overflow-hidden p-3 rounded border ${collection.id === selectedCollectionId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"} flex flex-col justify-between h-48`}>
                               <button className="w-full text-left hover:opacity-80" onClick={() => handleSelectCollection(collection.id)}>
                                 <div className="flex gap-4">
                                   <img src={hero} alt={collection.name} className="w-24 h-24 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(collectionImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
@@ -1483,10 +1670,10 @@ export default function App() {
 
                 <div className="p-4 border border-neutral-900 rounded-xl bg-neutral-900/50 space-y-4 min-h-[500px] transition-all duration-300">
                   <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-lg font-semibold">{selectedCollection ? "Assets" : "Collections"}</p>
-                      <h3 className="text-sm text-neutral-400">{selectedCollection ? selectedCollection.name : (selectedVault ? selectedVault.name : "Organize within a vault")}</h3>
-                    </div>
+                      <div data-tut="assets-panel">
+                        <p className="text-lg font-semibold">{selectedCollection ? "Assets" : "Collections"}</p>
+                        <h3 className="text-sm text-neutral-400">{selectedCollection ? selectedCollection.name : (selectedVault ? selectedVault.name : "Organize within a vault")}</h3>
+                      </div>
                     {selectedCollection ? (
                       <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 w-10 h-10 flex items-center justify-center" onClick={() => { setShowAssetForm((v) => !v); setShowVaultForm(false); setShowCollectionForm(false); }}>+</button>
                     ) : selectedVault ? (
@@ -1657,7 +1844,7 @@ export default function App() {
                       sortedCollections.length === 0 ? (
                         <p className="text-neutral-500">No collections yet. Add one to start.</p>
                       ) : (
-                        <div className="grid gap-2">
+                        <div data-tut="collection-list" className="grid gap-2">
                           {sortedCollections.map((collection) => {
                             const collectionAssets = assets.filter(a => a.collectionId === collection.id);
                             const collectionValue = collectionAssets.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
@@ -1705,13 +1892,13 @@ export default function App() {
                       sortedAssets.length === 0 ? (
                         <div className="p-4 border border-neutral-800 rounded bg-neutral-900 text-neutral-400">No assets in this collection.</div>
                       ) : (
-                        <div className="grid gap-2">
-                          {sortedAssets.map((asset) => {
+                        <div data-tut="asset-list" className="grid gap-2">
+                          {sortedAssets.map((asset, idx) => {
                             const normalized = normalizeAsset(asset);
                             const hero = asset.heroImage || normalized.images[0] || DEFAULT_HERO;
 
                             return (
-                              <div key={asset.id} className="relative overflow-hidden p-3 rounded border border-neutral-800 bg-neutral-950 flex flex-col justify-between h-48">
+                              <div key={asset.id} data-tut={idx === 0 ? "asset-frame" : undefined} className="relative overflow-hidden p-3 rounded border border-neutral-800 bg-neutral-950 flex flex-col justify-between h-48">
                                 <div className="flex gap-4">
                                   <img src={hero} alt={asset.title} className="w-24 h-24 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={() => openImageViewer(normalized.images, 0)} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
                                   <div className="flex-1 flex items-start justify-between">
