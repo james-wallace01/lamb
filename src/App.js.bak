@@ -291,37 +291,15 @@ export default function App() {
         if (v.id !== shareDialog.targetId) return v;
         const existing = v.sharedWith || [];
         if (existing.find(s => s.userId === user.id)) return v;
-        return { ...v, sharedWith: [...existing, { userId: user.id, username: user.username, permission: permissionString, includeContents: !!shareDialog.scopes.collection, includeAssets: !!shareDialog.scopes.asset }] };
+        return { ...v, sharedWith: [...existing, { userId: user.id, username: user.username, permission: permissionString, includeContents: !!shareDialog.scopes.collection }] };
       }));
-
-      // If the vault share requested Collections scope, create collection shares for all collections in the vault.
-      if (shareDialog.scopes.collection) {
-        const vaultId = shareDialog.targetId;
-        const vaultCollectionIds = collections.filter(c => c.vaultId === vaultId).map(c => c.id);
-        setCollections(prev => prev.map(c => {
-          if (c.vaultId !== vaultId) return c;
-          const existing = c.sharedWith || [];
-          if (existing.find(s => s.userId === user.id)) return c;
-          return { ...c, sharedWith: [...existing, { userId: user.id, username: user.username, permission: permissionString, includeAssets: !!shareDialog.scopes.asset }] };
-        }));
-
-        // If asset scope requested as well, add asset shares for all assets within those collections
-        if (shareDialog.scopes.asset) {
-          setAssets(prev => prev.map(a => {
-            if (!vaultCollectionIds.includes(a.collectionId)) return a;
-            const existing = a.sharedWith || [];
-            if (existing.find(s => s.userId === user.id)) return a;
-            return { ...a, sharedWith: [...existing, { userId: user.id, username: user.username, permission: permissionString }] };
-          }));
-        }
-      }
 
       if (!shareDialog.scopes.collection && shareDialog.selectedCollectionIds && shareDialog.selectedCollectionIds.length > 0) {
         setCollections((prev) => prev.map(c => {
           if (!shareDialog.selectedCollectionIds.includes(c.id)) return c;
           const existing = c.sharedWith || [];
           if (existing.find(s => s.userId === user.id)) return c;
-          return { ...c, sharedWith: [...existing, { userId: user.id, username: user.username, permission: permissionString, includeAssets: !!shareDialog.scopes.asset }] };
+          return { ...c, sharedWith: [...existing, { userId: user.id, username: user.username, permission: permissionString, includeContents: true }] };
         }));
       }
 
@@ -336,7 +314,7 @@ export default function App() {
       setCollections((prev) => prev.map(c => c.id === col.id ? (() => {
         const existing = c.sharedWith || [];
         if (existing.find(s => s.userId === user.id)) return c;
-        return { ...c, sharedWith: [...existing, { userId: user.id, username: user.username, permission: permissionString, includeAssets: !!shareDialog.scopes.asset }] };
+        return { ...c, sharedWith: [...existing, { userId: user.id, username: user.username, permission: permissionString, includeContents: !!shareDialog.scopes.asset }] };
       })() : c));
 
       // share selected assets if any (selectedCollectionIds used as selectedAssetIds here)
@@ -361,8 +339,8 @@ export default function App() {
       showAlert(`Shared asset with ${user.username}`);
     }
 
-    // Clear username, selections and reset scopes to defaults for this dialog type
-    setShareDialog((d) => ({ ...d, username: "", selectedCollectionIds: [], scopes: shareDialog.type === 'vault' ? { vault: true, collection: false, asset: false } : shareDialog.type === 'collection' ? { vault: false, collection: true, asset: false } : { vault: false, collection: false, asset: true } }));
+    // Clear username and selections
+    setShareDialog((d) => ({ ...d, username: "", selectedCollectionIds: [] }));
     setShowShareSuggestions(false);
     // Keep dialog open for further edits
   };
@@ -1066,19 +1044,7 @@ export default function App() {
     if (!currentUser) return false;
     const images = trimToFour(newCollection.images || []);
     const heroImage = newCollection.heroImage || images[0] || DEFAULT_HERO;
-    const vault = vaults.find(v => v.id === selectedVaultId);
-    const ownerId = (vault && vault.ownerId) ? vault.ownerId : ((sharedMode && sharedOwnerId) ? sharedOwnerId : currentUser.id);
-
-    if (ownerId !== currentUser.id) {
-      // Ensure current user has create permission on the target vault
-      const entry = (vault && (vault.sharedWith || [])).find(s => s.userId === currentUser.id || s.username === currentUser.username || s.email === currentUser.email);
-      if (!entry || !permissionIncludes(entry.permission || "", "create")) {
-        showAlert("You don't have permission to create a collection in this vault.");
-        return false;
-      }
-    }
-
-    const collection = { id: Date.now(), ownerId: ownerId, vaultId: selectedVaultId, name: newCollection.name.trim(), description: newCollection.description.trim(), manager: (newCollection.manager || "").trim(), isPrivate: true, isDefault: false, createdAt: new Date().toISOString(), lastViewed: new Date().toISOString(), lastEditedBy: currentUser.username, heroImage, images };
+    const collection = { id: Date.now(), ownerId: currentUser.id, vaultId: selectedVaultId, name: newCollection.name.trim(), description: newCollection.description.trim(), manager: (newCollection.manager || "").trim(), isPrivate: true, isDefault: false, createdAt: new Date().toISOString(), lastViewed: new Date().toISOString(), lastEditedBy: currentUser.username, heroImage, images };
     setCollections((prev) => [collection, ...prev]);
     setNewCollection(initialCollectionState);
     return true;
@@ -1109,22 +1075,9 @@ export default function App() {
     const images = trimToFour(newAsset.images || []);
     const heroImage = newAsset.heroImage || images[0] || DEFAULT_HERO;
 
-    const collection = collections.find(c => c.id === selectedCollectionId);
-    const ownerId = (collection && collection.ownerId) ? collection.ownerId : ((sharedMode && sharedOwnerId) ? sharedOwnerId : currentUser.id);
-
-    if (ownerId !== currentUser.id) {
-      // Ensure current user has create permission on the target vault/collection
-      const vault = getVaultForCollection(collection);
-      const entry = (vault && (vault.sharedWith || [])).find(s => s.userId === currentUser.id || s.username === currentUser.username || s.email === currentUser.email);
-      if (!entry || !permissionIncludes(entry.permission || "", "create")) {
-        showAlert("You don't have permission to create an asset in this collection.");
-        return false;
-      }
-    }
-
     const asset = { 
       id: Date.now(), 
-      ownerId: ownerId, 
+      ownerId: currentUser.id, 
       collectionId: selectedCollectionId, 
       title: newAsset.title.trim(), 
       type: newAsset.type.trim(),
@@ -1660,12 +1613,7 @@ export default function App() {
       <div key={collection.id} data-tut={idx === 0 ? "collection-frame" : undefined} className={`relative overflow-hidden p-3 rounded border ${collection.id === selectedCollectionId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"} flex flex-col justify-between h-48`}>
         <button className="w-full text-left hover:opacity-80" onClick={() => handleSelectCollection(collection.id)}>
           <div className="flex gap-4">
-            <div className="flex-shrink-0">
-              <img src={hero} alt={collection.name} className="w-24 h-24 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(collectionImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
-              {sharedMode && (
-                <p className="mt-2 text-xs text-neutral-300">Your role: {getPermissionForCollection(collection) === 'owner' ? 'Owner' : permissionStringToPreset(getPermissionForCollection(collection))}</p>
-              )}
-            </div>
+            <img src={hero} alt={collection.name} className="w-24 h-24 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(collectionImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
             <div className="flex-1 flex items-start justify-between">
               <div className="flex-1">
                 <p className="font-semibold">{collection.name}</p>
@@ -1681,7 +1629,9 @@ export default function App() {
                 <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === collection.ownerId) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return collection.manager || ownerName; })()}</p>
                 <p className="mt-0.5">Assets: {assetCount}</p>
                 {Number.isFinite(collectionValue) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
-                
+                {sharedMode && (
+                  <p className="mt-0.5">Your role: {getPermissionForCollection(collection) === 'owner' ? 'Owner' : permissionStringToPreset(getPermissionForCollection(collection))}</p>
+                )}
               </div>
             </div>
           </div>
@@ -1892,13 +1842,13 @@ export default function App() {
             <div className="space-y-6">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h1 className="text-2xl font-semibold">Profile</h1>
+                  <h1 className="text-2xl font-semibold">User profile</h1>
                 </div>
               </div>
               <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => goBack()}>← Back</button>
               <div className="grid gap-4 md:grid-cols-3 items-start">
                 <div className="p-5 rounded-xl border border-neutral-900 bg-neutral-900/60">
-                      <p className="text-sm text-neutral-400">Profile</p>
+                  <p className="text-sm text-neutral-400">Profile</p>
                   <h2 className="text-xl font-semibold mt-1">{currentUser.firstName} {currentUser.lastName}</h2>
                   <div className="mt-4 relative inline-block">
                     <img src={currentUser.profileImage || DEFAULT_AVATAR} alt="avatar" className="h-28 w-28 rounded-full object-cover border border-neutral-800" />
@@ -1958,7 +1908,7 @@ export default function App() {
             <div className="space-y-6">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h1 className="text-2xl font-semibold">Settings</h1>
+                  <h1 className="text-2xl font-semibold">Security</h1>
                 </div>
               </div>
               <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => goBack()}>← Back</button>
@@ -1966,7 +1916,7 @@ export default function App() {
                 <div className="md:col-span-2 space-y-4">
                   <div className="p-5 rounded-xl border border-neutral-900 bg-neutral-900/60 space-y-4">
                     <div>
-                      <p className="text-sm text-neutral-400">Settings</p>
+                      <p className="text-sm text-neutral-400">Security</p>
                       <h3 className="text-lg font-semibold">Change password</h3>
                     </div>
                     <div className="mb-4">
@@ -2040,7 +1990,8 @@ export default function App() {
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h1 className="text-2xl font-semibold">Shared Vaults</h1>
+                  <h1 className="text-2xl font-semibold">Shared Vaults — Choose Owner</h1>
+                  <p className="text-sm text-neutral-400">Select the user whose shared vaults you want to browse.</p>
                 </div>
               </div>
               <div className="mt-3">
@@ -2149,33 +2100,23 @@ export default function App() {
             </div>
           ) : (
             <div className="space-y-6">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h1 className="text-2xl font-semibold">
-                    {sharedMode ? (
-                      sharedOwnerId ? (
-                        `${(users.find(u => u.id === sharedOwnerId)?.firstName || users.find(u => u.id === sharedOwnerId)?.username || '').trim()} ${(users.find(u => u.id === sharedOwnerId)?.lastName || '').trim()}`.trim() + "'s Vault"
-                      ) : (
-                        "Shared Vaults"
-                      )
-                    ) : (
-                      "My Vaults"
+                  <h1 data-tut="vault-title" className="text-2xl font-semibold">{displaySelectedVault ? (displaySelectedCollection ? `${displaySelectedVault.name} / ${displaySelectedCollection.name}` : displaySelectedVault.name) : "Choose a Vault"}</h1>
+                  <div className="h-10 flex items-center">
+                    {!displaySelectedCollection && (
+                      <button className="mt-2 px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => goBack()}>
+                        ← Back
+                      </button>
                     )}
-                  </h1>
+                    {displaySelectedCollection && (
+                      <button data-tut="back-button" className="mt-2 px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => { setSelectedCollectionId(null); setShowCollectionForm(false); setShowAssetForm(false); }}>
+                        ← Back
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <button className="text-xs text-neutral-500 hover:text-neutral-300" onClick={handleClearData}>Clear local data</button>
-              </div>
-              <div className="mt-3">
-                {!displaySelectedCollection && (
-                  <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => goBack()}>
-                    ← Back
-                  </button>
-                )}
-                {displaySelectedCollection && (
-                  <button data-tut="back-button" className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => { setSelectedCollectionId(null); setShowCollectionForm(false); setShowAssetForm(false); }}>
-                    ← Back
-                  </button>
-                )}
               </div>
 
               <div className="grid gap-4 md:grid-cols-2 transition-all duration-300">
@@ -2343,86 +2284,7 @@ export default function App() {
                     </form>
                   )}
 
-                  <div className="space-y-2">
-                    {!displaySelectedCollection ? (
-                      displaySortedVaults.length === 0 ? (
-                        <p className="text-neutral-500">No vaults yet. Add one to start.</p>
-                      ) : (
-                        <div data-tut="vault-list" className="grid gap-2">
-                          {displaySortedVaults.map((vault, idx) => {
-                            const vaultCollectionIds = collections.filter(c => c.vaultId === vault.id).map(c => c.id);
-                            const vaultAssets = assets.filter(a => vaultCollectionIds.includes(a.collectionId));
-                            const vaultValue = vaultAssets.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
-                            const collectionCount = vaultCollectionIds.length;
-                            const hero = vault.heroImage || DEFAULT_HERO;
-                            const vaultImages = vault.images || [];
-                            return (
-                            <div key={vault.id} data-tut={idx === 0 ? "vault-frame" : undefined} className={`relative overflow-hidden p-3 rounded border ${vault.id === selectedVaultId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"} flex flex-col justify-between h-48`}>
-                              <button className="w-full text-left hover:opacity-80" onClick={() => handleSelectVault(vault.id)}>
-                                <div className="flex gap-4">
-                                  <div className="flex-shrink-0">
-                                    <img src={hero} alt={vault.name} className="w-24 h-24 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(vaultImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
-                                    {sharedMode && (
-                                      <p className="mt-2 text-xs text-neutral-300">Your role: {getPermissionForVault(vault) === 'owner' ? 'Owner' : permissionStringToPreset(getPermissionForVault(vault))}</p>
-                                    )}
-                                  </div>
-                                  <div className="flex-1 flex items-start justify-between">
-                                    <div className="flex-1">
-                                      <p className="font-semibold">{vault.name}</p>
-                                      <div className="flex gap-2 items-center mt-1">
-                                        <span className="text-xs px-2 py-1 rounded bg-blue-900/50 border border-blue-700 text-blue-300">Vault</span>
-                                      </div>
-                                      {vault.description && <p className="text-xs text-neutral-300 mt-0.5">{vault.description}</p>}
-                                    </div>
-                                    <div className="text-right text-xs text-neutral-400 ml-4">
-                                      <p>Created {new Date(vault.createdAt).toLocaleDateString()}</p>
-                                      {vault.lastViewed && <p className="mt-0.5">Viewed {new Date(vault.lastViewed).toLocaleDateString()}</p>}
-                                      {vault.lastEditedBy && <p className="mt-0.5">Edited by {(() => { const editor = users.find(u => u.username === vault.lastEditedBy) || {}; return editor.firstName ? `${editor.firstName} ${editor.lastName}` : (editor.username || vault.lastEditedBy); })()}</p>}
-                                      <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === vault.ownerId) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return vault.manager || ownerName; })()} {(() => {
-                                        // Vault tiles no longer show inline Assign button; manager assignment is available via Edit
-                                      })()}</p>
-                                      <p className="mt-0.5">Collections: {collectionCount}</p>
-                                      {Number.isFinite(vaultValue) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${vaultValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
-                                      
-                                    </div>
-                                  </div>
-                                </div>
-                              </button>
-                              <div className="flex gap-2 mt-2">
-                                <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={(e) => { e.stopPropagation(); openEditVault(vault); }}>View / Edit</button>
-                                {!sharedMode && (
-                                  <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); openShareDialog('vault', vault); }}>Share</button>
-                                )}
-                                
-                                {(() => {
-                                  const canDel = (vault.ownerId === currentUser?.id) || canDeleteInVault(vault);
-                                  return (
-                                    <button
-                                      className={`px-2 py-0.5 rounded text-xs ${canDel ? "bg-red-700 text-white hover:bg-red-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
-                                      onClick={(e) => { e.stopPropagation(); if (!canDel) return; handleDeleteVault(vault); }}
-                                      title={canDel ? "" : "Delete permission required on the vault"}
-                                    >Delete</button>
-                                  );
-                                })()}
-                              </div>
-                              
-                            </div>
-                            );
-                          })}
-                        </div>
-                      )
-                      ) : (
-                      displaySortedCollections.length === 0 ? (
-                        <p className="text-neutral-500">No collections yet. Add one to start.</p>
-                      ) : (
-                        <div data-tut="collection-list" className="grid gap-2">
-                          {displaySortedCollections.map((collection, idx) => renderCollectionTile(collection, idx))}
-                        </div>
-                      )
-                    )}
-                  </div>
-                </div>
-
+                  
                 <div className="p-4 border border-neutral-900 rounded-xl bg-neutral-900/50 space-y-4 min-h-[500px] transition-all duration-300">
                   <div className="flex items-center justify-between">
                       <div data-tut="assets-panel">
@@ -2650,7 +2512,7 @@ export default function App() {
                           {displaySortedCollections.map((collection, idx) => renderCollectionTile(collection, idx))}
                         </div>
                       )
-                      ) : (
+                    ) : (
                       displaySortedAssets.length === 0 ? (
                         <div className="p-4 border border-neutral-800 rounded bg-neutral-900 text-neutral-400">No assets in this collection.</div>
                       ) : (
@@ -2662,12 +2524,7 @@ export default function App() {
                             return (
                               <div key={asset.id} data-tut={idx === 0 ? "asset-frame" : undefined} className="relative overflow-hidden p-3 rounded border border-neutral-800 bg-neutral-950 flex flex-col justify-between h-48">
                                 <div className="flex gap-4">
-                                  <div className="flex-shrink-0">
-                                    <img src={hero} alt={asset.title} className="w-24 h-24 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={() => openImageViewer(normalized.images, 0)} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
-                                    {sharedMode && (
-                                      <p className="mt-2 text-xs text-neutral-300">Your role: {getPermissionForAsset(asset) === 'owner' ? 'Owner' : permissionStringToPreset(getPermissionForAsset(asset))}</p>
-                                    )}
-                                  </div>
+                                  <img src={hero} alt={asset.title} className="w-24 h-24 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={() => openImageViewer(normalized.images, 0)} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
                                   <div className="flex-1 flex items-start justify-between">
                                     <div className="flex-1">
                                       <p className="font-semibold">{asset.title}</p>
@@ -2684,7 +2541,9 @@ export default function App() {
                                       <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === asset.ownerId) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return asset.manager || ownerName; })()}</p>
                                       <p className="mt-0.5 text-xs text-neutral-300 text-right">Quantity: {asset.quantity || 1}</p>
                                       {(() => { const v = parseFloat(asset.value); return Number.isFinite(v) ? <p className="mt-0.5 text-green-400 font-semibold">Value: ${v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p> : null; })()}
-                                      
+                                      {sharedMode && (
+                                        <p className="mt-0.5">Your role: {getPermissionForAsset(asset) === 'owner' ? 'Owner' : permissionStringToPreset(getPermissionForAsset(asset))}</p>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -2977,7 +2836,7 @@ export default function App() {
 
       {shareDialog.show && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={closeShareDialog}>
-          <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 max-w-xl w-full mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-xl font-semibold mb-3">{(() => {
               if (shareDialog.type === 'collection') return `Share ${collections.find(c => c.id === shareDialog.targetId)?.name || 'Collection'}`;
               if (shareDialog.type === 'asset') return `Share ${assets.find(a => a.id === shareDialog.targetId)?.title || 'Asset'}`;
@@ -3028,36 +2887,6 @@ export default function App() {
               </div>
               <div>
                 <label className="text-sm text-neutral-400">Permissions</label>
-                <div className="mt-2">
-                  {shareDialog.type === 'vault' && (
-                    <div className="flex items-center gap-2">
-                      <button
-                        className={`text-sm px-2 py-1 rounded ${shareDialog.scopes?.collection ? 'bg-red-700 text-white' : 'bg-green-700 text-white'}`}
-                        onClick={() => setShareDialog(d => ({ ...d, scopes: { ...(d.scopes || {}), collection: !d.scopes?.collection, asset: d.scopes?.collection ? d.scopes?.asset : false } }))}
-                      >
-                        {shareDialog.scopes?.collection ? 'x Collections' : '+ Collections'}
-                      </button>
-                      <button
-                        className={`text-sm px-2 py-1 rounded ${(shareDialog.scopes?.collection && shareDialog.scopes?.asset) ? 'bg-red-700 text-white' : 'bg-green-700 text-white'}`}
-                        onClick={() => { if (!shareDialog.scopes?.collection) return; setShareDialog(d => ({ ...d, scopes: { ...(d.scopes || {}), asset: !d.scopes?.asset } })); }}
-                        disabled={!shareDialog.scopes?.collection}
-                        style={{ opacity: shareDialog.scopes?.collection ? 1 : 0.5, cursor: shareDialog.scopes?.collection ? 'pointer' : 'not-allowed' }}
-                      >
-                        {shareDialog.scopes?.asset ? 'x Assets' : '+ Assets'}
-                      </button>
-                    </div>
-                  )}
-                  {shareDialog.type === 'collection' && (
-                    <div className="flex items-center gap-2">
-                      <button
-                        className={`text-sm px-2 py-1 rounded ${shareDialog.scopes?.asset ? 'bg-red-700 text-white' : 'bg-green-700 text-white'}`}
-                        onClick={() => setShareDialog(d => ({ ...d, scopes: { ...(d.scopes || {}), asset: !d.scopes?.asset } }))}
-                      >
-                        {shareDialog.scopes?.asset ? 'x Assets' : '+ Assets'}
-                      </button>
-                    </div>
-                  )}
-                </div>
                 <div className="mt-2 space-y-2 max-h-40 overflow-auto">
                   {(() => {
                     let usersMap = new Map();
@@ -3073,26 +2902,7 @@ export default function App() {
                     } else if (shareDialog.type === 'collection') {
                       const currentCollection = collections.find(c => c.id === shareDialog.targetId) || { sharedWith: [] };
                       const assetShares = assets.filter(a => a.collectionId === currentCollection.id).flatMap(a => (a.sharedWith || []).map(sw => ({ ...sw, assetId: a.id, assetTitle: a.title })));
-                      // Start with explicit collection shares
                       (currentCollection.sharedWith || []).forEach(s => usersMap.set(s.userId, { userId: s.userId, username: s.username, collectionShare: s, assets: [] }));
-                      // Merge in parent vault shares so vault-level includeAssets reflects in collection view
-                      const parentVault = getVaultForCollection(currentCollection);
-                      if (parentVault) {
-                        (parentVault.sharedWith || []).forEach(vs => {
-                          if (usersMap.has(vs.userId)) {
-                            const entry = usersMap.get(vs.userId);
-                            if (!entry.collectionShare) {
-                              entry.collectionShare = { ...vs };
-                            } else {
-                              entry.collectionShare.includeAssets = entry.collectionShare.includeAssets || !!vs.includeAssets;
-                              if (!entry.collectionShare.permission && vs.permission) entry.collectionShare.permission = vs.permission;
-                            }
-                          } else {
-                            usersMap.set(vs.userId, { userId: vs.userId, username: vs.username, collectionShare: { ...vs }, assets: [] });
-                          }
-                        });
-                      }
-                      // Then attach asset shares
                       assetShares.forEach(s => {
                         if (!usersMap.has(s.userId)) usersMap.set(s.userId, { userId: s.userId, username: s.username, collectionShare: null, assets: [] });
                         usersMap.get(s.userId).assets.push({ id: s.assetId, title: s.assetTitle, permission: s.permission });
@@ -3106,16 +2916,6 @@ export default function App() {
                     if (rows.length === 0) return <div className="text-sm text-neutral-500">No users have access yet.</div>;
                     return rows.map((r) => {
                       const u = users.find(u => u.id === r.userId) || { username: r.username };
-                      // compute asset counts for vault/collection contexts
-                      let vaultAssetCount = 0;
-                      if (shareDialog.type === 'vault') {
-                        const vaultCollectionsIds = collections.filter(c => c.vaultId === shareDialog.targetId).map(c => c.id);
-                        vaultAssetCount = assets.filter(a => vaultCollectionsIds.includes(a.collectionId)).length;
-                      }
-                      let collectionAssetCount = 0;
-                      if (shareDialog.type === 'collection') {
-                        collectionAssetCount = assets.filter(a => a.collectionId === shareDialog.targetId).length;
-                      }
                       return (
                         <div key={r.userId} className="bg-neutral-950/40 p-2 rounded">
                           <div className="flex items-center justify-between">
@@ -3124,125 +2924,6 @@ export default function App() {
                               <div className="text-xs text-neutral-400">{u.email || (u.firstName ? `${u.firstName} ${u.lastName}` : '')}</div>
                             </div>
                             <div className="flex items-center gap-2">
-                              {shareDialog.type === 'vault' && (
-                                <>
-                                  <button
-                                    className={`text-xs px-2 py-0.5 rounded ${r.vaultShare && r.vaultShare.includeContents ? 'bg-red-700 text-white' : 'bg-green-700 text-white'} ${r.vaultShare && r.vaultShare.includeAssets ? 'opacity-60 cursor-not-allowed bg-neutral-800 text-neutral-400' : ''}`}
-                                    onClick={() => {
-                                      if (!r.vaultShare) return;
-                                      // prevent toggling Collections off while Assets are enabled for this user
-                                      if (r.vaultShare.includeAssets) return;
-                                      const vaultId = shareDialog.targetId;
-                                      const userId = r.userId;
-                                      const newInclude = !r.vaultShare.includeContents;
-                                      // Update vault entry
-                                      setVaults(prev => prev.map(v => v.id === vaultId ? {
-                                        ...v,
-                                        sharedWith: (v.sharedWith || []).map(sw => sw.userId === userId ? { ...sw, includeContents: newInclude } : sw)
-                                      } : v));
-                                      // If enabling, add collection shares for all collections in the vault
-                                      if (newInclude) {
-                                        const vaultCollections = collections.filter(c => c.vaultId === vaultId);
-                                        setCollections(prev => prev.map(c => {
-                                          if (c.vaultId !== vaultId) return c;
-                                          const existing = (c.sharedWith || []);
-                                          if (existing.find(s => s.userId === userId)) return c;
-                                          return { ...c, sharedWith: [...existing, { userId, username: r.username, permission: r.vaultShare.permission || 'view', includeContents: true }] };
-                                        }));
-                                      } else {
-                                        // disabling: remove collection shares that match this user and permission
-                                        setCollections(prev => prev.map(c => {
-                                          if (c.vaultId !== vaultId) return c;
-                                          return { ...c, sharedWith: (c.sharedWith || []).filter(s => !(s.userId === userId && s.permission === (r.vaultShare.permission || 'view'))) };
-                                        }));
-                                        // also disable includeAssets on vault for that user
-                                        setVaults(prev => prev.map(v => v.id === vaultId ? {
-                                          ...v,
-                                          sharedWith: (v.sharedWith || []).map(sw => sw.userId === userId ? { ...sw, includeAssets: false } : sw)
-                                        } : v));
-                                        // remove asset shares created from vault
-                                        setAssets(prev => prev.map(a => ({ ...a, sharedWith: (a.sharedWith || []).filter(s => !(s.userId === userId && s.permission === (r.vaultShare.permission || 'view') && collections.find(c => c.id === a.collectionId && c.vaultId === vaultId)) ) })));
-                                      }
-                                    }}
-                                    title="Toggle collections inclusion"
-                                  >
-                                    {(r.vaultShare && r.vaultShare.includeContents) ? 'x Collections' : '+ Collections'}
-                                  </button>
-
-                                  <button
-                                    className={`text-xs px-2 py-0.5 rounded ${r.vaultShare && r.vaultShare.includeContents && r.vaultShare.includeAssets ? 'bg-red-700 text-white' : 'bg-green-700 text-white'}`}
-                                    onClick={() => {
-                                      if (!r.vaultShare || !r.vaultShare.includeContents) return;
-                                      const vaultId = shareDialog.targetId;
-                                      const userId = r.userId;
-                                      const newIncludeAssets = !r.vaultShare.includeAssets;
-                                      // update vault flag
-                                      setVaults(prev => prev.map(v => v.id === vaultId ? {
-                                        ...v,
-                                        sharedWith: (v.sharedWith || []).map(sw => sw.userId === userId ? { ...sw, includeAssets: newIncludeAssets } : sw)
-                                      } : v));
-                                      if (newIncludeAssets) {
-                                        // add asset shares for all assets in all collections of the vault
-                                        const vaultCollections = collections.filter(c => c.vaultId === vaultId).map(c => c.id);
-                                        setAssets(prev => prev.map(a => {
-                                          if (!vaultCollections.includes(a.collectionId)) return a;
-                                          const existing = (a.sharedWith || []);
-                                          if (existing.find(s => s.userId === userId)) return a;
-                                          return { ...a, sharedWith: [...existing, { userId, username: r.username, permission: r.vaultShare.permission || 'view' }] };
-                                        }));
-                                      } else {
-                                        // remove asset shares matching this user and permission for assets in this vault
-                                        const vaultCollections = collections.filter(c => c.vaultId === vaultId).map(c => c.id);
-                                        setAssets(prev => prev.map(a => a.collectionId && vaultCollections.includes(a.collectionId) ? { ...a, sharedWith: (a.sharedWith || []).filter(s => !(s.userId === userId && s.permission === (r.vaultShare.permission || 'view'))) } : a));
-                                      }
-                                    }}
-                                    title="Toggle assets inclusion"
-                                    disabled={!(r.vaultShare && r.vaultShare.includeContents)}
-                                    style={{ opacity: (r.vaultShare && r.vaultShare.includeContents) ? 1 : 0.5, cursor: (r.vaultShare && r.vaultShare.includeContents) ? 'pointer' : 'not-allowed' }}
-                                  >
-                                    {(r.vaultShare && r.vaultShare.includeAssets) ? 'x Assets' : '+ Assets'}
-                                  </button>
-                                </>
-                              )}
-                              {shareDialog.type === 'collection' && (
-                                <>
-                                  <button
-                                    className={`text-xs px-2 py-0.5 rounded ${r.collectionShare && r.collectionShare.includeAssets ? 'bg-red-700 text-white' : 'bg-green-700 text-white'}`}
-                                    onClick={() => {
-                                      if (!r.collectionShare) return;
-                                      const collectionId = shareDialog.targetId;
-                                      const userId = r.userId;
-                                      const newIncludeAssets = !r.collectionShare.includeAssets;
-                                      // update collection flag
-                                      setCollections(prev => prev.map(c => c.id === collectionId ? {
-                                        ...c,
-                                        sharedWith: (c.sharedWith || []).map(sw => sw.userId === userId ? { ...sw, includeAssets: newIncludeAssets } : sw)
-                                      } : c));
-                                      if (newIncludeAssets) {
-                                        // add asset shares for all assets in this collection
-                                        setAssets(prev => prev.map(a => {
-                                          if (a.collectionId !== collectionId) return a;
-                                          const existing = (a.sharedWith || []);
-                                          if (existing.find(s => s.userId === userId)) return a;
-                                          return { ...a, sharedWith: [...existing, { userId, username: r.username, permission: r.collectionShare.permission || 'view' }] };
-                                        }));
-                                      } else {
-                                        // remove asset shares for this user in this collection
-                                        setAssets(prev => prev.map(a => a.collectionId === collectionId ? { ...a, sharedWith: (a.sharedWith || []).filter(s => !(s.userId === userId && s.permission === (r.collectionShare.permission || 'view'))) } : a));
-                                        // also, if parent vault had includeAssets for this user, disable it (change vault button back to + Assets)
-                                        const parentVaultId = (collections.find(c => c.id === collectionId) || {}).vaultId;
-                                        if (parentVaultId) {
-                                          setVaults(prev => prev.map(v => v.id === parentVaultId ? { ...v, sharedWith: (v.sharedWith || []).map(sw => sw.userId === userId ? { ...sw, includeAssets: false } : sw) } : v));
-                                        }
-                                      }
-                                    }}
-                                    title="Toggle assets inclusion in this collection"
-                                  >
-                                    {(r.collectionShare && r.collectionShare.includeAssets) ? `x Assets` : '+ Assets'}
-                                  </button>
-                                </>
-                              )}
-
                               <div className="relative inline-block">
                                 <select
                                   className="text-xs bg-blue-600 hover:bg-blue-700 text-white rounded px-3 py-1 border border-blue-700 shadow-none ring-0 pr-8 appearance-none"
