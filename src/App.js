@@ -2093,6 +2093,7 @@ export default function App() {
                                 {!sharedMode && (
                                   <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); openShareDialog(vault); }}>Share</button>
                                 )}
+                                
                                 {(() => {
                                   const canDel = (vault.ownerId === currentUser?.id) || canDeleteInVault(vault);
                                   return (
@@ -2736,6 +2737,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+      
 
       {confirmDialog.show && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={() => setConfirmDialog({ show: false, title: "", message: "", onConfirm: null })}>
