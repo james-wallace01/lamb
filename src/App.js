@@ -2267,6 +2267,9 @@ export default function App() {
                                       })()}</p>
                                       <p className="mt-0.5">Collections: {collectionCount}</p>
                                       {Number.isFinite(vaultValue) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${vaultValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
+                                      {sharedMode && (
+                                        <p className="mt-0.5">Your role: {getPermissionForVault(vault) === 'owner' ? 'Owner' : permissionStringToPreset(getPermissionForVault(vault))}</p>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -2288,9 +2291,7 @@ export default function App() {
                                   );
                                 })()}
                               </div>
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="absolute right-2 bottom-2 h-8 w-8 opacity-100 pointer-events-none" fill="white" aria-hidden="true">
-                                <path d="M12 17a2 2 0 100-4 2 2 0 000 4zm6-7h-1V7a5 5 0 00-10 0v3H6a2 2 0 00-2 2v7a2 2 0 002 2h12a2 2 0 002-2v-7a2 2 0 00-2-2zm-8-3a3 3 0 016 0v3H10V7z" />
-                              </svg>
+                              
                             </div>
                             );
                           })}
@@ -2329,6 +2330,9 @@ export default function App() {
                                       })()}</p>
                                       <p className="mt-0.5">Assets: {assetCount}</p>
                                       {Number.isFinite(collectionValue) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
+                                      {sharedMode && (
+                                        <p className="mt-0.5">Your role: {getPermissionForCollection(collection) === 'owner' ? 'Owner' : permissionStringToPreset(getPermissionForCollection(collection))}</p>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -2367,9 +2371,7 @@ export default function App() {
                                   );
                                 })()}
                               </div>
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="absolute right-2 bottom-2 h-8 w-8 opacity-100 pointer-events-none" fill="white" aria-hidden="true">
-                                <path d="M12 17a2 2 0 100-4 2 2 0 000 4zm6-7h-1V7a5 5 0 00-10 0v3H6a2 2 0 00-2 2v7a2 2 0 002 2h12a2 2 0 002-2v-7a2 2 0 00-2-2zm-8-3a3 3 0 016 0v3H10V7z" />
-                              </svg>
+                              
                             </div>
                             );
                           })}
@@ -2704,6 +2706,9 @@ export default function App() {
                                       <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === asset.ownerId) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return asset.manager || ownerName; })()}</p>
                                       <p className="mt-0.5 text-xs text-neutral-300 text-right">Quantity: {asset.quantity || 1}</p>
                                       {(() => { const v = parseFloat(asset.value); return Number.isFinite(v) ? <p className="mt-0.5 text-green-400 font-semibold">Value: ${v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p> : null; })()}
+                                      {sharedMode && (
+                                        <p className="mt-0.5">Your role: {getPermissionForAsset(asset) === 'owner' ? 'Owner' : permissionStringToPreset(getPermissionForAsset(asset))}</p>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -2741,9 +2746,7 @@ export default function App() {
                                     );
                                   })()}
                                 </div>
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="absolute right-2 bottom-2 h-8 w-8 opacity-100 pointer-events-none" fill="white" aria-hidden="true">
-                                  <path d="M12 17a2 2 0 100-4 2 2 0 000 4zm6-7h-1V7a5 5 0 00-10 0v3H6a2 2 0 00-2 2v7a2 2 0 002 2h12a2 2 0 002-2v-7a2 2 0 00-2-2zm-8-3a3 3 0 016 0v3H10V7z" />
-                                </svg>
+                                
                               </div>
                             );
                           })}
