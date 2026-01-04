@@ -408,6 +408,13 @@ export default function App() {
 
   const ensureDefaultVaultForUser = (user) => {
     if (!user) return null;
+    // If the user previously deleted their default example vault, don't recreate it.
+    try {
+      const deletedFlag = localStorage.getItem(`defaultVaultDeleted_${user.id}`);
+      if (deletedFlag === "true") return null;
+    } catch (e) {
+      // ignore storage errors
+    }
 
     // Check if default vault already exists
     const existingVault = vaults.find((v) => v.ownerId === user.id && v.isDefault);
@@ -975,6 +982,14 @@ export default function App() {
         setAssets((prev) => prev.filter((a) => !collectionIds.includes(a.collectionId)));
         setCollections((prev) => prev.filter((c) => c.vaultId !== vault.id));
         setVaults((prev) => prev.filter((v) => v.id !== vault.id));
+        // If the user deleted their default/example vault, remember this so we don't recreate it on login
+        try {
+          if (vault.isDefault && vault.ownerId) {
+            localStorage.setItem(`defaultVaultDeleted_${vault.ownerId}`, "true");
+          }
+        } catch (e) {
+          // ignore storage errors
+        }
         
         if (selectedVaultId === vault.id) {
           setSelectedVaultId(null);
