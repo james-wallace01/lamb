@@ -575,6 +575,21 @@ export default function App() {
   };
 
   const goBack = () => {
+    // If we're in the Vault view, implement contextual back behavior:
+    // - If a collection is selected (Collections and Assets view), deselect it
+    //   to return to the Vaults list view.
+    // - If no collection is selected (Vaults and Collections page), go to Home.
+    if (view === "vault") {
+      if (selectedCollectionId) {
+        setSelectedCollectionId(null);
+        setShowCollectionForm(false);
+        setShowAssetForm(false);
+        return;
+      }
+      navigateTo("home");
+      return;
+    }
+
     if (previousView && previousView !== view) {
       navigateTo(previousView);
       return;
@@ -1330,7 +1345,12 @@ export default function App() {
   });
   const selectedVault = userVaults.find((v) => v.id === selectedVaultId) || null;
 
-  const userCollections = currentUser ? collections.filter((c) => c.ownerId === currentUser.id && (!selectedVaultId || c.vaultId === selectedVaultId)) : [];
+  // Show collections that belong to vaults owned by the current user (so vault owners
+  // see collections created by collaborators inside their vaults).
+  const userCollections = currentUser ? collections.filter((c) => {
+    const vault = vaults.find(v => v.id === c.vaultId);
+    return vault && vault.ownerId === currentUser.id && (!selectedVaultId || c.vaultId === selectedVaultId);
+  }) : [];
   const filteredCollections = userCollections.filter((c) => c.name.toLowerCase().includes(normalizeFilter(collectionFilter)));
   const sortedCollections = [...filteredCollections].sort((a, b) => {
     if (collectionSort === "name") return a.name.localeCompare(b.name);
@@ -1340,7 +1360,9 @@ export default function App() {
   });
   const selectedCollection = userCollections.find((c) => c.id === selectedCollectionId) || null;
 
-  const userAssets = currentUser && selectedCollection ? assets.filter((a) => a.ownerId === currentUser.id && a.collectionId === selectedCollection.id) : [];
+  // Show assets within the selected collection regardless of who created them when
+  // the collection belongs to the current user's vault (owners should see contents).
+  const userAssets = currentUser && selectedCollection ? assets.filter((a) => a.collectionId === selectedCollection.id) : [];
   const filteredAssets = userAssets.filter((a) => {
     const term = normalizeFilter(assetFilter);
     if (!term) return true;
@@ -1874,9 +1896,23 @@ export default function App() {
                     <div className="flex items-center gap-2 ml-4">
                       {(() => {
                         const headerTargetVault = displaySelectedCollection ? (getVaultForCollection(displaySelectedCollection) || displaySelectedVault) : (displaySelectedVault || null);
-                        // By default users can create when viewing their own vaults. When in sharedMode
-                        // with a selected owner but no specific vault, prevent creating (require explicit permission).
-                        const headerCanCreate = headerTargetVault ? canCreateInVault(headerTargetVault) : (!sharedMode);
+                        // Determine header create permission:
+                        // - If a vault context exists, use that vault's create permission.
+                        // - If in sharedMode with an owner selected but no vault chosen, allow create
+                        //   only if that owner has granted the current user 'create' on at least one of their vaults.
+                        // - Otherwise (normal non-shared view with no specific vault), allow create.
+                        let headerCanCreate;
+                        if (headerTargetVault) {
+                          headerCanCreate = canCreateInVault(headerTargetVault);
+                        } else if (sharedMode && sharedOwnerId) {
+                          // Check owner's vaults for a share entry granting 'create' to current user
+                          const ownerVaults = vaults.filter(v => v.ownerId === sharedOwnerId);
+                          const sharedEntries = ownerVaults.flatMap(v => (v.sharedWith || []));
+                          const entry = sharedEntries.find(s => s.userId === currentUser?.id || s.username === currentUser?.username || s.email === currentUser?.email);
+                          headerCanCreate = !!entry && permissionIncludes(entry.permission || "", "create");
+                        } else {
+                          headerCanCreate = true;
+                        }
                         return headerCanCreate ? (
                           <button data-tut="create-button" className={`px-3 py-2 rounded w-10 h-10 flex items-center justify-center bg-blue-600 hover:bg-blue-700`} onClick={() => {
                             const activeCollection = displaySelectedCollection;
