@@ -2971,6 +2971,22 @@ export default function App() {
               </div>
               <div>
                 <label className="text-sm text-neutral-400">Permissions</label>
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    className={`text-sm px-2 py-1 rounded ${shareDialog.scopes?.collection ? 'bg-green-700 text-white' : 'bg-neutral-800 text-neutral-400'}`}
+                    onClick={() => setShareDialog(d => ({ ...d, scopes: { ...(d.scopes || {}), collection: !d.scopes?.collection, asset: d.scopes?.collection ? d.scopes?.asset : false } }))}
+                  >
+                    + Collections
+                  </button>
+                  <button
+                    className={`text-sm px-2 py-1 rounded ${(shareDialog.scopes?.collection && shareDialog.scopes?.asset) ? 'bg-green-700 text-white' : 'bg-neutral-800 text-neutral-400'}`}
+                    onClick={() => { if (!shareDialog.scopes?.collection) return; setShareDialog(d => ({ ...d, scopes: { ...(d.scopes || {}), asset: !d.scopes?.asset } })); }}
+                    disabled={!shareDialog.scopes?.collection}
+                    style={{ opacity: shareDialog.scopes?.collection ? 1 : 0.5, cursor: shareDialog.scopes?.collection ? 'pointer' : 'not-allowed' }}
+                  >
+                    + Assets
+                  </button>
+                </div>
                 <div className="mt-2 space-y-2 max-h-40 overflow-auto">
                   {(() => {
                     let usersMap = new Map();
@@ -3008,6 +3024,37 @@ export default function App() {
                               <div className="text-xs text-neutral-400">{u.email || (u.firstName ? `${u.firstName} ${u.lastName}` : '')}</div>
                             </div>
                             <div className="flex items-center gap-2">
+                              {/* +Collections and +Assets toggles (Assets disabled unless Collections enabled) */}
+                              <button
+                                className={`text-xs px-2 py-0.5 rounded ${r.vaultShare && r.vaultShare.includeContents ? 'bg-green-700 text-white' : 'bg-neutral-800 text-neutral-400'}`}
+                                onClick={() => {
+                                  if (!r.vaultShare) return;
+                                  setVaults(prev => prev.map(v => v.id === shareDialog.targetId ? {
+                                    ...v,
+                                    sharedWith: (v.sharedWith || []).map(sw => sw.userId === r.userId ? { ...sw, includeContents: !sw.includeContents } : sw)
+                                  } : v));
+                                }}
+                                title="Toggle collections inclusion"
+                              >
+                                + Collections
+                              </button>
+
+                              <button
+                                className={`text-xs px-2 py-0.5 rounded ${r.vaultShare && r.vaultShare.includeContents && r.vaultShare.includeAssets ? 'bg-green-700 text-white' : 'bg-neutral-800 text-neutral-400'}`}
+                                onClick={() => {
+                                  if (!r.vaultShare || !r.vaultShare.includeContents) return;
+                                  setVaults(prev => prev.map(v => v.id === shareDialog.targetId ? {
+                                    ...v,
+                                    sharedWith: (v.sharedWith || []).map(sw => sw.userId === r.userId ? { ...sw, includeAssets: !sw.includeAssets } : sw)
+                                  } : v));
+                                }}
+                                title="Toggle assets inclusion"
+                                disabled={!(r.vaultShare && r.vaultShare.includeContents)}
+                                style={{ opacity: (r.vaultShare && r.vaultShare.includeContents) ? 1 : 0.5, cursor: (r.vaultShare && r.vaultShare.includeContents) ? 'pointer' : 'not-allowed' }}
+                              >
+                                + Assets
+                              </button>
+
                               <div className="relative inline-block">
                                 <select
                                   className="text-xs bg-blue-600 hover:bg-blue-700 text-white rounded px-3 py-1 border border-blue-700 shadow-none ring-0 pr-8 appearance-none"
