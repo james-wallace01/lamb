@@ -1596,6 +1596,61 @@ export default function App() {
   const displaySelectedCollection = sharedMode ? selectedSharedCollection : selectedCollection;
   const displaySortedAssets = sharedMode ? sortedSharedAssets : sortedAssets;
 
+  // Single renderer for Collection tiles to avoid duplication in Vault/Collection views
+  const renderCollectionTile = (collection, idx) => {
+    const collectionAssets = assets.filter(a => a.collectionId === collection.id);
+    const collectionValue = collectionAssets.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
+    const assetCount = collectionAssets.length;
+    const hero = collection.heroImage || DEFAULT_HERO;
+    const collectionImages = collection.images || [];
+    const vault = getVaultForCollection(collection) || displaySelectedVault;
+    const colPerm = getPermissionForCollection(collection);
+    const canEdit = (collection.ownerId === currentUser?.id) || permissionIncludes(colPerm, 'edit');
+    const canDelete = (collection.ownerId === currentUser?.id) || permissionIncludes(colPerm, 'delete');
+    const isOwner = vault && vault.ownerId === currentUser?.id;
+
+    return (
+      <div key={collection.id} data-tut={idx === 0 ? "collection-frame" : undefined} className={`relative overflow-hidden p-3 rounded border ${collection.id === selectedCollectionId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"} flex flex-col justify-between h-48`}>
+        <button className="w-full text-left hover:opacity-80" onClick={() => handleSelectCollection(collection.id)}>
+          <div className="flex gap-4">
+            <div className="flex-shrink-0">
+              <img src={hero} alt={collection.name} className="w-24 h-24 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(collectionImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
+              {sharedMode && (
+                <p className="mt-2 text-xs text-neutral-300">Your role: {getPermissionForCollection(collection) === 'owner' ? 'Owner' : permissionStringToPreset(getPermissionForCollection(collection))}</p>
+              )}
+            </div>
+            <div className="flex-1 flex items-start justify-between">
+              <div className="flex-1">
+                <p className="font-semibold">{collection.name}</p>
+                <div className="flex gap-2 items-center mt-1">
+                  <span className="text-xs px-2 py-1 rounded bg-purple-900/50 border border-purple-700 text-purple-300">Collection</span>
+                </div>
+                {collection.description && <p className="text-xs text-neutral-300 mt-0.5">{collection.description}</p>}
+              </div>
+              <div className="text-right text-xs text-neutral-400 ml-4">
+                <p>Created {new Date(collection.createdAt).toLocaleDateString()}</p>
+                {collection.lastViewed && <p className="mt-0.5">Viewed {new Date(collection.lastViewed).toLocaleDateString()}</p>}
+                {collection.lastEditedBy && <p className="mt-0.5">Edited by {(() => { const editor = users.find(u => u.username === collection.lastEditedBy) || {}; return editor.firstName ? `${editor.firstName} ${editor.lastName}` : (editor.username || collection.lastEditedBy); })()}</p>}
+                <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === collection.ownerId) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return collection.manager || ownerName; })()}</p>
+                <p className="mt-0.5">Assets: {assetCount}</p>
+                {Number.isFinite(collectionValue) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
+                
+              </div>
+            </div>
+          </div>
+        </button>
+        <div className="flex gap-2 mt-2">
+          <button className={`px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800`} onClick={(e) => { e.stopPropagation(); openEditCollection(collection); }}>View / Edit</button>
+          {!sharedMode && (
+            <button className={`px-2 py-0.5 rounded text-xs ${isOwner ? "bg-green-700 text-white hover:bg-green-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`} onClick={(e) => { e.stopPropagation(); if (!isOwner) return; openShareDialog('collection', collection); }} title={isOwner ? "" : "Only the vault owner can change sharing"}>Share</button>
+          )}
+          <button className={`px-2 py-0.5 rounded text-xs ${permissionIncludes(colPerm, 'move') ? "bg-yellow-600 text-white hover:bg-yellow-700" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`} onClick={(e) => { e.stopPropagation(); if (!permissionIncludes(colPerm, 'move')) return; openCollectionMoveDialog(collection); }} title={permissionIncludes(colPerm, 'move') ? "" : "Move permission required on the collection"}>Move</button>
+          <button className={`px-2 py-0.5 rounded text-xs ${canDelete ? "bg-red-700 text-white hover:bg-red-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`} onClick={(e) => { e.stopPropagation(); if (!canDelete) return; handleDeleteCollection(collection); }} title={canDelete ? "" : "Delete permission required on the vault"}>Delete</button>
+        </div>
+      </div>
+    );
+  };
+
   const isAuthView = !isLoggedIn && (view === "login" || view === "register");
   const isLanding = !isLoggedIn && view === "landing";
   const activeCenteredView = isLanding ? "landing" : (isAuthView ? view : "other");
@@ -2249,7 +2304,12 @@ export default function App() {
                             <div key={vault.id} data-tut={idx === 0 ? "vault-frame" : undefined} className={`relative overflow-hidden p-3 rounded border ${vault.id === selectedVaultId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"} flex flex-col justify-between h-48`}>
                               <button className="w-full text-left hover:opacity-80" onClick={() => handleSelectVault(vault.id)}>
                                 <div className="flex gap-4">
-                                  <img src={hero} alt={vault.name} className="w-24 h-24 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(vaultImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
+                                  <div className="flex-shrink-0">
+                                    <img src={hero} alt={vault.name} className="w-24 h-24 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(vaultImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
+                                    {sharedMode && (
+                                      <p className="mt-2 text-xs text-neutral-300">Your role: {getPermissionForVault(vault) === 'owner' ? 'Owner' : permissionStringToPreset(getPermissionForVault(vault))}</p>
+                                    )}
+                                  </div>
                                   <div className="flex-1 flex items-start justify-between">
                                     <div className="flex-1">
                                       <p className="font-semibold">{vault.name}</p>
@@ -2267,9 +2327,7 @@ export default function App() {
                                       })()}</p>
                                       <p className="mt-0.5">Collections: {collectionCount}</p>
                                       {Number.isFinite(vaultValue) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${vaultValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
-                                      {sharedMode && (
-                                        <p className="mt-0.5">Your role: {getPermissionForVault(vault) === 'owner' ? 'Owner' : permissionStringToPreset(getPermissionForVault(vault))}</p>
-                                      )}
+                                      
                                     </div>
                                   </div>
                                 </div>
@@ -2302,82 +2360,7 @@ export default function App() {
                         <p className="text-neutral-500">No collections yet. Add one to start.</p>
                       ) : (
                         <div data-tut="collection-list" className="grid gap-2">
-                          {displaySortedCollections.map((collection, idx) => {
-                            const collectionAssets = assets.filter(a => a.collectionId === collection.id);
-                            const collectionValue = collectionAssets.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
-                            const assetCount = collectionAssets.length;
-                            const hero = collection.heroImage || DEFAULT_HERO;
-                            const collectionImages = collection.images || [];
-                            return (
-                            <div key={collection.id} data-tut={idx === 0 ? "collection-frame" : undefined} className={`relative overflow-hidden p-3 rounded border ${collection.id === selectedCollectionId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"} flex flex-col justify-between h-48`}>
-                              <button className="w-full text-left hover:opacity-80" onClick={() => handleSelectCollection(collection.id)}>
-                                <div className="flex gap-4">
-                                  <img src={hero} alt={collection.name} className="w-24 h-24 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(collectionImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
-                                  <div className="flex-1 flex items-start justify-between">
-                                    <div className="flex-1">
-                                      <p className="font-semibold">{collection.name}</p>
-                                      <div className="flex gap-2 items-center mt-1">
-                                        <span className="text-xs px-2 py-1 rounded bg-purple-900/50 border border-purple-700 text-purple-300">Collection</span>
-                                      </div>
-                                      {collection.description && <p className="text-xs text-neutral-300 mt-0.5">{collection.description}</p>}
-                                    </div>
-                                    <div className="text-right text-xs text-neutral-400 ml-4">
-                                      <p>Created {new Date(collection.createdAt).toLocaleDateString()}</p>
-                                      {collection.lastViewed && <p className="mt-0.5">Viewed {new Date(collection.lastViewed).toLocaleDateString()}</p>}
-                                      {collection.lastEditedBy && <p className="mt-0.5">Edited by {(() => { const editor = users.find(u => u.username === collection.lastEditedBy) || {}; return editor.firstName ? `${editor.firstName} ${editor.lastName}` : (editor.username || collection.lastEditedBy); })()}</p>}
-                                      <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === collection.ownerId) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return collection.manager || ownerName; })()} {(() => {
-                                        // Manager assignment available via Edit dialog; no inline button on collection tile
-                                      })()}</p>
-                                      <p className="mt-0.5">Assets: {assetCount}</p>
-                                      {Number.isFinite(collectionValue) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
-                                      {sharedMode && (
-                                        <p className="mt-0.5">Your role: {getPermissionForCollection(collection) === 'owner' ? 'Owner' : permissionStringToPreset(getPermissionForCollection(collection))}</p>
-                                      )}
-                                      {sharedMode && (
-                                        <p className="mt-0.5">Your role: {getPermissionForCollection(collection) === 'owner' ? 'Owner' : permissionStringToPreset(getPermissionForCollection(collection))}</p>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              </button>
-                              <div className="flex gap-2 mt-2">
-                                {(() => {
-                                  const vault = getVaultForCollection(collection) || displaySelectedVault;
-                                  const colPerm = getPermissionForCollection(collection);
-                                  const canEdit = (collection.ownerId === currentUser?.id) || permissionIncludes(colPerm, 'edit');
-                                  const canDelete = (collection.ownerId === currentUser?.id) || permissionIncludes(colPerm, 'delete');
-                                  const isOwner = vault && vault.ownerId === currentUser?.id;
-                                  return (
-                                    <>
-                                      <button
-                                        className={`px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800`}
-                                        onClick={(e) => { e.stopPropagation(); openEditCollection(collection); }}
-                                      >View / Edit</button>
-                                      {!sharedMode && (
-                                        <button
-                                          className={`px-2 py-0.5 rounded text-xs ${isOwner ? "bg-green-700 text-white hover:bg-green-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
-                                          onClick={(e) => { e.stopPropagation(); if (!isOwner) return; openShareDialog('collection', collection); }}
-                                          title={isOwner ? "" : "Only the vault owner can change sharing"}
-                                        >Share</button>
-                                      )}
-                                      <button
-                                        className={`px-2 py-0.5 rounded text-xs ${permissionIncludes(colPerm, 'move') ? "bg-yellow-600 text-white hover:bg-yellow-700" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
-                                        onClick={(e) => { e.stopPropagation(); if (!permissionIncludes(colPerm, 'move')) return; openCollectionMoveDialog(collection); }}
-                                        title={permissionIncludes(colPerm, 'move') ? "" : "Move permission required on the collection"}
-                                      >Move</button>
-                                      <button
-                                        className={`px-2 py-0.5 rounded text-xs ${canDelete ? "bg-red-700 text-white hover:bg-red-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
-                                        onClick={(e) => { e.stopPropagation(); if (!canDelete) return; handleDeleteCollection(collection); }}
-                                        title={canDelete ? "" : "Delete permission required on the vault"}
-                                      >Delete</button>
-                                    </>
-                                  );
-                                })()}
-                              </div>
-                              
-                            </div>
-                            );
-                          })}
+                          {displaySortedCollections.map((collection, idx) => renderCollectionTile(collection, idx))}
                         </div>
                       )
                     )}
@@ -2608,76 +2591,7 @@ export default function App() {
                         <p className="text-neutral-500">No collections yet. Add one to start.</p>
                       ) : (
                         <div data-tut="collection-list" className="grid gap-2">
-                          {displaySortedCollections.map((collection) => {
-                            const collectionAssets = assets.filter(a => a.collectionId === collection.id);
-                            const collectionValue = collectionAssets.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
-                            const assetCount = collectionAssets.length;
-                            const hero = collection.heroImage || DEFAULT_HERO;
-                            const collectionImages = collection.images || [];
-                            return (
-                            <div key={collection.id} className={`relative overflow-hidden p-3 rounded border ${collection.id === selectedCollectionId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"} flex flex-col justify-between h-48`}>
-                              <button className="w-full text-left hover:opacity-80" onClick={() => handleSelectCollection(collection.id)}>
-                                <div className="flex gap-4">
-                                  <img src={hero} alt={collection.name} className="w-24 h-24 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(collectionImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
-                                  <div className="flex-1 flex items-start justify-between">
-                                    <div className="flex-1">
-                                      <p className="font-semibold">{collection.name}</p>
-                                      <div className="flex gap-2 items-center mt-1">
-                                        <span className="text-xs px-2 py-1 rounded bg-purple-900/50 border border-purple-700 text-purple-300">Collection</span>
-                                      </div>
-                                      {collection.description && <p className="text-xs text-neutral-300 mt-0.5">{collection.description}</p>}
-                                    </div>
-                                    <div className="text-right text-xs text-neutral-400 ml-4">
-                                      <p>Created {new Date(collection.createdAt).toLocaleDateString()}</p>
-                                      {collection.lastViewed && <p className="mt-0.5">Viewed {new Date(collection.lastViewed).toLocaleDateString()}</p>}
-                                      {collection.lastEditedBy && <p className="mt-0.5">Edited by {(() => { const editor = users.find(u => u.username === collection.lastEditedBy) || {}; return editor.firstName ? `${editor.firstName} ${editor.lastName}` : (editor.username || collection.lastEditedBy); })()}</p>}
-                                      <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === collection.ownerId) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return collection.manager || ownerName; })()}</p>
-                                      <p className="mt-0.5">Assets: {assetCount}</p>
-                                      {Number.isFinite(collectionValue) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
-                                    </div>
-                                  </div>
-                                </div>
-                              </button>
-                              <div className="flex gap-2 mt-2">
-                                {(() => {
-                                  const vault = getVaultForCollection(collection) || displaySelectedVault;
-                                  const colPerm = getPermissionForCollection(collection);
-                                  const canEdit = (collection.ownerId === currentUser?.id) || permissionIncludes(colPerm, 'edit');
-                                  const canDelete = (collection.ownerId === currentUser?.id) || permissionIncludes(colPerm, 'delete');
-                                  const isOwner = vault && vault.ownerId === currentUser?.id;
-                                  return (
-                                    <>
-                                      <button
-                                        className={`px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800`}
-                                        onClick={(e) => { e.stopPropagation(); openEditCollection(collection); }}
-                                      >View / Edit</button>
-                                      {!sharedMode && (
-                                        <button
-                                          className={`px-2 py-0.5 rounded text-xs ${isOwner ? "bg-green-700 text-white hover:bg-green-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
-                                          onClick={(e) => { e.stopPropagation(); if (!isOwner) return; openShareDialog('collection', collection); }}
-                                          title={isOwner ? "" : "Only the vault owner can change sharing"}
-                                        >Share</button>
-                                      )}
-                                      <button
-                                        className={`px-2 py-0.5 rounded text-xs ${permissionIncludes(colPerm, 'move') ? "bg-yellow-600 text-white hover:bg-yellow-700" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
-                                        onClick={(e) => { e.stopPropagation(); if (!permissionIncludes(colPerm, 'move')) return; openCollectionMoveDialog(collection); }}
-                                        title={permissionIncludes(colPerm, 'move') ? "" : "Move permission required on the collection"}
-                                      >Move</button>
-                                      <button
-                                        className={`px-2 py-0.5 rounded text-xs ${canDelete ? "bg-red-700 text-white hover:bg-red-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
-                                        onClick={(e) => { e.stopPropagation(); if (!canDelete) return; handleDeleteCollection(collection); }}
-                                        title={canDelete ? "" : "Delete permission required on the vault"}
-                                      >Delete</button>
-                                    </>
-                                  );
-                                })()}
-                              </div>
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="absolute right-2 bottom-2 h-8 w-8 opacity-100 pointer-events-none" fill="white" aria-hidden="true">
-                                <path d="M12 17a2 2 0 100-4 2 2 0 000 4zm6-7h-1V7a5 5 0 00-10 0v3H6a2 2 0 00-2 2v7a2 2 0 002 2h12a2 2 0 002-2v-7a2 2 0 00-2-2zm-8-3a3 3 0 016 0v3H10V7z" />
-                              </svg>
-                            </div>
-                            );
-                          })}
+                          {displaySortedCollections.map((collection, idx) => renderCollectionTile(collection, idx))}
                         </div>
                       )
                       ) : (
@@ -2692,7 +2606,12 @@ export default function App() {
                             return (
                               <div key={asset.id} data-tut={idx === 0 ? "asset-frame" : undefined} className="relative overflow-hidden p-3 rounded border border-neutral-800 bg-neutral-950 flex flex-col justify-between h-48">
                                 <div className="flex gap-4">
-                                  <img src={hero} alt={asset.title} className="w-24 h-24 flex-shrink-0 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={() => openImageViewer(normalized.images, 0)} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
+                                  <div className="flex-shrink-0">
+                                    <img src={hero} alt={asset.title} className="w-24 h-24 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={() => openImageViewer(normalized.images, 0)} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
+                                    {sharedMode && (
+                                      <p className="mt-2 text-xs text-neutral-300">Your role: {getPermissionForAsset(asset) === 'owner' ? 'Owner' : permissionStringToPreset(getPermissionForAsset(asset))}</p>
+                                    )}
+                                  </div>
                                   <div className="flex-1 flex items-start justify-between">
                                     <div className="flex-1">
                                       <p className="font-semibold">{asset.title}</p>
@@ -2709,9 +2628,7 @@ export default function App() {
                                       <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === asset.ownerId) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return asset.manager || ownerName; })()}</p>
                                       <p className="mt-0.5 text-xs text-neutral-300 text-right">Quantity: {asset.quantity || 1}</p>
                                       {(() => { const v = parseFloat(asset.value); return Number.isFinite(v) ? <p className="mt-0.5 text-green-400 font-semibold">Value: ${v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p> : null; })()}
-                                      {sharedMode && (
-                                        <p className="mt-0.5">Your role: {getPermissionForAsset(asset) === 'owner' ? 'Owner' : permissionStringToPreset(getPermissionForAsset(asset))}</p>
-                                      )}
+                                      
                                     </div>
                                   </div>
                                 </div>
