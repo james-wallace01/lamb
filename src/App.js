@@ -2119,7 +2119,7 @@ export default function App() {
                                     <div className="text-right text-xs text-neutral-400 ml-4">
                                       <p>Created {new Date(vault.createdAt).toLocaleDateString()}</p>
                                       {vault.lastViewed && <p className="mt-0.5">Viewed {new Date(vault.lastViewed).toLocaleDateString()}</p>}
-                                      {vault.lastEditedBy && <p className="mt-0.5">Edited by {vault.lastEditedBy}</p>}
+                                      {vault.lastEditedBy && <p className="mt-0.5">Edited by {(() => { const editor = users.find(u => u.username === vault.lastEditedBy) || {}; return editor.firstName ? `${editor.firstName} ${editor.lastName}` : (editor.username || vault.lastEditedBy); })()}</p>}
                                       <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === vault.ownerId) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return vault.manager || ownerName; })()} {(() => {
                                         // Vault tiles no longer show inline Assign button; manager assignment is available via Edit
                                       })()}</p>
@@ -2181,7 +2181,7 @@ export default function App() {
                                     <div className="text-right text-xs text-neutral-400 ml-4">
                                       <p>Created {new Date(collection.createdAt).toLocaleDateString()}</p>
                                       {collection.lastViewed && <p className="mt-0.5">Viewed {new Date(collection.lastViewed).toLocaleDateString()}</p>}
-                                      {collection.lastEditedBy && <p className="mt-0.5">Edited by {collection.lastEditedBy}</p>}
+                                      {collection.lastEditedBy && <p className="mt-0.5">Edited by {(() => { const editor = users.find(u => u.username === collection.lastEditedBy) || {}; return editor.firstName ? `${editor.firstName} ${editor.lastName}` : (editor.username || collection.lastEditedBy); })()}</p>}
                                       <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === collection.ownerId) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return collection.manager || ownerName; })()} {(() => {
                                         // Manager assignment available via Edit dialog; no inline button on collection tile
                                       })()}</p>
@@ -2482,7 +2482,7 @@ export default function App() {
                                     <div className="text-right text-xs text-neutral-400 ml-4">
                                       <p>Created {new Date(collection.createdAt).toLocaleDateString()}</p>
                                       {collection.lastViewed && <p className="mt-0.5">Viewed {new Date(collection.lastViewed).toLocaleDateString()}</p>}
-                                      {collection.lastEditedBy && <p className="mt-0.5">Edited by {collection.lastEditedBy}</p>}
+                                      {collection.lastEditedBy && <p className="mt-0.5">Edited by {(() => { const editor = users.find(u => u.username === collection.lastEditedBy) || {}; return editor.firstName ? `${editor.firstName} ${editor.lastName}` : (editor.username || collection.lastEditedBy); })()}</p>}
                                       <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === collection.ownerId) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return collection.manager || ownerName; })()}</p>
                                       <p className="mt-0.5">Assets: {assetCount}</p>
                                       {Number.isFinite(collectionValue) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
@@ -2556,7 +2556,7 @@ export default function App() {
                                     <div className="text-right text-xs text-neutral-400 ml-4">
                                       <p>Created {new Date(asset.createdAt).toLocaleDateString()}</p>
                                       {asset.lastViewed && <p className="mt-0.5">Viewed {new Date(asset.lastViewed).toLocaleDateString()}</p>}
-                                      {asset.lastEditedBy && <p className="mt-0.5">Edited by {asset.lastEditedBy}</p>}
+                                      {asset.lastEditedBy && <p className="mt-0.5">Edited by {(() => { const editor = users.find(u => u.username === asset.lastEditedBy) || {}; return editor.firstName ? `${editor.firstName} ${editor.lastName}` : (editor.username || asset.lastEditedBy); })()}</p>}
                                       <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === asset.ownerId) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return asset.manager || ownerName; })()}</p>
                                       <p className="mt-0.5 text-xs text-neutral-300 text-right">Quantity: {asset.quantity || 1}</p>
                                       {(() => { const v = parseFloat(asset.value); return Number.isFinite(v) ? <p className="mt-0.5 text-green-400 font-semibold">Value: ${v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p> : null; })()}
