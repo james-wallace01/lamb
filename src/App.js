@@ -1845,13 +1845,13 @@ export default function App() {
             <div className="space-y-6">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h1 className="text-2xl font-semibold">User profile</h1>
+                  <h1 className="text-2xl font-semibold">Profile</h1>
                 </div>
               </div>
               <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => goBack()}>← Back</button>
               <div className="grid gap-4 md:grid-cols-3 items-start">
                 <div className="p-5 rounded-xl border border-neutral-900 bg-neutral-900/60">
-                  <p className="text-sm text-neutral-400">Profile</p>
+                      <p className="text-sm text-neutral-400">Profile</p>
                   <h2 className="text-xl font-semibold mt-1">{currentUser.firstName} {currentUser.lastName}</h2>
                   <div className="mt-4 relative inline-block">
                     <img src={currentUser.profileImage || DEFAULT_AVATAR} alt="avatar" className="h-28 w-28 rounded-full object-cover border border-neutral-800" />
@@ -1911,7 +1911,7 @@ export default function App() {
             <div className="space-y-6">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h1 className="text-2xl font-semibold">Security</h1>
+                  <h1 className="text-2xl font-semibold">Settings</h1>
                 </div>
               </div>
               <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => goBack()}>← Back</button>
@@ -1919,7 +1919,7 @@ export default function App() {
                 <div className="md:col-span-2 space-y-4">
                   <div className="p-5 rounded-xl border border-neutral-900 bg-neutral-900/60 space-y-4">
                     <div>
-                      <p className="text-sm text-neutral-400">Security</p>
+                      <p className="text-sm text-neutral-400">Settings</p>
                       <h3 className="text-lg font-semibold">Change password</h3>
                     </div>
                     <div className="mb-4">
@@ -1993,8 +1993,7 @@ export default function App() {
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h1 className="text-2xl font-semibold">Shared Vaults — Choose Owner</h1>
-                  <p className="text-sm text-neutral-400">Select the user whose shared vaults you want to browse.</p>
+                  <h1 className="text-2xl font-semibold">Shared Vaults</h1>
                 </div>
               </div>
               <div className="mt-3">
@@ -2105,21 +2104,21 @@ export default function App() {
             <div className="space-y-6">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h1 data-tut="vault-title" className="text-2xl font-semibold">{displaySelectedVault ? (displaySelectedCollection ? `${displaySelectedVault.name} / ${displaySelectedCollection.name}` : displaySelectedVault.name) : "Choose a Vault"}</h1>
-                  <div className="h-10 flex items-center">
-                    {!displaySelectedCollection && (
-                      <button className="mt-2 px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => goBack()}>
-                        ← Back
-                      </button>
-                    )}
-                    {displaySelectedCollection && (
-                      <button data-tut="back-button" className="mt-2 px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => { setSelectedCollectionId(null); setShowCollectionForm(false); setShowAssetForm(false); }}>
-                        ← Back
-                      </button>
-                    )}
-                  </div>
+                  <h1 className="text-2xl font-semibold">{sharedMode ? "Shared Vaults" : "My Vaults"}</h1>
                 </div>
                 <button className="text-xs text-neutral-500 hover:text-neutral-300" onClick={handleClearData}>Clear local data</button>
+              </div>
+              <div className="mt-3">
+                {!displaySelectedCollection && (
+                  <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => goBack()}>
+                    ← Back
+                  </button>
+                )}
+                {displaySelectedCollection && (
+                  <button data-tut="back-button" className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm" onClick={() => { setSelectedCollectionId(null); setShowCollectionForm(false); setShowAssetForm(false); }}>
+                    ← Back
+                  </button>
+                )}
               </div>
 
               <div className="grid gap-4 md:grid-cols-2 transition-all duration-300">
