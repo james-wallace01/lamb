@@ -805,7 +805,55 @@ export default function App() {
     if (!currentUser) return false;
     const images = trimToFour(newVault.images || []);
     const heroImage = newVault.heroImage || images[0] || DEFAULT_HERO;
-    const vault = { id: Date.now(), ownerId: currentUser.id, name: newVault.name.trim(), description: newVault.description.trim(), manager: (newVault.manager || "").trim(), isPrivate: true, isDefault: false, createdAt: new Date().toISOString(), lastViewed: new Date().toISOString(), lastEditedBy: currentUser.username, heroImage, images };
+    // If we're in shared mode and an owner has been chosen, create the vault under that owner.
+    // Only allow this if the current user has been granted 'create' permission by that owner.
+    const ownerId = (sharedMode && sharedOwnerId) ? sharedOwnerId : currentUser.id;
+
+    if (ownerId !== currentUser.id) {
+      // Gather all shared entries from the chosen owner's existing vaults
+      const ownerVaults = vaults.filter(v => v.ownerId === ownerId);
+      const sharedEntries = ownerVaults.flatMap(v => (v.sharedWith || []).map(s => ({ ...s, vaultId: v.id })));
+      const entry = sharedEntries.find(s => s.userId === currentUser.id || s.username === currentUser.username || s.email === currentUser.email);
+      if (!entry || !permissionIncludes(entry.permission || "", "create")) {
+        showAlert("You don't have permission to create a vault for that user.");
+        return false;
+      }
+      // Use the permission string from the owner's existing share entry when sharing the new vault back
+      const sharedPermission = entry.permission || "view";
+      const vault = {
+        id: Date.now(),
+        ownerId: ownerId,
+        name: newVault.name.trim(),
+        description: newVault.description.trim(),
+        manager: (newVault.manager || "").trim(),
+        isPrivate: true,
+        isDefault: false,
+        createdAt: new Date().toISOString(),
+        lastViewed: new Date().toISOString(),
+        lastEditedBy: currentUser.username,
+        heroImage,
+        images,
+        sharedWith: [{ userId: currentUser.id, username: currentUser.username, permission: sharedPermission, includeContents: true }]
+      };
+      setVaults((prev) => [vault, ...prev]);
+      setNewVault(initialVaultState);
+      return true;
+    }
+    
+    const vault = {
+      id: Date.now(),
+      ownerId: currentUser.id,
+      name: newVault.name.trim(),
+      description: newVault.description.trim(),
+      manager: (newVault.manager || "").trim(),
+      isPrivate: true,
+      isDefault: false,
+      createdAt: new Date().toISOString(),
+      lastViewed: new Date().toISOString(),
+      lastEditedBy: currentUser.username,
+      heroImage,
+      images
+    };
     setVaults((prev) => [vault, ...prev]);
     setNewVault(initialVaultState);
     return true;
@@ -1826,10 +1874,11 @@ export default function App() {
                     <div className="flex items-center gap-2 ml-4">
                       {(() => {
                         const headerTargetVault = displaySelectedCollection ? (getVaultForCollection(displaySelectedCollection) || displaySelectedVault) : (displaySelectedVault || null);
-                        const headerCanCreate = headerTargetVault ? canCreateInVault(headerTargetVault) : true;
-                        return (
-                          <button data-tut="create-button" className={`px-3 py-2 rounded w-10 h-10 flex items-center justify-center ${headerCanCreate ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-600/40 cursor-not-allowed'}`} disabled={!headerCanCreate} onClick={() => {
-                            if (!headerCanCreate) return;
+                        // By default users can create when viewing their own vaults. When in sharedMode
+                        // with a selected owner but no specific vault, prevent creating (require explicit permission).
+                        const headerCanCreate = headerTargetVault ? canCreateInVault(headerTargetVault) : (!sharedMode);
+                        return headerCanCreate ? (
+                          <button data-tut="create-button" className={`px-3 py-2 rounded w-10 h-10 flex items-center justify-center bg-blue-600 hover:bg-blue-700`} onClick={() => {
                             const activeCollection = displaySelectedCollection;
                             if (activeCollection) {
                               setShowCollectionForm((v) => !v);
@@ -1839,6 +1888,8 @@ export default function App() {
                             }
                             setShowAssetForm(false);
                           }}>+</button>
+                        ) : (
+                          <div className="w-10 h-10 rounded flex items-center justify-center bg-blue-600/40 opacity-60" aria-hidden="true">+</div>
                         );
                       })()}
                     </div>
@@ -2115,34 +2166,28 @@ export default function App() {
                       const targetVault = displaySelectedCollection ? (getVaultForCollection(displaySelectedCollection || selectedCollection) || displaySelectedVault) : (displaySelectedVault || null);
                       const canCreate = targetVault ? canCreateInVault(targetVault) : false;
                       if (displaySelectedCollection) {
-                        return (
+                        return canCreate ? (
                           <button
-                            className={`px-3 py-2 rounded w-10 h-10 flex items-center justify-center ${canCreate ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-600/40 cursor-not-allowed"}`}
-                            disabled={!canCreate}
-                            onClick={(e) => {
-                              if (!canCreate) { e.stopPropagation(); return; }
-                              setShowAssetForm((v) => !v); setShowVaultForm(false); setShowCollectionForm(false);
-                            }}
-                            title={canCreate ? "" : "Create permission required on the vault"}
+                            className={`px-3 py-2 rounded w-10 h-10 flex items-center justify-center bg-blue-600 hover:bg-blue-700`}
+                            onClick={(e) => { setShowAssetForm((v) => !v); setShowVaultForm(false); setShowCollectionForm(false); }}
                           >+
                           </button>
+                        ) : (
+                          <div className="w-10 h-10 rounded flex items-center justify-center bg-blue-600/40 opacity-60" aria-hidden="true">+</div>
                         );
                       }
                       if (displaySelectedVault) {
-                        return (
+                        return canCreate ? (
                           <button
-                            className={`px-3 py-2 rounded w-10 h-10 flex items-center justify-center ${canCreate ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-600/40 cursor-not-allowed"}`}
-                            disabled={!canCreate}
-                            onClick={(e) => {
-                              if (!canCreate) { e.stopPropagation(); return; }
-                              setShowCollectionForm((v) => !v); setShowVaultForm(false); setShowAssetForm(false);
-                            }}
-                            title={canCreate ? "" : "Create permission required on the vault"}
+                            className={`px-3 py-2 rounded w-10 h-10 flex items-center justify-center bg-blue-600 hover:bg-blue-700`}
+                            onClick={(e) => { setShowCollectionForm((v) => !v); setShowVaultForm(false); setShowAssetForm(false); }}
                           >+
                           </button>
+                        ) : (
+                          <div className="w-10 h-10 rounded flex items-center justify-center bg-blue-600/40 opacity-60" aria-hidden="true">+</div>
                         );
                       }
-                      return <button className="px-3 py-2 rounded bg-blue-600/40 cursor-not-allowed w-10 h-10 flex items-center justify-center" disabled>+</button>;
+                      return <div className="w-10 h-10 rounded flex items-center justify-center bg-blue-600/40 opacity-60" aria-hidden="true">+</div>;
                     })()}
                   </div>
 
