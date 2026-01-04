@@ -186,6 +186,7 @@ export default function App() {
   const [confirmDialog, setConfirmDialog] = useState({ show: false, title: "", message: "", onConfirm: null });
   const [moveDialog, setMoveDialog] = useState({ show: false, assetId: null, targetVaultId: null, targetCollectionId: null });
   const [collectionMoveDialog, setCollectionMoveDialog] = useState({ show: false, collectionId: null, targetVaultId: null });
+  const [managerDialog, setManagerDialog] = useState({ show: false, type: null, id: null, username: "" });
   const [shareDialog, setShareDialog] = useState({ show: false, vaultId: null, username: "", permission: "view", includeContents: false });
   const [showShareSuggestions, setShowShareSuggestions] = useState(false);
   const [viewAsset, setViewAsset] = useState(null);
@@ -196,6 +197,29 @@ export default function App() {
   const openShareDialog = (vault) => {
     setShareDialog({ show: true, vaultId: vault.id, username: "", permission: "view", includeContents: false });
     setShowShareSuggestions(false);
+  };
+
+  const openManagerDialog = (type, item) => {
+    setManagerDialog({ show: true, type, id: item.id, username: item.manager || "" });
+    setShowShareSuggestions(false);
+  };
+
+  const closeManagerDialog = () => setManagerDialog({ show: false, type: null, id: null, username: "" });
+
+  const handleManagerConfirm = () => {
+    if (!managerDialog.username) return showAlert("Enter a username or email to assign.");
+    const user = users.find(u => u.username === managerDialog.username || `${u.firstName} ${u.lastName}` === managerDialog.username || u.email === managerDialog.username);
+    if (!user) return showAlert("User not found.");
+    const username = user.username;
+    if (managerDialog.type === 'vault') {
+      setVaults((prev) => prev.map(v => v.id === managerDialog.id ? { ...v, manager: username } : v));
+    } else if (managerDialog.type === 'collection') {
+      setCollections((prev) => prev.map(c => c.id === managerDialog.id ? { ...c, manager: username } : c));
+    } else if (managerDialog.type === 'asset') {
+      setAssets((prev) => prev.map(a => a.id === managerDialog.id ? { ...a, manager: username } : a));
+    }
+    showAlert(`Assigned manager ${username}`);
+    closeManagerDialog();
   };
 
   const closeShareDialog = () => { setShareDialog({ show: false, vaultId: null, username: "", permission: "view", includeContents: false }); setShowShareSuggestions(false); };
@@ -1067,6 +1091,7 @@ export default function App() {
       type: normalized.type || "",
       category: normalized.category || "",
       description: normalized.description || "",
+      manager: normalized.manager || "",
       value: normalized.value || "",
       quantity: normalized.quantity || 1,
       heroImage: normalized.heroImage || normalized.images[0] || "",
@@ -1107,12 +1132,12 @@ export default function App() {
     setAssets((prev) =>
       prev.map((a) =>
         a.id === viewAsset.id
-          ? { ...a, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), value: parseFloat(viewAssetDraft.value) || 0, quantity: parseInt(viewAssetDraft.quantity) || 1, heroImage, images, lastEditedBy: currentUser?.username || 'Unknown' }
+          ? { ...a, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), manager: (viewAssetDraft.manager || "").trim(), value: parseFloat(viewAssetDraft.value) || 0, quantity: parseInt(viewAssetDraft.quantity) || 1, heroImage, images, lastEditedBy: currentUser?.username || 'Unknown' }
           : a
       )
     );
 
-    setViewAsset({ ...viewAsset, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), value: parseFloat(viewAssetDraft.value) || 0, quantity: parseInt(viewAssetDraft.quantity) || 1, heroImage, images, lastEditedBy: currentUser?.username || 'Unknown' });
+    setViewAsset({ ...viewAsset, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), manager: (viewAssetDraft.manager || "").trim(), value: parseFloat(viewAssetDraft.value) || 0, quantity: parseInt(viewAssetDraft.quantity) || 1, heroImage, images, lastEditedBy: currentUser?.username || 'Unknown' });
     showAlert("Asset updated.");
     return true;
   };
@@ -1722,7 +1747,6 @@ export default function App() {
                           <div>
                             <label className="text-sm text-neutral-400">Confirm new password</label>
                             <input type="password" className="w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800" value={profileForm.confirmPassword} onChange={(e) => setProfileForm((p) => ({ ...p, confirmPassword: e.target.value }))} />
-                            {profileErrors.confirmPassword && <p className="text-xs text-red-400 mt-1">{profileErrors.confirmPassword}</p>}
                           </div>
                         </div>
                         <div className="flex gap-2">
@@ -1975,7 +1999,7 @@ export default function App() {
                       <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Vault name" value={newVault.name} onChange={(e) => setNewVault((p) => ({ ...p, name: e.target.value }))} />
                       <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={2} placeholder="Description (optional)" maxLength={100} value={newVault.description} onChange={(e) => setNewVault((p) => ({ ...p, description: e.target.value }))} />
                       
-                            <input disabled className="w-full p-2 rounded bg-neutral-950 border border-neutral-800 mt-2 disabled:opacity-60 cursor-not-allowed" placeholder="Manager (optional)" value={newVault.manager} onChange={(e) => setNewVault((p) => ({ ...p, manager: e.target.value }))} />
+                            <input disabled className="w-full p-2 rounded bg-neutral-950 border border-neutral-800 mt-2 disabled:opacity-60 cursor-not-allowed" placeholder="username or email" value={newVault.manager} onChange={(e) => setNewVault((p) => ({ ...p, manager: e.target.value }))} />
                       <div className="space-y-3">
                         <div className="flex flex-col items-start gap-1">
                           <input
@@ -2023,7 +2047,7 @@ export default function App() {
                       <input className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="Collection name" value={newCollection.name} onChange={(e) => setNewCollection((p) => ({ ...p, name: e.target.value }))} />
                       <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={2} placeholder="Description (optional)" maxLength={100} value={newCollection.description} onChange={(e) => setNewCollection((p) => ({ ...p, description: e.target.value }))} />
                       
-                      <input disabled className="w-full p-2 rounded bg-neutral-950 border border-neutral-800 mt-2 disabled:opacity-60 cursor-not-allowed" placeholder="Manager (optional)" value={newCollection.manager} onChange={(e) => setNewCollection((p) => ({ ...p, manager: e.target.value }))} />
+                      <input disabled className="w-full p-2 rounded bg-neutral-950 border border-neutral-800 mt-2 disabled:opacity-60 cursor-not-allowed" placeholder="username or email" value={newCollection.manager} onChange={(e) => setNewCollection((p) => ({ ...p, manager: e.target.value }))} />
                       <div className="space-y-3">
                         <div className="flex flex-col items-start gap-1">
                           <input
@@ -2096,7 +2120,9 @@ export default function App() {
                                       <p>Created {new Date(vault.createdAt).toLocaleDateString()}</p>
                                       {vault.lastViewed && <p className="mt-0.5">Viewed {new Date(vault.lastViewed).toLocaleDateString()}</p>}
                                       {vault.lastEditedBy && <p className="mt-0.5">Edited by {vault.lastEditedBy}</p>}
-                                      <p className="mt-0.5">Manager: {vault.manager || `${currentUser?.firstName} ${currentUser?.lastName}`}</p>
+                                      <p className="mt-0.5">Manager: {vault.manager || `${currentUser?.firstName} ${currentUser?.lastName}`} {(() => {
+                                        // Vault tiles no longer show inline Assign button; manager assignment is available via Edit
+                                        })()}</p>
                                       <p className="mt-0.5">Collections: {collectionCount}</p>
                                       {Number.isFinite(vaultValue) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${vaultValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
                                     </div>
@@ -2156,7 +2182,9 @@ export default function App() {
                                       <p>Created {new Date(collection.createdAt).toLocaleDateString()}</p>
                                       {collection.lastViewed && <p className="mt-0.5">Viewed {new Date(collection.lastViewed).toLocaleDateString()}</p>}
                                       {collection.lastEditedBy && <p className="mt-0.5">Edited by {collection.lastEditedBy}</p>}
-                                      <p className="mt-0.5">Manager: {collection.manager || `${currentUser?.firstName} ${currentUser?.lastName}`}</p>
+                                      <p className="mt-0.5">Manager: {collection.manager || `${currentUser?.firstName} ${currentUser?.lastName}`} {(() => {
+                                        // Manager assignment available via Edit dialog; no inline button on collection tile
+                                      })()}</p>
                                       <p className="mt-0.5">Assets: {assetCount}</p>
                                       {Number.isFinite(collectionValue) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
                                     </div>
@@ -2334,7 +2362,7 @@ export default function App() {
                         ))}
                       </select>
                           <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={3} placeholder="Description" maxLength={60} value={newAsset.description} onChange={(e) => setNewAsset((p) => ({ ...p, description: e.target.value }))} />
-                          <input disabled className="w-full p-2 rounded bg-neutral-950 border border-neutral-800 mt-2 disabled:opacity-60 cursor-not-allowed" placeholder="Manager (optional)" value={newAsset.manager} onChange={(e) => setNewAsset((p) => ({ ...p, manager: e.target.value }))} />
+                          <input disabled className="w-full p-2 rounded bg-neutral-950 border border-neutral-800 mt-2 disabled:opacity-60 cursor-not-allowed" placeholder="username or email" value={newAsset.manager} onChange={(e) => setNewAsset((p) => ({ ...p, manager: e.target.value }))} />
                           <div>
                             <label className="text-sm text-neutral-400">Quantity</label>
                             <input type="number" min={1} className="w-24 p-2 mt-1 rounded bg-neutral-950 border border-neutral-800" value={newAsset.quantity || 1} onChange={(e) => setNewAsset((p) => ({ ...p, quantity: e.target.value }))} />
@@ -2595,6 +2623,34 @@ export default function App() {
                 ))}
               </select>
               <textarea disabled={!assetCanEdit} className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={4} placeholder="Description" maxLength={60} value={viewAssetDraft.description} onChange={(e) => setViewAssetDraft((p) => ({ ...p, description: e.target.value }))} />
+              <div>
+                <label className="text-sm text-neutral-400">Manager</label>
+                <div className="relative">
+                  <input autoComplete="off" disabled={!assetCanEdit} className={`w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800 ${!assetCanEdit ? 'opacity-60 cursor-not-allowed' : ''}`} placeholder="username or email" value={viewAssetDraft.manager || ""} onChange={(e) => { setViewAssetDraft((p) => ({ ...p, manager: e.target.value })); setShowShareSuggestions(true); }} onFocus={() => setShowShareSuggestions(true)} />
+                  {viewAssetDraft.manager && showShareSuggestions && (
+                    (() => {
+                      const q = (viewAssetDraft.manager || "").toLowerCase();
+                      const matches = (users || []).filter(u => {
+                        const full = `${u.firstName || ""} ${u.lastName || ""}`.toLowerCase();
+                        return (u.username || "").toLowerCase().includes(q) || (u.email || "").toLowerCase().includes(q) || full.includes(q);
+                      }).slice(0, 6);
+                      if (matches.length === 0) return null;
+                      return (
+                        <div className="absolute left-0 right-0 mt-1 bg-neutral-900 border border-neutral-800 rounded max-h-40 overflow-auto z-30">
+                          {matches.map((u) => (
+                            <button key={u.id} type="button" className="w-full text-left px-3 py-2 hover:bg-neutral-800 flex justify-between items-start" onClick={() => { setViewAssetDraft((d) => ({ ...d, manager: u.username })); setShowShareSuggestions(false); }}>
+                              <div>
+                                <div className="font-medium">{u.username}</div>
+                                <div className="text-xs text-neutral-400">{u.email || `${u.firstName || ""} ${u.lastName || ""}`}</div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()
+                  )}
+                </div>
+              </div>
               <div>
                 <p className="text-sm text-neutral-400 mb-2">Quantity</p>
                 <input disabled={!assetCanEdit} type="number" min={1} className="w-24 p-2 rounded bg-neutral-950 border border-neutral-800" value={viewAssetDraft.quantity || 1} onChange={(e) => setViewAssetDraft((p) => ({ ...p, quantity: e.target.value }))} />
@@ -2876,6 +2932,8 @@ export default function App() {
         </div>
       )}
 
+      
+
       {editDialog.show && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={closeEditDialog}>
           <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -2905,7 +2963,31 @@ export default function App() {
               </div>
               <div>
                 <label className="text-sm text-neutral-400">Manager</label>
-                <input disabled className="w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800 disabled:opacity-60 cursor-not-allowed" placeholder="Manager (optional)" value={editDialog.manager} onChange={(e) => setEditDialog((prev) => ({ ...prev, manager: e.target.value }))} />
+                <div className="relative">
+                  <input autoComplete="off" disabled={!editCanEdit} className={`w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800 ${!editCanEdit ? 'opacity-60 cursor-not-allowed' : ''}`} placeholder="username or email" value={editDialog.manager} onChange={(e) => { setEditDialog((prev) => ({ ...prev, manager: e.target.value })); setShowShareSuggestions(true); }} onFocus={() => setShowShareSuggestions(true)} />
+                  {editDialog.manager && showShareSuggestions && (
+                    (() => {
+                      const q = (editDialog.manager || "").toLowerCase();
+                      const matches = (users || []).filter(u => {
+                        const full = `${u.firstName || ""} ${u.lastName || ""}`.toLowerCase();
+                        return (u.username || "").toLowerCase().includes(q) || (u.email || "").toLowerCase().includes(q) || full.includes(q);
+                      }).slice(0, 6);
+                      if (matches.length === 0) return null;
+                      return (
+                        <div className="absolute left-0 right-0 mt-1 bg-neutral-900 border border-neutral-800 rounded max-h-40 overflow-auto z-30">
+                          {matches.map((u) => (
+                            <button key={u.id} type="button" className="w-full text-left px-3 py-2 hover:bg-neutral-800 flex justify-between items-start" onClick={() => { setEditDialog((d) => ({ ...d, manager: u.username })); setShowShareSuggestions(false); }}>
+                              <div>
+                                <div className="font-medium">{u.username}</div>
+                                <div className="text-xs text-neutral-400">{u.email || `${u.firstName || ""} ${u.lastName || ""}`}</div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()
+                  )}
+                </div>
               </div>
               <div className="space-y-3">
                 <div className="flex flex-col items-start gap-1">
