@@ -210,15 +210,15 @@ export default function App() {
     if (!managerDialog.username) return showAlert("Enter a username or email to assign.");
     const user = users.find(u => u.username === managerDialog.username || `${u.firstName} ${u.lastName}` === managerDialog.username || u.email === managerDialog.username);
     if (!user) return showAlert("User not found.");
-    const username = user.username;
+    const fullName = (user.firstName || user.lastName) ? `${user.firstName || ""} ${user.lastName || ""}`.trim() : user.username;
     if (managerDialog.type === 'vault') {
-      setVaults((prev) => prev.map(v => v.id === managerDialog.id ? { ...v, manager: username } : v));
+      setVaults((prev) => prev.map(v => v.id === managerDialog.id ? { ...v, manager: fullName } : v));
     } else if (managerDialog.type === 'collection') {
-      setCollections((prev) => prev.map(c => c.id === managerDialog.id ? { ...c, manager: username } : c));
+      setCollections((prev) => prev.map(c => c.id === managerDialog.id ? { ...c, manager: fullName } : c));
     } else if (managerDialog.type === 'asset') {
-      setAssets((prev) => prev.map(a => a.id === managerDialog.id ? { ...a, manager: username } : a));
+      setAssets((prev) => prev.map(a => a.id === managerDialog.id ? { ...a, manager: fullName } : a));
     }
-    showAlert(`Assigned manager ${username}`);
+    showAlert(`Assigned manager ${fullName}`);
     closeManagerDialog();
   };
 
@@ -2120,9 +2120,9 @@ export default function App() {
                                       <p>Created {new Date(vault.createdAt).toLocaleDateString()}</p>
                                       {vault.lastViewed && <p className="mt-0.5">Viewed {new Date(vault.lastViewed).toLocaleDateString()}</p>}
                                       {vault.lastEditedBy && <p className="mt-0.5">Edited by {vault.lastEditedBy}</p>}
-                                      <p className="mt-0.5">Manager: {vault.manager || `${currentUser?.firstName} ${currentUser?.lastName}`} {(() => {
+                                      <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === vault.ownerId) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return vault.manager || ownerName; })()} {(() => {
                                         // Vault tiles no longer show inline Assign button; manager assignment is available via Edit
-                                        })()}</p>
+                                      })()}</p>
                                       <p className="mt-0.5">Collections: {collectionCount}</p>
                                       {Number.isFinite(vaultValue) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${vaultValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
                                     </div>
@@ -2182,7 +2182,7 @@ export default function App() {
                                       <p>Created {new Date(collection.createdAt).toLocaleDateString()}</p>
                                       {collection.lastViewed && <p className="mt-0.5">Viewed {new Date(collection.lastViewed).toLocaleDateString()}</p>}
                                       {collection.lastEditedBy && <p className="mt-0.5">Edited by {collection.lastEditedBy}</p>}
-                                      <p className="mt-0.5">Manager: {collection.manager || `${currentUser?.firstName} ${currentUser?.lastName}`} {(() => {
+                                      <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === collection.ownerId) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return collection.manager || ownerName; })()} {(() => {
                                         // Manager assignment available via Edit dialog; no inline button on collection tile
                                       })()}</p>
                                       <p className="mt-0.5">Assets: {assetCount}</p>
@@ -2362,7 +2362,34 @@ export default function App() {
                         ))}
                       </select>
                           <textarea className="w-full p-2 rounded bg-neutral-950 border border-neutral-800" rows={3} placeholder="Description" maxLength={60} value={newAsset.description} onChange={(e) => setNewAsset((p) => ({ ...p, description: e.target.value }))} />
-                          <input disabled className="w-full p-2 rounded bg-neutral-950 border border-neutral-800 mt-2 disabled:opacity-60 cursor-not-allowed" placeholder="username or email" value={newAsset.manager} onChange={(e) => setNewAsset((p) => ({ ...p, manager: e.target.value }))} />
+                          <div>
+                            <label className="text-sm text-neutral-400">Manager</label>
+                            <div className="relative">
+                              <input autoComplete="off" className="w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="username or email" value={newAsset.manager || ""} onChange={(e) => { setNewAsset((p) => ({ ...p, manager: e.target.value })); setShowShareSuggestions(true); }} onFocus={() => setShowShareSuggestions(true)} />
+                              {newAsset.manager && showShareSuggestions && (
+                                (() => {
+                                  const q = (newAsset.manager || "").toLowerCase();
+                                  const matches = (users || []).filter(u => {
+                                    const full = `${u.firstName || ""} ${u.lastName || ""}`.toLowerCase();
+                                    return (u.username || "").toLowerCase().includes(q) || (u.email || "").toLowerCase().includes(q) || full.includes(q);
+                                  }).slice(0, 6);
+                                  if (matches.length === 0) return null;
+                                  return (
+                                    <div className="absolute left-0 right-0 mt-1 bg-neutral-900 border border-neutral-800 rounded max-h-40 overflow-auto z-30">
+                                        {matches.map((u) => (
+                                        <button key={u.id} type="button" className="w-full text-left px-3 py-2 hover:bg-neutral-800 flex justify-between items-start" onClick={() => { const full = (u.firstName || u.lastName) ? `${u.firstName || ""} ${u.lastName || ""}`.trim() : u.username; setNewAsset((d) => ({ ...d, manager: full })); setShowShareSuggestions(false); }}>
+                                          <div>
+                                            <div className="font-medium">{(u.firstName || u.lastName) ? `${u.firstName} ${u.lastName}` : u.username}</div>
+                                            <div className="text-xs text-neutral-400">{u.email || `${u.firstName || ""} ${u.lastName || ""}`}</div>
+                                          </div>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  );
+                                })()
+                              )}
+                            </div>
+                          </div>
                           <div>
                             <label className="text-sm text-neutral-400">Quantity</label>
                             <input type="number" min={1} className="w-24 p-2 mt-1 rounded bg-neutral-950 border border-neutral-800" value={newAsset.quantity || 1} onChange={(e) => setNewAsset((p) => ({ ...p, quantity: e.target.value }))} />
@@ -2456,7 +2483,7 @@ export default function App() {
                                       <p>Created {new Date(collection.createdAt).toLocaleDateString()}</p>
                                       {collection.lastViewed && <p className="mt-0.5">Viewed {new Date(collection.lastViewed).toLocaleDateString()}</p>}
                                       {collection.lastEditedBy && <p className="mt-0.5">Edited by {collection.lastEditedBy}</p>}
-                                      <p className="mt-0.5">Manager: {collection.manager || `${currentUser?.firstName} ${currentUser?.lastName}`}</p>
+                                      <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === collection.ownerId) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return collection.manager || ownerName; })()}</p>
                                       <p className="mt-0.5">Assets: {assetCount}</p>
                                       {Number.isFinite(collectionValue) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
                                     </div>
@@ -2530,7 +2557,7 @@ export default function App() {
                                       <p>Created {new Date(asset.createdAt).toLocaleDateString()}</p>
                                       {asset.lastViewed && <p className="mt-0.5">Viewed {new Date(asset.lastViewed).toLocaleDateString()}</p>}
                                       {asset.lastEditedBy && <p className="mt-0.5">Edited by {asset.lastEditedBy}</p>}
-                                      <p className="mt-0.5">Manager: {asset.manager || `${currentUser?.firstName} ${currentUser?.lastName}`}</p>
+                                      <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === asset.ownerId) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return asset.manager || ownerName; })()}</p>
                                       <p className="mt-0.5 text-xs text-neutral-300 text-right">Quantity: {asset.quantity || 1}</p>
                                       {(() => { const v = parseFloat(asset.value); return Number.isFinite(v) ? <p className="mt-0.5 text-green-400 font-semibold">Value: ${v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p> : null; })()}
                                     </div>
@@ -2638,9 +2665,9 @@ export default function App() {
                       return (
                         <div className="absolute left-0 right-0 mt-1 bg-neutral-900 border border-neutral-800 rounded max-h-40 overflow-auto z-30">
                           {matches.map((u) => (
-                            <button key={u.id} type="button" className="w-full text-left px-3 py-2 hover:bg-neutral-800 flex justify-between items-start" onClick={() => { setViewAssetDraft((d) => ({ ...d, manager: u.username })); setShowShareSuggestions(false); }}>
+                            <button key={u.id} type="button" className="w-full text-left px-3 py-2 hover:bg-neutral-800 flex justify-between items-start" onClick={() => { const full = (u.firstName || u.lastName) ? `${u.firstName || ""} ${u.lastName || ""}`.trim() : u.username; setViewAssetDraft((d) => ({ ...d, manager: full })); setShowShareSuggestions(false); }}>
                               <div>
-                                <div className="font-medium">{u.username}</div>
+                                <div className="font-medium">{(u.firstName || u.lastName) ? `${u.firstName} ${u.lastName}` : u.username}</div>
                                 <div className="text-xs text-neutral-400">{u.email || `${u.firstName || ""} ${u.lastName || ""}`}</div>
                               </div>
                             </button>
@@ -2976,9 +3003,9 @@ export default function App() {
                       return (
                         <div className="absolute left-0 right-0 mt-1 bg-neutral-900 border border-neutral-800 rounded max-h-40 overflow-auto z-30">
                           {matches.map((u) => (
-                            <button key={u.id} type="button" className="w-full text-left px-3 py-2 hover:bg-neutral-800 flex justify-between items-start" onClick={() => { setEditDialog((d) => ({ ...d, manager: u.username })); setShowShareSuggestions(false); }}>
+                            <button key={u.id} type="button" className="w-full text-left px-3 py-2 hover:bg-neutral-800 flex justify-between items-start" onClick={() => { const full = (u.firstName || u.lastName) ? `${u.firstName || ""} ${u.lastName || ""}`.trim() : u.username; setEditDialog((d) => ({ ...d, manager: full })); setShowShareSuggestions(false); }}>
                               <div>
-                                <div className="font-medium">{u.username}</div>
+                                <div className="font-medium">{(u.firstName || u.lastName) ? `${u.firstName} ${u.lastName}` : u.username}</div>
                                 <div className="text-xs text-neutral-400">{u.email || `${u.firstName || ""} ${u.lastName || ""}`}</div>
                               </div>
                             </button>
