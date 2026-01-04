@@ -222,7 +222,18 @@ export default function App() {
   const applyPresetToTarget = (presetName, userId) => {
     const canonical = PRESET_CANONICAL[presetName] || PRESET_CANONICAL.Viewer;
     if (shareDialog.type === 'vault') {
+      // Update vault-level permission
       setVaults(prev => prev.map(v => v.id === shareDialog.targetId ? { ...v, sharedWith: (v.sharedWith || []).map(sw => sw.userId === userId ? { ...sw, permission: canonical } : sw) } : v));
+      // Also propagate to collections and assets in this vault when the vault share includes contents/assets
+      const vault = vaults.find(v => v.id === shareDialog.targetId);
+      const vaultShare = vault && (vault.sharedWith || []).find(sw => sw.userId === userId);
+      if (vaultShare && vaultShare.includeContents) {
+        setCollections(prev => prev.map(c => c.vaultId === shareDialog.targetId ? { ...c, sharedWith: (c.sharedWith || []).map(sw => sw.userId === userId ? { ...sw, permission: canonical } : sw) } : c));
+      }
+      if (vaultShare && vaultShare.includeAssets) {
+        const vaultCollectionIds = collections.filter(c => c.vaultId === shareDialog.targetId).map(c => c.id);
+        setAssets(prev => prev.map(a => vaultCollectionIds.includes(a.collectionId) ? { ...a, sharedWith: (a.sharedWith || []).map(sw => sw.userId === userId ? { ...sw, permission: canonical } : sw) } : a));
+      }
     } else if (shareDialog.type === 'collection') {
       setCollections(prev => prev.map(c => c.id === shareDialog.targetId ? { ...c, sharedWith: (c.sharedWith || []).map(sw => sw.userId === userId ? { ...sw, permission: canonical } : sw) } : c));
     } else if (shareDialog.type === 'asset') {
