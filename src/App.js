@@ -479,9 +479,13 @@ export default function App() {
   const getPermissionForVault = (vault) => {
     if (!vault || !currentUser) return "";
     if (vault.ownerId === currentUser.id) return "owner";
+    // Start with vault-level permissions
     const shared = vault.sharedWith || [];
     const entry = shared.find(s => s.userId === currentUser.id || s.username === currentUser.username || s.email === currentUser.email);
-    return entry ? (entry.permission || "") : "";
+    const tokens = new Set();
+    if (entry && entry.permission) (String(entry.permission).split(/[^a-z0-9]+/).filter(Boolean)).forEach(t => tokens.add(t));
+
+      return entry ? (entry.permission || "") : "";
   };
 
   const canCreateInVault = (vault) => {
@@ -512,6 +516,22 @@ export default function App() {
   const getVaultForAsset = (asset) => {
     const col = asset ? collections.find(c => c.id === asset.collectionId) : null;
     return col ? vaults.find(v => v.id === col.vaultId) || null : null;
+  };
+
+  const getPermissionForCollection = (collection) => {
+    if (!collection || !currentUser) return "";
+    if (collection.ownerId === currentUser.id) return "owner";
+    const tokens = new Set();
+    // vault-level
+      const entry = (collection.sharedWith || []).find(s => s.userId === currentUser.id || s.username === currentUser.username || s.email === currentUser.email);
+      return entry ? (entry.permission || "") : "";
+  };
+
+  const getPermissionForAsset = (asset) => {
+    if (!asset || !currentUser) return "";
+    if (asset.ownerId === currentUser.id) return "owner";
+    const entry = (asset.sharedWith || []).find(s => s.userId === currentUser.id || s.username === currentUser.username || s.email === currentUser.email);
+    return entry ? (entry.permission || "") : "";
   };
 
   const skipTutorial = () => {
@@ -1522,7 +1542,12 @@ export default function App() {
   });
 
   // Datasets for Shared mode (items shared with current user)
-  const sharedVaultsList = currentUser ? vaults.filter(v => (v.sharedWith || []).some(s => s.userId === currentUser.id) && (!sharedOwnerId || v.ownerId === sharedOwnerId)) : [];
+  // Only include vaults that were shared to the current user by another owner
+  const sharedVaultsList = currentUser ? vaults.filter(v => (
+    (v.sharedWith || []).some(s => s.userId === currentUser.id) && // shared to me
+    v.ownerId !== currentUser.id && // not my own vault
+    (!sharedOwnerId || v.ownerId === sharedOwnerId)
+  )) : [];
   const filteredSharedVaults = sharedVaultsList.filter((v) => v.name.toLowerCase().includes(normalizeFilter(vaultFilter)));
   const sortedSharedVaults = [...filteredSharedVaults].sort((a, b) => {
     if (vaultSort === "name") return a.name.localeCompare(b.name);
@@ -1532,7 +1557,10 @@ export default function App() {
   });
 
   // Include collections that belong to vaults shared with the user, or collections shared directly.
+  // Collections shared with the user either because their vault was shared or directly
+  // Exclude collections owned by the current user (they are the owner's own items)
   const sharedCollectionsList = currentUser ? collections.filter(c => {
+    if (c.ownerId === currentUser.id) return false; // skip own collections
     const inSharedVault = sharedVaultsList.some(sv => sv.id === c.vaultId);
     const sharedDirectly = (c.sharedWith || []).some(s => s.userId === currentUser.id);
     return inSharedVault || sharedDirectly;
@@ -1548,7 +1576,8 @@ export default function App() {
   const selectedSharedVault = sharedVaultsList.find((v) => v.id === selectedVaultId) || null;
   const selectedSharedCollection = sharedCollectionsList.find((c) => c.id === selectedCollectionId) || null;
 
-  const sharedAssetsList = currentUser && selectedSharedCollection ? assets.filter(a => a.collectionId === selectedSharedCollection.id && sharedCollectionsList.some(sc => sc.id === a.collectionId)) : [];
+  // Assets inside the selected shared collection; exclude assets that I own
+  const sharedAssetsList = currentUser && selectedSharedCollection ? assets.filter(a => a.collectionId === selectedSharedCollection.id && sharedCollectionsList.some(sc => sc.id === a.collectionId) && a.ownerId !== currentUser.id) : [];
   const filteredSharedAssets = sharedAssetsList.filter((a) => {
     const term = normalizeFilter(assetFilter);
     if (!term) return true;
@@ -1595,7 +1624,7 @@ export default function App() {
   );
 
   // compute permission booleans used by modals
-  const assetCanEdit = viewAsset ? ((viewAsset.ownerId === currentUser?.id) || (getVaultForAsset(viewAsset) && (getVaultForAsset(viewAsset).ownerId === currentUser?.id || canEditInVault(getVaultForAsset(viewAsset))))) : true;
+  const assetCanEdit = viewAsset ? ((viewAsset.ownerId === currentUser?.id) || (getVaultForAsset(viewAsset) && (getVaultForAsset(viewAsset).ownerId === currentUser?.id || canEditInVault(getVaultForAsset(viewAsset)))) || permissionIncludes(getPermissionForAsset(viewAsset), 'edit')) : true;
   const editCanEdit = (editDialog && editDialog.show && editDialog.item) ? (() => {
     if (editDialog.type === "vault") {
       const vault = editDialog.item;
@@ -1999,11 +2028,12 @@ export default function App() {
                       return sharedWithMe.map((v) => {
                         const share = (v.sharedWith || []).find(s => s.userId === currentUser.id);
                         const owner = users.find(u => u.id === v.ownerId) || { username: 'Unknown' };
+                        const effective = getPermissionForVault(v) === 'owner' ? 'Owner' : permissionStringToPreset(getPermissionForVault(v));
                         return (
                           <div key={v.id} className="p-3 rounded border border-neutral-800 bg-neutral-950/30 flex items-center justify-between">
                             <div>
                               <div className="font-medium">{v.name}</div>
-                              <div className="text-xs text-neutral-400">Shared by {owner.username} · {share?.permission}</div>
+                              <div className="text-xs text-neutral-400">Shared by {owner.username} · {effective}</div>
                             </div>
                             <div className="flex gap-2">
                               <button className="px-2 py-1 rounded bg-blue-600 text-white text-xs" onClick={() => { handleSelectVault(v.id); }}>Open</button>
@@ -2306,8 +2336,9 @@ export default function App() {
                               <div className="flex gap-2 mt-2">
                                 {(() => {
                                   const vault = getVaultForCollection(collection) || displaySelectedVault;
-                                  const canEdit = canEditInVault(vault) || (collection.ownerId === currentUser?.id);
-                                  const canDelete = canDeleteInVault(vault) || (collection.ownerId === currentUser?.id);
+                                  const colPerm = getPermissionForCollection(collection);
+                                  const canEdit = (collection.ownerId === currentUser?.id) || permissionIncludes(colPerm, 'edit');
+                                  const canDelete = (collection.ownerId === currentUser?.id) || permissionIncludes(colPerm, 'delete');
                                   const isOwner = vault && vault.ownerId === currentUser?.id;
                                   return (
                                     <>
@@ -2323,9 +2354,9 @@ export default function App() {
                                         >Share</button>
                                       )}
                                       <button
-                                        className={`px-2 py-0.5 rounded text-xs ${canMoveInVault(vault) ? "bg-yellow-600 text-white hover:bg-yellow-700" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
-                                        onClick={(e) => { e.stopPropagation(); if (!canMoveInVault(vault)) return; openCollectionMoveDialog(collection); }}
-                                        title={canMoveInVault(vault) ? "" : "Move permission required on the vault"}
+                                        className={`px-2 py-0.5 rounded text-xs ${permissionIncludes(colPerm, 'move') ? "bg-yellow-600 text-white hover:bg-yellow-700" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
+                                        onClick={(e) => { e.stopPropagation(); if (!permissionIncludes(colPerm, 'move')) return; openCollectionMoveDialog(collection); }}
+                                        title={permissionIncludes(colPerm, 'move') ? "" : "Move permission required on the collection"}
                                       >Move</button>
                                       <button
                                         className={`px-2 py-0.5 rounded text-xs ${canDelete ? "bg-red-700 text-white hover:bg-red-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
@@ -2605,8 +2636,9 @@ export default function App() {
                               <div className="flex gap-2 mt-2">
                                 {(() => {
                                   const vault = getVaultForCollection(collection) || displaySelectedVault;
-                                  const canEdit = canEditInVault(vault) || (collection.ownerId === currentUser?.id);
-                                  const canDelete = canDeleteInVault(vault) || (collection.ownerId === currentUser?.id);
+                                  const colPerm = getPermissionForCollection(collection);
+                                  const canEdit = (collection.ownerId === currentUser?.id) || permissionIncludes(colPerm, 'edit');
+                                  const canDelete = (collection.ownerId === currentUser?.id) || permissionIncludes(colPerm, 'delete');
                                   const isOwner = vault && vault.ownerId === currentUser?.id;
                                   return (
                                     <>
@@ -2622,9 +2654,9 @@ export default function App() {
                                         >Share</button>
                                       )}
                                       <button
-                                        className={`px-2 py-0.5 rounded text-xs ${canMoveInVault(vault) ? "bg-yellow-600 text-white hover:bg-yellow-700" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
-                                        onClick={(e) => { e.stopPropagation(); if (!canMoveInVault(vault)) return; openCollectionMoveDialog(collection); }}
-                                        title={canMoveInVault(vault) ? "" : "Move permission required on the vault"}
+                                        className={`px-2 py-0.5 rounded text-xs ${permissionIncludes(colPerm, 'move') ? "bg-yellow-600 text-white hover:bg-yellow-700" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
+                                        onClick={(e) => { e.stopPropagation(); if (!permissionIncludes(colPerm, 'move')) return; openCollectionMoveDialog(collection); }}
+                                        title={permissionIncludes(colPerm, 'move') ? "" : "Move permission required on the collection"}
                                       >Move</button>
                                       <button
                                         className={`px-2 py-0.5 rounded text-xs ${canDelete ? "bg-red-700 text-white hover:bg-red-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
@@ -2678,8 +2710,9 @@ export default function App() {
                                 <div className="flex gap-2 mt-2">
                                   {(() => {
                                     const vault = getVaultForAsset(asset) || getVaultForCollection(displaySelectedCollection) || displaySelectedVault;
-                                    const canEdit = canEditInVault(vault) || (asset.ownerId === currentUser?.id);
-                                    const canDelete = canDeleteInVault(vault) || (asset.ownerId === currentUser?.id);
+                                    const assetPerm = getPermissionForAsset(asset);
+                                    const canEdit = (asset.ownerId === currentUser?.id) || permissionIncludes(assetPerm, 'edit');
+                                    const canDelete = (asset.ownerId === currentUser?.id) || permissionIncludes(assetPerm, 'delete');
                                     const isOwner = vault && vault.ownerId === currentUser?.id;
                                     return (
                                       <>
@@ -2695,9 +2728,9 @@ export default function App() {
                                           >Share</button>
                                         )}
                                         <button
-                                          className={`px-2 py-0.5 rounded text-xs ${canMoveInVault(vault) ? "bg-yellow-600 text-white hover:bg-yellow-700" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
-                                          onClick={(e) => { e.stopPropagation(); if (!canMoveInVault(vault)) return; openMoveDialog(asset); }}
-                                          title={canMoveInVault(vault) ? "" : "Move permission required on the vault"}
+                                          className={`px-2 py-0.5 rounded text-xs ${permissionIncludes(assetPerm, 'move') ? "bg-yellow-600 text-white hover:bg-yellow-700" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
+                                          onClick={(e) => { e.stopPropagation(); if (!permissionIncludes(assetPerm, 'move')) return; openMoveDialog(asset); }}
+                                          title={permissionIncludes(assetPerm, 'move') ? "" : "Move permission required on the asset"}
                                         >Move</button>
                                         <button
                                           className={`px-2 py-0.5 rounded text-xs ${canDelete ? "bg-red-700 text-white hover:bg-red-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
