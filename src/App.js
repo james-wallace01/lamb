@@ -149,7 +149,7 @@ export default function App() {
   const [newVault, setNewVault] = useState(initialVaultState);
   const initialCollectionState = { name: "", description: "", manager: "", heroImage: "", images: [] };
   const [newCollection, setNewCollection] = useState(initialCollectionState);
-  const initialAssetState = { title: "", type: "", category: "", description: "", manager: "", value: "", quantity: 1, heroImage: "", images: [] };
+  const initialAssetState = { title: "", type: "", category: "", description: "", manager: "", value: "", estimatedValue: "", rrp: "", purchasePrice: "", quantity: 1, heroImage: "", images: [] };
   const [newAsset, setNewAsset] = useState(initialAssetState);
 
   const categoryOptions = {
@@ -1080,6 +1080,9 @@ export default function App() {
     if (!currentUser) return false;
     const images = trimToFour(newCollection.images || []);
     const heroImage = newCollection.heroImage || images[0] || DEFAULT_HERO;
+    
+    
+    
     const vault = vaults.find(v => v.id === selectedVaultId);
     const ownerId = (vault && vault.ownerId) ? vault.ownerId : ((sharedMode && sharedOwnerId) ? sharedOwnerId : currentUser.id);
 
@@ -1146,6 +1149,9 @@ export default function App() {
       description: newAsset.description.trim(), 
       manager: (newAsset.manager || "").trim(),
       value: parseFloat(newAsset.value) || 0,
+      estimatedValue: parseFloat(newAsset.estimatedValue) || 0,
+      rrp: parseFloat(newAsset.rrp) || 0,
+      purchasePrice: parseFloat(newAsset.purchasePrice) || 0,
       quantity: parseInt(newAsset.quantity) || 1,
       heroImage,
       images,
@@ -1281,6 +1287,9 @@ export default function App() {
       description: normalized.description || "",
       manager: normalized.manager || "",
       value: normalized.value || "",
+      estimatedValue: normalized.estimatedValue || "",
+      rrp: normalized.rrp || "",
+      purchasePrice: normalized.purchasePrice || "",
       quantity: normalized.quantity || 1,
       heroImage: normalized.heroImage || normalized.images[0] || "",
       images: trimToFour(normalized.images || []),
@@ -1320,12 +1329,12 @@ export default function App() {
     setAssets((prev) =>
       prev.map((a) =>
         a.id === viewAsset.id
-          ? { ...a, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), manager: (viewAssetDraft.manager || "").trim(), value: parseFloat(viewAssetDraft.value) || 0, quantity: parseInt(viewAssetDraft.quantity) || 1, heroImage, images, lastEditedBy: currentUser?.username || 'Unknown' }
+          ? { ...a, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), manager: (viewAssetDraft.manager || "").trim(), value: parseFloat(viewAssetDraft.value) || 0, estimatedValue: parseFloat(viewAssetDraft.estimatedValue) || 0, rrp: parseFloat(viewAssetDraft.rrp) || 0, purchasePrice: parseFloat(viewAssetDraft.purchasePrice) || 0, quantity: parseInt(viewAssetDraft.quantity) || 1, heroImage, images, lastEditedBy: currentUser?.username || 'Unknown' }
           : a
       )
     );
 
-    setViewAsset({ ...viewAsset, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), manager: (viewAssetDraft.manager || "").trim(), value: parseFloat(viewAssetDraft.value) || 0, quantity: parseInt(viewAssetDraft.quantity) || 1, heroImage, images, lastEditedBy: currentUser?.username || 'Unknown' });
+    setViewAsset({ ...viewAsset, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), manager: (viewAssetDraft.manager || "").trim(), value: parseFloat(viewAssetDraft.value) || 0, estimatedValue: parseFloat(viewAssetDraft.estimatedValue) || 0, rrp: parseFloat(viewAssetDraft.rrp) || 0, purchasePrice: parseFloat(viewAssetDraft.purchasePrice) || 0, quantity: parseInt(viewAssetDraft.quantity) || 1, heroImage, images, lastEditedBy: currentUser?.username || 'Unknown' });
     showAlert("Asset updated.");
     return true;
   };
@@ -2630,6 +2639,63 @@ export default function App() {
                             />
                           </div>
 
+                          <div>
+                            <p className="text-sm text-neutral-400">Estimated value</p>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400">$</span>
+                              <input
+                                className="w-full p-2 pl-7 rounded bg-neutral-950 border border-neutral-800"
+                                type="text"
+                                placeholder="0.00"
+                                value={formatCurrency(newAsset.estimatedValue)}
+                                onChange={(e) => {
+                                  const cleaned = parseCurrency(e.target.value);
+                                  if (cleaned === "" || !isNaN(parseFloat(cleaned))) {
+                                    setNewAsset((p) => ({ ...p, estimatedValue: cleaned }));
+                                  }
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <p className="text-sm text-neutral-400">RRP</p>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400">$</span>
+                              <input
+                                className="w-full p-2 pl-7 rounded bg-neutral-950 border border-neutral-800"
+                                type="text"
+                                placeholder="0.00"
+                                value={formatCurrency(newAsset.rrp)}
+                                onChange={(e) => {
+                                  const cleaned = parseCurrency(e.target.value);
+                                  if (cleaned === "" || !isNaN(parseFloat(cleaned))) {
+                                    setNewAsset((p) => ({ ...p, rrp: cleaned }));
+                                  }
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <p className="text-sm text-neutral-400">Purchase Price</p>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400">$</span>
+                              <input
+                                className="w-full p-2 pl-7 rounded bg-neutral-950 border border-neutral-800"
+                                type="text"
+                                placeholder="0.00"
+                                value={formatCurrency(newAsset.purchasePrice)}
+                                onChange={(e) => {
+                                  const cleaned = parseCurrency(e.target.value);
+                                  if (cleaned === "" || !isNaN(parseFloat(cleaned))) {
+                                    setNewAsset((p) => ({ ...p, purchasePrice: cleaned }));
+                                  }
+                                }}
+                              />
+                            </div>
+                          </div>
+
                       <div className="space-y-3">
                         <div className="flex flex-col items-start gap-1">
                           <input
@@ -2855,6 +2921,66 @@ export default function App() {
                         setViewAssetDraft((p) => ({ ...p, value: cleaned }));
                       }
                     }} 
+                  />
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm text-neutral-400">Estimated value</p>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400">$</span>
+                  <input
+                    disabled={!assetCanEdit}
+                    className="w-48 p-2 pl-7 rounded bg-neutral-950 border border-neutral-800"
+                    type="text"
+                    placeholder="0.00"
+                    value={formatCurrency(viewAssetDraft.estimatedValue)}
+                    onChange={(e) => {
+                      const cleaned = parseCurrency(e.target.value);
+                      if (cleaned === "" || !isNaN(parseFloat(cleaned))) {
+                        setViewAssetDraft((p) => ({ ...p, estimatedValue: cleaned }));
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm text-neutral-400">RRP</p>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400">$</span>
+                  <input
+                    disabled={!assetCanEdit}
+                    className="w-48 p-2 pl-7 rounded bg-neutral-950 border border-neutral-800"
+                    type="text"
+                    placeholder="0.00"
+                    value={formatCurrency(viewAssetDraft.rrp)}
+                    onChange={(e) => {
+                      const cleaned = parseCurrency(e.target.value);
+                      if (cleaned === "" || !isNaN(parseFloat(cleaned))) {
+                        setViewAssetDraft((p) => ({ ...p, rrp: cleaned }));
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm text-neutral-400">Purchase Price</p>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400">$</span>
+                  <input
+                    disabled={!assetCanEdit}
+                    className="w-48 p-2 pl-7 rounded bg-neutral-950 border border-neutral-800"
+                    type="text"
+                    placeholder="0.00"
+                    value={formatCurrency(viewAssetDraft.purchasePrice)}
+                    onChange={(e) => {
+                      const cleaned = parseCurrency(e.target.value);
+                      if (cleaned === "" || !isNaN(parseFloat(cleaned))) {
+                        setViewAssetDraft((p) => ({ ...p, purchasePrice: cleaned }));
+                      }
+                    }}
                   />
                 </div>
               </div>
