@@ -2333,9 +2333,6 @@ export default function App() {
                                       {sharedMode && (
                                         <p className="mt-0.5">Your role: {getPermissionForCollection(collection) === 'owner' ? 'Owner' : permissionStringToPreset(getPermissionForCollection(collection))}</p>
                                       )}
-                                      {sharedMode && (
-                                        <p className="mt-0.5">Your role: {getPermissionForCollection(collection) === 'owner' ? 'Owner' : permissionStringToPreset(getPermissionForCollection(collection))}</p>
-                                      )}
                                     </div>
                                   </div>
                                 </div>
