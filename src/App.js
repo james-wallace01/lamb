@@ -290,6 +290,9 @@ export default function App() {
     const selectedPerms = Object.keys(perms).filter(k => perms[k]);
     if (selectedPerms.length === 0) return showAlert("Select at least one permission to grant.");
     const permissionString = selectedPerms.join('+');
+    // If the vault share does not include Collections, restrict the vault-level permission to Viewer
+    // (users must opt-in to Collections to receive higher roles that affect contents).
+    const vaultPermission = (shareDialog.type === 'vault' && !shareDialog.scopes?.collection) ? 'view' : permissionString;
 
     // Branch based on type: vault / collection / asset
     if (shareDialog.type === 'vault') {
@@ -302,18 +305,18 @@ export default function App() {
         if (v.id !== shareDialog.targetId) return v;
         const existing = v.sharedWith || [];
         if (existing.find(s => s.userId === user.id)) return v;
-        return { ...v, sharedWith: [...existing, { userId: user.id, username: user.username, permission: permissionString, includeContents: !!shareDialog.scopes.collection, includeAssets: !!shareDialog.scopes.asset }] };
+        return { ...v, sharedWith: [...existing, { userId: user.id, username: user.username, permission: vaultPermission, includeContents: !!shareDialog.scopes.collection, includeAssets: !!shareDialog.scopes.asset }] };
       }));
 
       // If the vault share requested Collections scope, create collection shares for all collections in the vault.
       if (shareDialog.scopes.collection) {
         const vaultId = shareDialog.targetId;
         const vaultCollectionIds = collections.filter(c => c.vaultId === vaultId).map(c => c.id);
-        setCollections(prev => prev.map(c => {
+          setCollections(prev => prev.map(c => {
           if (c.vaultId !== vaultId) return c;
           const existing = c.sharedWith || [];
           if (existing.find(s => s.userId === user.id)) return c;
-          return { ...c, sharedWith: [...existing, { userId: user.id, username: user.username, permission: permissionString, includeAssets: !!shareDialog.scopes.asset }] };
+            return { ...c, sharedWith: [...existing, { userId: user.id, username: user.username, permission: permissionString, includeAssets: !!shareDialog.scopes.asset }] };
         }));
 
         // If asset scope requested as well, add asset shares for all assets within those collections
@@ -327,7 +330,7 @@ export default function App() {
         }
       }
 
-      if (!shareDialog.scopes.collection && shareDialog.selectedCollectionIds && shareDialog.selectedCollectionIds.length > 0) {
+      if (shareDialog.scopes.collection && shareDialog.selectedCollectionIds && shareDialog.selectedCollectionIds.length > 0) {
         setCollections((prev) => prev.map(c => {
           if (!shareDialog.selectedCollectionIds.includes(c.id)) return c;
           const existing = c.sharedWith || [];
@@ -351,7 +354,7 @@ export default function App() {
       })() : c));
 
       // share selected assets if any (selectedCollectionIds used as selectedAssetIds here)
-      if (!shareDialog.scopes.asset && shareDialog.selectedCollectionIds && shareDialog.selectedCollectionIds.length > 0) {
+      if (shareDialog.scopes.asset && shareDialog.selectedCollectionIds && shareDialog.selectedCollectionIds.length > 0) {
         setAssets((prev) => prev.map(a => {
           if (!shareDialog.selectedCollectionIds.includes(a.id)) return a;
           const existing = a.sharedWith || [];
@@ -1614,14 +1617,15 @@ export default function App() {
     return sortByDefaultThenDate(a, b);
   });
 
-  // Include collections that belong to vaults shared with the user, or collections shared directly.
-  // Collections shared with the user either because their vault was shared or directly
+  // Include collections that belong to vaults shared with the user (only when the
+  // vault share included contents), or collections shared directly.
   // Exclude collections owned by the current user (they are the owner's own items)
   const sharedCollectionsList = currentUser ? collections.filter(c => {
     if (c.ownerId === currentUser.id) return false; // skip own collections
-    const inSharedVault = sharedVaultsList.some(sv => sv.id === c.vaultId);
+    const parentVault = vaults.find(v => v.id === c.vaultId);
+    const inSharedVaultWithContents = parentVault && (parentVault.sharedWith || []).some(s => s.userId === currentUser.id && !!s.includeContents);
     const sharedDirectly = (c.sharedWith || []).some(s => s.userId === currentUser.id);
-    return inSharedVault || sharedDirectly;
+    return inSharedVaultWithContents || sharedDirectly;
   }) : [];
   const filteredSharedCollections = sharedCollectionsList.filter((c) => c.name.toLowerCase().includes(normalizeFilter(collectionFilter)) && (!selectedVaultId || c.vaultId === selectedVaultId));
   const sortedSharedCollections = [...filteredSharedCollections].sort((a, b) => {
@@ -1635,7 +1639,25 @@ export default function App() {
   const selectedSharedCollection = sharedCollectionsList.find((c) => c.id === selectedCollectionId) || null;
 
   // Assets inside the selected shared collection; exclude assets that I own
-  const sharedAssetsList = currentUser && selectedSharedCollection ? assets.filter(a => a.collectionId === selectedSharedCollection.id && sharedCollectionsList.some(sc => sc.id === a.collectionId) && a.ownerId !== currentUser.id) : [];
+  // Only include an asset if any of:
+  // - the asset itself was shared with the current user
+  // - the collection share for the current user has includeAssets true
+  // - the parent vault share for the current user has includeAssets true
+  const sharedAssetsList = currentUser && selectedSharedCollection ? assets.filter(a => {
+    if (a.collectionId !== selectedSharedCollection.id) return false;
+    if (a.ownerId === currentUser.id) return false;
+    // asset directly shared
+    const assetShared = (a.sharedWith || []).some(s => s.userId === currentUser.id);
+    if (assetShared) return true;
+    // collection-level share with includeAssets
+    const colEntry = (selectedSharedCollection.sharedWith || []).find(s => s.userId === currentUser.id);
+    if (colEntry && colEntry.includeAssets) return true;
+    // vault-level share with includeAssets
+    const parentVault = vaults.find(v => v.id === selectedSharedCollection.vaultId);
+    const vaultEntry = parentVault && (parentVault.sharedWith || []).find(s => s.userId === currentUser.id);
+    if (vaultEntry && vaultEntry.includeAssets) return true;
+    return false;
+  }) : [];
   const filteredSharedAssets = sharedAssetsList.filter((a) => {
     const term = normalizeFilter(assetFilter);
     if (!term) return true;
@@ -3090,6 +3112,9 @@ export default function App() {
                       const parentVault = getVaultForCollection(currentCollection);
                       if (parentVault) {
                         (parentVault.sharedWith || []).forEach(vs => {
+                          // Only merge vault-level shares into collection shares when the
+                          // vault share explicitly included collections (includeContents).
+                          if (!vs.includeContents) return;
                           if (usersMap.has(vs.userId)) {
                             const entry = usersMap.get(vs.userId);
                             if (!entry.collectionShare) {
