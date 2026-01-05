@@ -404,7 +404,7 @@ export default function App() {
   const canCreateInVault = (vault) => {
     if (!vault) return false;
     const role = getRoleForVault(vault);
-    return role === "owner";
+    return role === "owner" || role === "manager";
   };
 
   const canEditInVault = (vault) => {
@@ -2124,7 +2124,7 @@ export default function App() {
                           const ownerVaults = vaults.filter(v => v.ownerId === sharedOwnerId);
                           const sharedEntries = ownerVaults.flatMap(v => (v.sharedWith || []));
                           const entry = sharedEntries.find(s => s.userId === currentUser?.id || s.username === currentUser?.username || s.email === currentUser?.email);
-                          headerCanCreate = false; // Only owners can create
+                          headerCanCreate = entry && entry.role === 'manager'; // Managers can create
                         } else {
                           headerCanCreate = true;
                         }
