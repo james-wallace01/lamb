@@ -187,7 +187,7 @@ export default function App() {
   const [moveDialog, setMoveDialog] = useState({ show: false, assetId: null, targetVaultId: null, targetCollectionId: null });
   const [collectionMoveDialog, setCollectionMoveDialog] = useState({ show: false, collectionId: null, targetVaultId: null });
   const [managerDialog, setManagerDialog] = useState({ show: false, type: null, id: null, username: "" });
-  const [shareDialog, setShareDialog] = useState({ show: false, type: 'vault', targetId: null, username: "", permissions: { view: true, edit: false, create: false, move: false, delete: false }, scopes: { vault: true, collection: false, asset: false }, selectedCollectionIds: [] });
+  const [shareDialog, setShareDialog] = useState({ show: false, type: 'vault', targetId: null, username: "", permissions: { view: true, edit: false, create: false, move: false, delete: false }, scopes: { vault: false, collection: false, asset: false }, selectedCollectionIds: [] });
   const [showShareSuggestions, setShowShareSuggestions] = useState(false);
 
   const PERMISSION_PRESETS = {
@@ -250,7 +250,7 @@ export default function App() {
     // type: 'vault' | 'collection' | 'asset'
     const t = type || 'vault';
     const scopesDefault = { vault: false, collection: false, asset: false };
-    if (t === 'vault') scopesDefault.vault = true;
+    // vault defaults to off so user must opt in to All Vaults
     if (t === 'collection') scopesDefault.collection = true;
     if (t === 'asset') scopesDefault.asset = true;
     setShareDialog({ show: true, type: t, targetId: target?.id || null, username: "", permissions: PERMISSION_PRESETS.Viewer, preset: 'Viewer', scopes: scopesDefault, selectedCollectionIds: [] });
@@ -305,7 +305,7 @@ export default function App() {
         if (v.id !== shareDialog.targetId) return v;
         const existing = v.sharedWith || [];
         if (existing.find(s => s.userId === user.id)) return v;
-        return { ...v, sharedWith: [...existing, { userId: user.id, username: user.username, permission: vaultPermission, includeContents: !!shareDialog.scopes.collection, includeAssets: !!shareDialog.scopes.asset }] };
+        return { ...v, sharedWith: [...existing, { userId: user.id, username: user.username, permission: vaultPermission, includeContents: !!shareDialog.scopes.collection, includeAssets: !!shareDialog.scopes.asset, allVaults: !!shareDialog.scopes.vault }] };
       }));
 
       // If the vault share requested Collections scope, create collection shares for all collections in the vault.
@@ -316,7 +316,7 @@ export default function App() {
           if (c.vaultId !== vaultId) return c;
           const existing = c.sharedWith || [];
           if (existing.find(s => s.userId === user.id)) return c;
-            return { ...c, sharedWith: [...existing, { userId: user.id, username: user.username, permission: permissionString, includeAssets: !!shareDialog.scopes.asset }] };
+              return { ...c, sharedWith: [...existing, { userId: user.id, username: user.username, permission: permissionString, includeAssets: !!shareDialog.scopes.asset }] };
         }));
 
         // If asset scope requested as well, add asset shares for all assets within those collections
@@ -375,8 +375,8 @@ export default function App() {
       showAlert(`Shared asset with ${user.username}`);
     }
 
-    // Clear username, selections and reset scopes to defaults for this dialog type
-    setShareDialog((d) => ({ ...d, username: "", selectedCollectionIds: [], scopes: shareDialog.type === 'vault' ? { vault: true, collection: false, asset: false } : shareDialog.type === 'collection' ? { vault: false, collection: true, asset: false } : { vault: false, collection: false, asset: true } }));
+    // Clear username, selections and reset scopes & permissions to defaults for this dialog type
+    setShareDialog((d) => ({ ...d, username: "", selectedCollectionIds: [], permissions: PERMISSION_PRESETS.Viewer, preset: 'Viewer', scopes: d.type === 'vault' ? { vault: false, collection: false, asset: false } : d.type === 'collection' ? { vault: false, collection: true, asset: false } : { vault: false, collection: false, asset: true } }));
     setShowShareSuggestions(false);
     // Keep dialog open for further edits
   };
@@ -3191,18 +3191,29 @@ export default function App() {
                   {shareDialog.type === 'vault' && (
                     <div className="flex items-center gap-2">
                       <button
-                        className={`text-sm px-2 py-1 rounded ${shareDialog.scopes?.collection ? 'bg-red-700 text-white' : 'bg-green-700 text-white'}`}
-                        onClick={() => setShareDialog(d => ({ ...d, scopes: { ...(d.scopes || {}), collection: !d.scopes?.collection, asset: d.scopes?.collection ? d.scopes?.asset : false } }))}
+                        className={`text-sm px-2 py-1 rounded ${shareDialog.scopes?.vault ? 'bg-red-700 text-white' : 'bg-green-700 text-white'}`}
+                        onClick={() => setShareDialog(d => ({ ...d, scopes: { ...(d.scopes || {}), vault: !d.scopes?.vault, collection: d.scopes?.vault ? false : d.scopes?.collection, asset: false }, selectedCollectionIds: d.scopes?.vault ? [] : d.selectedCollectionIds }))}
+                        title={shareDialog.scopes?.vault ? 'Vaults included' : 'Vaults excluded'}
+                        aria-pressed={!!shareDialog.scopes?.vault}
                       >
-                        {shareDialog.scopes?.collection ? 'x Collections' : '+ Collections'}
+                        {shareDialog.scopes?.vault ? 'x All Vaults' : '+ All Vaults'}
                       </button>
                       <button
-                        className={`text-sm px-2 py-1 rounded ${(shareDialog.scopes?.collection && shareDialog.scopes?.asset) ? 'bg-red-700 text-white' : 'bg-green-700 text-white'}`}
-                        onClick={() => { if (!shareDialog.scopes?.collection) return; setShareDialog(d => ({ ...d, scopes: { ...(d.scopes || {}), asset: !d.scopes?.asset } })); }}
-                        disabled={!shareDialog.scopes?.collection}
-                        style={{ opacity: shareDialog.scopes?.collection ? 1 : 0.5, cursor: shareDialog.scopes?.collection ? 'pointer' : 'not-allowed' }}
+                        className={`text-sm px-2 py-1 rounded ${(!shareDialog.scopes?.vault) ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed' : (shareDialog.scopes?.collection ? 'bg-red-700 text-white' : 'bg-green-700 text-white')}`}
+                        onClick={() => { if (!shareDialog.scopes?.vault) return; setShareDialog(d => ({ ...d, scopes: { ...(d.scopes || {}), collection: !d.scopes?.collection, asset: d.scopes?.collection ? d.scopes?.asset : false } })); }}
+                        disabled={!shareDialog.scopes?.vault}
+                        title={!shareDialog.scopes?.vault ? 'Enable Vaults first' : (shareDialog.scopes?.collection ? 'Collections included' : 'Collections excluded')}
+                        style={{ opacity: (shareDialog.scopes?.vault) ? 1 : 0.5, cursor: (shareDialog.scopes?.vault) ? 'pointer' : 'not-allowed' }}
                       >
-                        {shareDialog.scopes?.asset ? 'x Assets' : '+ Assets'}
+                        {shareDialog.scopes?.collection ? 'x All Collections' : '+ All Collections'}
+                      </button>
+                      <button
+                        className={`text-sm px-2 py-1 rounded ${(!shareDialog.scopes?.vault || !shareDialog.scopes?.collection) ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed' : (shareDialog.scopes?.asset ? 'bg-red-700 text-white' : 'bg-green-700 text-white')}`}
+                        onClick={() => { if (!shareDialog.scopes?.vault || !shareDialog.scopes?.collection) return; setShareDialog(d => ({ ...d, scopes: { ...(d.scopes || {}), asset: !d.scopes?.asset } })); }}
+                        disabled={!shareDialog.scopes?.vault || !shareDialog.scopes?.collection}
+                        style={{ opacity: (shareDialog.scopes?.vault && shareDialog.scopes?.collection) ? 1 : 0.5, cursor: (shareDialog.scopes?.vault && shareDialog.scopes?.collection) ? 'pointer' : 'not-allowed' }}
+                      >
+                        {shareDialog.scopes?.asset ? 'x All Assets' : '+ All Assets'}
                       </button>
                     </div>
                   )}
@@ -3212,7 +3223,7 @@ export default function App() {
                         className={`text-sm px-2 py-1 rounded ${shareDialog.scopes?.asset ? 'bg-red-700 text-white' : 'bg-green-700 text-white'}`}
                         onClick={() => setShareDialog(d => ({ ...d, scopes: { ...(d.scopes || {}), asset: !d.scopes?.asset } }))}
                       >
-                        {shareDialog.scopes?.asset ? 'x Assets' : '+ Assets'}
+                        {shareDialog.scopes?.asset ? 'x All Assets' : '+ All Assets'}
                       </button>
                     </div>
                   )}
@@ -3289,15 +3300,56 @@ export default function App() {
                               {shareDialog.type === 'vault' && (
                                 <>
                                   <button
-                                    className={`text-xs px-2 py-0.5 rounded ${r.vaultShare && r.vaultShare.includeContents ? 'bg-red-700 text-white' : 'bg-green-700 text-white'} ${r.vaultShare && r.vaultShare.includeAssets ? 'opacity-60 cursor-not-allowed bg-neutral-800 text-neutral-400' : ''}`}
+                                    className={`text-xs px-2 py-0.5 rounded ${(r.vaultShare && r.vaultShare.allVaults) ? 'bg-red-700 text-white' : 'bg-green-700 text-white'}`}
                                     onClick={() => {
-                                      if (!r.vaultShare) return;
-                                      // prevent toggling Collections off while Assets are enabled for this user
-                                      if (r.vaultShare.includeAssets) return;
                                       const vaultId = shareDialog.targetId;
                                       const userId = r.userId;
+                                      // If the user already has a vault shared entry, toggle the allVaults flag
+                                      if (r.vaultShare) {
+                                        setVaults(prev => prev.map(v => v.id === vaultId ? { ...v, sharedWith: (v.sharedWith || []).map(sw => {
+                                          if (sw.userId !== userId) return sw;
+                                          const newAll = !sw.allVaults;
+                                          return { ...sw, allVaults: newAll, includeContents: newAll ? (sw.includeContents || false) : false, includeAssets: newAll ? (sw.includeAssets || false) : false };
+                                        }) } : v));
+                                        return;
+                                      }
+                                      // Otherwise, add a vault-level share for this user and mark allVaults true
+                                      const inferredPerm = (r.collections && r.collections[0] && r.collections[0].permission) ? r.collections[0].permission : 'view';
+                                      setVaults(prev => prev.map(v => v.id === vaultId ? { ...v, sharedWith: [...(v.sharedWith || []), { userId, username: r.username, permission: inferredPerm, includeContents: false, includeAssets: false, allVaults: true }] } : v));
+                                    }}
+                                    title={(r.vaultShare && r.vaultShare.allVaults) ? 'All vaults enabled' : 'Enable vault-level share'}
+                                  >
+                                    {(r.vaultShare && r.vaultShare.allVaults) ? 'x All Vaults' : '+ All Vaults'}
+                                  </button>
+                                  <button
+                                    className={`text-xs px-2 py-0.5 rounded ${(!r.vaultShare || !r.vaultShare.allVaults) ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed' : (r.vaultShare && r.vaultShare.includeContents ? 'bg-red-700 text-white' : 'bg-green-700 text-white')}`}
+                                    onClick={() => {
+                                      const vaultId = shareDialog.targetId;
+                                      const userId = r.userId;
+                                      // Collections can only be toggled when the user has allVaults enabled
+                                      if (!r.vaultShare || !r.vaultShare.allVaults) return;
+                                      // If there's no vault-level share yet (shouldn't happen when allVaults true), create one and add collection shares
+                                      if (!r.vaultShare) {
+                                        const inferredPerm = (r.collections && r.collections[0] && r.collections[0].permission) ? r.collections[0].permission : 'view';
+                                        setVaults(prev => prev.map(v => v.id === vaultId ? { ...v, sharedWith: [...(v.sharedWith || []), { userId, username: r.username, permission: inferredPerm, includeContents: true, includeAssets: false, allVaults: true }] } : v));
+                                        const vaultCollections = collections.filter(c => c.vaultId === vaultId);
+                                        setCollections(prev => prev.map(c => {
+                                          if (c.vaultId !== vaultId) return c;
+                                          const existing = (c.sharedWith || []);
+                                          if (existing.find(s => s.userId === userId)) return c;
+                                          return { ...c, sharedWith: [...existing, { userId, username: r.username, permission: inferredPerm, includeAssets: false }] };
+                                        }));
+                                        return;
+                                      }
                                       const newInclude = !r.vaultShare.includeContents;
-                                      // Update vault entry
+                                      // If disabling collections while assets are included, first remove asset shares and clear includeAssets
+                                      if (r.vaultShare.includeAssets && !newInclude) {
+                                        const perm = r.vaultShare.permission || 'view';
+                                        const vaultCollectionIds = collections.filter(c => c.vaultId === vaultId).map(c => c.id);
+                                        setAssets(prev => prev.map(a => a.collectionId && vaultCollectionIds.includes(a.collectionId) ? { ...a, sharedWith: (a.sharedWith || []).filter(s => !(s.userId === userId && s.permission === perm)) } : a));
+                                        setVaults(prev => prev.map(v => v.id === vaultId ? { ...v, sharedWith: (v.sharedWith || []).map(sw => sw.userId === userId ? { ...sw, includeAssets: false } : sw) } : v));
+                                      }
+                                      // Update vault entry for includeContents
                                       setVaults(prev => prev.map(v => v.id === vaultId ? {
                                         ...v,
                                         sharedWith: (v.sharedWith || []).map(sw => sw.userId === userId ? { ...sw, includeContents: newInclude } : sw)
@@ -3327,14 +3379,16 @@ export default function App() {
                                       }
                                     }}
                                     title="Toggle collections inclusion"
+                                    disabled={!r.vaultShare || !r.vaultShare.allVaults}
+                                    style={{ opacity: (!r.vaultShare || !r.vaultShare.allVaults) ? 0.5 : 1, cursor: (!r.vaultShare || !r.vaultShare.allVaults) ? 'not-allowed' : 'pointer' }}
                                   >
-                                    {(r.vaultShare && r.vaultShare.includeContents) ? 'x Collections' : '+ Collections'}
+                                    {(r.vaultShare && r.vaultShare.includeContents) ? 'x All Collections' : '+ All Collections'}
                                   </button>
 
                                   <button
-                                    className={`text-xs px-2 py-0.5 rounded ${r.vaultShare && r.vaultShare.includeContents && r.vaultShare.includeAssets ? 'bg-red-700 text-white' : 'bg-green-700 text-white'}`}
+                                    className={`text-xs px-2 py-0.5 rounded ${(!r.vaultShare || !r.vaultShare.allVaults || !r.vaultShare.includeContents) ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed' : (r.vaultShare && r.vaultShare.includeContents && r.vaultShare.includeAssets ? 'bg-red-700 text-white' : 'bg-green-700 text-white')}`}
                                     onClick={() => {
-                                      if (!r.vaultShare || !r.vaultShare.includeContents) return;
+                                      if (!r.vaultShare || !r.vaultShare.allVaults || !r.vaultShare.includeContents) return;
                                       const vaultId = shareDialog.targetId;
                                       const userId = r.userId;
                                       const newIncludeAssets = !r.vaultShare.includeAssets;
@@ -3359,10 +3413,10 @@ export default function App() {
                                       }
                                     }}
                                     title="Toggle assets inclusion"
-                                    disabled={!(r.vaultShare && r.vaultShare.includeContents)}
-                                    style={{ opacity: (r.vaultShare && r.vaultShare.includeContents) ? 1 : 0.5, cursor: (r.vaultShare && r.vaultShare.includeContents) ? 'pointer' : 'not-allowed' }}
+                                    disabled={!(r.vaultShare && r.vaultShare.allVaults && r.vaultShare.includeContents)}
+                                    style={{ opacity: (r.vaultShare && r.vaultShare.allVaults && r.vaultShare.includeContents) ? 1 : 0.5, cursor: (r.vaultShare && r.vaultShare.allVaults && r.vaultShare.includeContents) ? 'pointer' : 'not-allowed' }}
                                   >
-                                    {(r.vaultShare && r.vaultShare.includeAssets) ? 'x Assets' : '+ Assets'}
+                                    {(r.vaultShare && r.vaultShare.includeAssets) ? 'x All Assets' : '+ All Assets'}
                                   </button>
                                 </>
                               )}
@@ -3391,7 +3445,7 @@ export default function App() {
                                       } else {
                                         // remove asset shares for this user in this collection
                                         setAssets(prev => prev.map(a => a.collectionId === collectionId ? { ...a, sharedWith: (a.sharedWith || []).filter(s => !(s.userId === userId && s.permission === (r.collectionShare.permission || 'view'))) } : a));
-                                        // also, if parent vault had includeAssets for this user, disable it (change vault button back to + Assets)
+                                        // also, if parent vault had includeAssets for this user, disable it (change vault button back to + All Assets)
                                         const parentVaultId = (collections.find(c => c.id === collectionId) || {}).vaultId;
                                         if (parentVaultId) {
                                           setVaults(prev => prev.map(v => v.id === parentVaultId ? { ...v, sharedWith: (v.sharedWith || []).map(sw => sw.userId === userId ? { ...sw, includeAssets: false } : sw) } : v));
@@ -3400,7 +3454,7 @@ export default function App() {
                                     }}
                                     title="Toggle assets inclusion in this collection"
                                   >
-                                    {(r.collectionShare && r.collectionShare.includeAssets) ? `x Assets` : '+ Assets'}
+                                    {(r.collectionShare && r.collectionShare.includeAssets) ? `x All Assets` : '+ All Assets'}
                                   </button>
                                 </>
                               )}
