@@ -160,6 +160,8 @@ export default function App() {
     Materials: ["Precious Metal", "Precious Stone"],
     Specialty: ["Livestock", "Alcohol"],
     Digital: ["Cryptocurrency", "Website/Domain"],
+    Equipment: [],
+    Machinery: [],
     Other: ["Other"]
   };
 
@@ -1479,26 +1481,44 @@ export default function App() {
   
   // Helper function to calculate total value of assets in a vault
   const getVaultTotalValue = (vaultId) => {
-    return assets
-      .filter(a => a.vaultId === vaultId)
-      .reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
+    const vaultCollectionIds = collections.filter(c => c.vaultId === vaultId).map(c => c.id);
+    const vaultAssets = assets.filter(a => vaultCollectionIds.includes(a.collectionId));
+    return vaultAssets.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
   };
   
   // Helper function to calculate total value of assets in a collection
   const getCollectionTotalValue = (collectionId) => {
-    return assets
-      .filter(a => a.collectionId === collectionId)
-      .reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
+    const collectionAssets = assets.filter(a => a.collectionId === collectionId);
+    return collectionAssets.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
+  };
+
+  // Helper function to calculate total net worth for a user
+  const getUserNetWorth = (userId) => {
+    const userVaultList = vaults.filter(v => v.ownerId === userId);
+    const userCollectionIds = userVaultList.flatMap(v => collections.filter(c => c.vaultId === v.id).map(c => c.id));
+    const userAssets = assets.filter(a => userCollectionIds.includes(a.collectionId));
+    return userAssets.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
   };
 
   const userVaults = currentUser ? vaults.filter((v) => v.ownerId === currentUser.id) : [];
   const filteredVaults = userVaults.filter((v) => v.name.toLowerCase().includes(normalizeFilter(vaultFilter)));
+  console.log(`Current vaultSort: "${vaultSort}", Filtered vaults count: ${filteredVaults.length}`);
   const sortedVaults = [...filteredVaults].sort((a, b) => {
     if (vaultSort === "name") return a.name.localeCompare(b.name);
     if (vaultSort === "newest") return new Date(b.createdAt) - new Date(a.createdAt);
     if (vaultSort === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
-    if (vaultSort === "highestValue") return getVaultTotalValue(b.id) - getVaultTotalValue(a.id);
-    if (vaultSort === "lowestValue") return getVaultTotalValue(a.id) - getVaultTotalValue(b.id);
+    if (vaultSort === "highestValue") {
+      const aVal = getVaultTotalValue(a.id);
+      const bVal = getVaultTotalValue(b.id);
+      console.log(`Sorting by Highest Value: ${a.name}=$${aVal} vs ${b.name}=$${bVal}, result=${bVal - aVal}`);
+      return bVal - aVal;
+    }
+    if (vaultSort === "lowestValue") {
+      const aVal = getVaultTotalValue(a.id);
+      const bVal = getVaultTotalValue(b.id);
+      console.log(`Sorting by Lowest Value: ${a.name}=$${aVal} vs ${b.name}=$${bVal}, result=${aVal - bVal}`);
+      return aVal - bVal;
+    }
     return sortByDefaultThenDate(a, b);
   });
   const selectedVault = userVaults.find((v) => v.id === selectedVaultId) || null;
@@ -1627,18 +1647,29 @@ export default function App() {
             </div>
             <div className="flex-1 flex items-start justify-between">
               <div className="flex-1">
-                <p className="font-semibold">{collection.name}</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold">{collection.name}</p>
+                  {collection.sharedWith && collection.sharedWith.length > 0 ? (
+                    <svg className="w-4 h-4 text-green-700" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.5 1.1 2.51 2.75 2.97 4.45h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4 text-neutral-500" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.5 1.1 2.51 2.75 2.97 4.45h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
+                    </svg>
+                  )}
+                </div>
                 <div className="flex gap-2 items-center mt-1">
                   <span className="text-xs px-2 py-1 rounded bg-purple-900/50 border border-purple-700 text-purple-300">Collection</span>
                 </div>
               </div>
-              <div className="text-right text-xs text-neutral-400 ml-4">
+              <div className="text-right text-xs text-white ml-4">
                 <p>Created {new Date(collection.createdAt).toLocaleDateString()}</p>
                 {collection.lastViewed && <p className="mt-0.5">Viewed {new Date(collection.lastViewed).toLocaleDateString()}</p>}
                 {collection.lastEditedBy && <p className="mt-0.5">Edited by {(() => { const editor = users.find(u => u.username === collection.lastEditedBy) || {}; return editor.firstName ? `${editor.firstName} ${editor.lastName}` : (editor.username || collection.lastEditedBy); })()}</p>}
                 <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === collection.ownerId) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return collection.manager || ownerName; })()}</p>
                 <p className="mt-0.5">Assets: {assetCount}</p>
-                {Number.isFinite(collectionValue) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
+                {Number.isFinite(collectionValue) && <p className="mt-0.5 font-semibold">Value: ${collectionValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
                 
               </div>
             </div>
@@ -1871,6 +1902,10 @@ export default function App() {
                       </svg>
                       <input type="file" accept="image/*" className="hidden" onChange={handleProfileImageUpload} />
                     </label>
+                  </div>
+                  <div className="mt-4 p-3 rounded-lg bg-neutral-950/50 border border-neutral-800">
+                    <p className="text-xs text-neutral-500">Net Worth</p>
+                    <p className="text-lg font-semibold">${(currentUser ? getUserNetWorth(currentUser.id) : 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                   </div>
                 </div>
                 <div className="md:col-span-2 space-y-4">
@@ -2326,12 +2361,23 @@ export default function App() {
                                   </div>
                                   <div className="flex-1 flex items-start justify-between">
                                     <div className="flex-1">
-                                      <p className="font-semibold">{vault.name}</p>
+                                      <div className="flex items-center gap-2">
+                                        <p className="font-semibold">{vault.name}</p>
+                                        {vault.sharedWith && vault.sharedWith.length > 0 ? (
+                                          <svg className="w-4 h-4 text-green-700" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.5 1.1 2.51 2.75 2.97 4.45h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
+                                          </svg>
+                                        ) : (
+                                          <svg className="w-4 h-4 text-neutral-500" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.5 1.1 2.51 2.75 2.97 4.45h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
+                                          </svg>
+                                        )}
+                                      </div>
                                       <div className="flex gap-2 items-center mt-1">
                                         <span className="text-xs px-2 py-1 rounded bg-blue-900/50 border border-blue-700 text-blue-300">Vault</span>
                                       </div>
                                     </div>
-                                    <div className="text-right text-xs text-neutral-400 ml-4">
+                                    <div className="text-right text-xs text-white ml-4">
                                       <p>Created {new Date(vault.createdAt).toLocaleDateString()}</p>
                                       {vault.lastViewed && <p className="mt-0.5">Viewed {new Date(vault.lastViewed).toLocaleDateString()}</p>}
                                       {vault.lastEditedBy && <p className="mt-0.5">Edited by {(() => { const editor = users.find(u => u.username === vault.lastEditedBy) || {}; return editor.firstName ? `${editor.firstName} ${editor.lastName}` : (editor.username || vault.lastEditedBy); })()}</p>}
@@ -2339,7 +2385,7 @@ export default function App() {
                                         // Vault tiles no longer show inline Assign button; manager assignment is available via Edit
                                       })()}</p>
                                       <p className="mt-0.5">Collections: {collectionCount}</p>
-                                      {Number.isFinite(vaultValue) && <p className="mt-0.5 text-green-400 font-semibold">Value: ${vaultValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
+                                      {Number.isFinite(vaultValue) && <p className="mt-0.5 font-semibold">Value: ${vaultValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
                                       
                                     </div>
                                   </div>
@@ -2497,6 +2543,8 @@ export default function App() {
                         <option value="Materials">Materials</option>
                         <option value="Specialty">Specialty</option>
                         <option value="Digital">Digital</option>
+                        <option value="Equipment">Equipment</option>
+                        <option value="Machinery">Machinery</option>
                         <option value="Other">Other</option>
                       </select>
                       <select className="w-full p-2 pr-8 rounded bg-blue-600 hover:bg-blue-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}} value={newAsset.category} onChange={(e) => setNewAsset((p) => ({ ...p, category: e.target.value }))} disabled={!newAsset.type}>
@@ -2684,19 +2732,30 @@ export default function App() {
                                   </div>
                                   <div className="flex-1 flex items-start justify-between">
                                     <div className="flex-1">
-                                      <p className="font-semibold">{asset.title}</p>
+                                      <div className="flex items-center gap-2">
+                                        <p className="font-semibold">{asset.title}</p>
+                                        {asset.sharedWith && asset.sharedWith.length > 0 ? (
+                                          <svg className="w-4 h-4 text-green-700" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.5 1.1 2.51 2.75 2.97 4.45h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
+                                          </svg>
+                                        ) : (
+                                          <svg className="w-4 h-4 text-neutral-500" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.5 1.1 2.51 2.75 2.97 4.45h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
+                                          </svg>
+                                        )}
+                                      </div>
                                       <div className="flex gap-2 items-center mt-1">
                                         <span className="text-xs px-2 py-1 rounded bg-emerald-900/50 border border-emerald-700 text-emerald-300">Asset</span>
                                       </div>
                                       <p className="text-xs text-neutral-400 mt-1">{asset.type || "No Type"} • {asset.category || "Uncategorized"}</p>
                                     </div>
-                                    <div className="text-right text-xs text-neutral-400 ml-4">
+                                    <div className="text-right text-xs text-white ml-4">
                                       <p>Created {new Date(asset.createdAt).toLocaleDateString()}</p>
                                       {asset.lastViewed && <p className="mt-0.5">Viewed {new Date(asset.lastViewed).toLocaleDateString()}</p>}
                                       {asset.lastEditedBy && <p className="mt-0.5">Edited by {(() => { const editor = users.find(u => u.username === asset.lastEditedBy) || {}; return editor.firstName ? `${editor.firstName} ${editor.lastName}` : (editor.username || asset.lastEditedBy); })()}</p>}
                                       <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === asset.ownerId) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return asset.manager || ownerName; })()}</p>
                                       <p className="mt-0.5 text-xs text-neutral-300 text-right">Quantity: {asset.quantity || 1}</p>
-                                      {(() => { const v = parseFloat(asset.value); return Number.isFinite(v) ? <p className="mt-0.5 text-green-400 font-semibold">Value: ${v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p> : null; })()}
+                                      {(() => { const v = parseFloat(asset.value); return Number.isFinite(v) ? <p className="mt-0.5 font-semibold">Value: ${v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p> : null; })()}
                                       
                                     </div>
                                   </div>
@@ -2780,6 +2839,8 @@ export default function App() {
                   <option value="Materials">Materials</option>
                   <option value="Specialty">Specialty</option>
                   <option value="Digital">Digital</option>
+                  <option value="Equipment">Equipment</option>
+                  <option value="Machinery">Machinery</option>
                   <option value="Other">Other</option>
                 </select>
               </div>
