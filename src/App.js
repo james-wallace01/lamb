@@ -249,6 +249,10 @@ export default function App() {
     if (!shareDialog.username) return showAlert("Enter a username to share with.");
     const user = users.find(u => u.username === shareDialog.username || `${u.firstName} ${u.lastName}` === shareDialog.username || u.email === shareDialog.username);
     if (!user) return showAlert("User not found.");
+    if (currentUser && user.id === currentUser.id) {
+      showAlert("You cannot share with yourself.");
+      return;
+    }
     
     const role = shareDialog.role || 'viewer';
     const canCreateCollections = !!shareDialog.canCreateCollections;
@@ -1601,7 +1605,6 @@ export default function App() {
                 <div className="flex gap-2 items-center mt-1">
                   <span className="text-xs px-2 py-1 rounded bg-purple-900/50 border border-purple-700 text-purple-300">Collection</span>
                 </div>
-                {collection.description && <p className="text-xs text-neutral-300 mt-0.5">{collection.description}</p>}
               </div>
               <div className="text-right text-xs text-neutral-400 ml-4">
                 <p>Created {new Date(collection.createdAt).toLocaleDateString()}</p>
@@ -2296,7 +2299,6 @@ export default function App() {
                                       <div className="flex gap-2 items-center mt-1">
                                         <span className="text-xs px-2 py-1 rounded bg-blue-900/50 border border-blue-700 text-blue-300">Vault</span>
                                       </div>
-                                      {vault.description && <p className="text-xs text-neutral-300 mt-0.5">{vault.description}</p>}
                                     </div>
                                     <div className="text-right text-xs text-neutral-400 ml-4">
                                       <p>Created {new Date(vault.createdAt).toLocaleDateString()}</p>
@@ -2652,7 +2654,6 @@ export default function App() {
                                         <span className="text-xs px-2 py-1 rounded bg-emerald-900/50 border border-emerald-700 text-emerald-300">Asset</span>
                                       </div>
                                       <p className="text-xs text-neutral-400 mt-1">{asset.type || "No Type"} • {asset.category || "Uncategorized"}</p>
-                                      {asset.description && <p className="text-xs text-neutral-300 mt-0.5">{asset.description}</p>}
                                     </div>
                                     <div className="text-right text-xs text-neutral-400 ml-4">
                                       <p>Created {new Date(asset.createdAt).toLocaleDateString()}</p>
@@ -3060,7 +3061,10 @@ export default function App() {
                         const currentAsset = assets.find(a => a.id === shareDialog.targetId);
                         sharedIds = (currentAsset?.sharedWith || []).map(s => s.userId);
                       }
+                      const selfId = currentUser?.id;
                       const matches = (users || []).filter(u => {
+                        if (!u) return false;
+                        if (u.id === selfId) return false; // do not suggest yourself as a share target
                         if (sharedIds.includes(u.id)) return false; // exclude already-shared users for this target
                         const full = `${u.firstName || ""} ${u.lastName || ""}`.toLowerCase();
                         return (u.username || "").toLowerCase().includes(q) || (u.email || "").toLowerCase().includes(q) || full.includes(q);
@@ -3086,7 +3090,16 @@ export default function App() {
                 <label className="text-sm text-neutral-400">Role</label>
                 <div className="mt-2">
                   <select
-                    className="w-full p-2 rounded bg-neutral-950 border border-neutral-800"
+                    className="w-full p-2 pr-8 rounded bg-neutral-950 border border-neutral-800"
+                    style={{
+                      backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")',
+                      backgroundPosition: 'right 0.5rem center',
+                      backgroundRepeat: 'no-repeat',
+                      backgroundSize: '1.5em 1.5em',
+                      appearance: 'none',
+                      WebkitAppearance: 'none',
+                      MozAppearance: 'none'
+                    }}
                     value={shareDialog.role}
                     onChange={(e) => setShareDialog(d => ({ ...d, role: e.target.value }))}
                   >
