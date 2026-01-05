@@ -1501,15 +1501,14 @@ export default function App() {
     return sortByDefaultThenDate(a, b);
   });
 
-  // Include collections that belong to vaults shared with the user (only when the
-  // vault share included contents), or collections shared directly.
+  // Include collections that belong to vaults shared with the user, or collections shared directly.
   // Exclude collections owned by the current user (they are the owner's own items)
   const sharedCollectionsList = currentUser ? collections.filter(c => {
     if (c.ownerId === currentUser.id) return false; // skip own collections
     const parentVault = vaults.find(v => v.id === c.vaultId);
-    const inSharedVaultWithContents = parentVault && (parentVault.sharedWith || []).some(s => s.userId === currentUser.id && !!s.includeContents);
+    const inSharedVault = parentVault && (parentVault.sharedWith || []).some(s => s.userId === currentUser.id);
     const sharedDirectly = (c.sharedWith || []).some(s => s.userId === currentUser.id);
-    return inSharedVaultWithContents || sharedDirectly;
+    return inSharedVault || sharedDirectly;
   }) : [];
   const filteredSharedCollections = sharedCollectionsList.filter((c) => c.name.toLowerCase().includes(normalizeFilter(collectionFilter)) && (!selectedVaultId || c.vaultId === selectedVaultId));
   const sortedSharedCollections = [...filteredSharedCollections].sort((a, b) => {
@@ -1533,13 +1532,13 @@ export default function App() {
     // asset directly shared
     const assetShared = (a.sharedWith || []).some(s => s.userId === currentUser.id);
     if (assetShared) return true;
-    // collection-level share with includeAssets
+    // collection-level share
     const colEntry = (selectedSharedCollection.sharedWith || []).find(s => s.userId === currentUser.id);
-    if (colEntry && colEntry.includeAssets) return true;
-    // vault-level share with includeAssets
+    if (colEntry) return true;
+    // vault-level share
     const parentVault = vaults.find(v => v.id === selectedSharedCollection.vaultId);
     const vaultEntry = parentVault && (parentVault.sharedWith || []).find(s => s.userId === currentUser.id);
-    if (vaultEntry && vaultEntry.includeAssets) return true;
+    if (vaultEntry) return true;
     return false;
   }) : [];
   const filteredSharedAssets = sharedAssetsList.filter((a) => {
