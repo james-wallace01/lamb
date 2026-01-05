@@ -1476,6 +1476,20 @@ export default function App() {
   };
 
   const normalizeFilter = (value) => value.trim().toLowerCase();
+  
+  // Helper function to calculate total value of assets in a vault
+  const getVaultTotalValue = (vaultId) => {
+    return assets
+      .filter(a => a.vaultId === vaultId)
+      .reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
+  };
+  
+  // Helper function to calculate total value of assets in a collection
+  const getCollectionTotalValue = (collectionId) => {
+    return assets
+      .filter(a => a.collectionId === collectionId)
+      .reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
+  };
 
   const userVaults = currentUser ? vaults.filter((v) => v.ownerId === currentUser.id) : [];
   const filteredVaults = userVaults.filter((v) => v.name.toLowerCase().includes(normalizeFilter(vaultFilter)));
@@ -1483,8 +1497,8 @@ export default function App() {
     if (vaultSort === "name") return a.name.localeCompare(b.name);
     if (vaultSort === "newest") return new Date(b.createdAt) - new Date(a.createdAt);
     if (vaultSort === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
-    if (vaultSort === "highestValue") return (b.value || 0) - (a.value || 0);
-    if (vaultSort === "lowestValue") return (a.value || 0) - (b.value || 0);
+    if (vaultSort === "highestValue") return getVaultTotalValue(b.id) - getVaultTotalValue(a.id);
+    if (vaultSort === "lowestValue") return getVaultTotalValue(a.id) - getVaultTotalValue(b.id);
     return sortByDefaultThenDate(a, b);
   });
   const selectedVault = userVaults.find((v) => v.id === selectedVaultId) || null;
@@ -1500,8 +1514,8 @@ export default function App() {
     if (collectionSort === "name") return a.name.localeCompare(b.name);
     if (collectionSort === "newest") return new Date(b.createdAt) - new Date(a.createdAt);
     if (collectionSort === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
-    if (collectionSort === "highestValue") return (b.value || 0) - (a.value || 0);
-    if (collectionSort === "lowestValue") return (a.value || 0) - (b.value || 0);
+    if (collectionSort === "highestValue") return getCollectionTotalValue(b.id) - getCollectionTotalValue(a.id);
+    if (collectionSort === "lowestValue") return getCollectionTotalValue(a.id) - getCollectionTotalValue(b.id);
     return sortByDefaultThenDate(a, b);
   });
   const selectedCollection = userCollections.find((c) => c.id === selectedCollectionId) || null;
@@ -1517,8 +1531,8 @@ export default function App() {
   const sortedAssets = [...filteredAssets].sort((a, b) => {
     if (assetSort === "name") return (a.title || "").localeCompare(b.title || "");
     if (assetSort === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
-    if (assetSort === "highestValue") return (b.value || 0) - (a.value || 0);
-    if (assetSort === "lowestValue") return (a.value || 0) - (b.value || 0);
+    if (assetSort === "highestValue") return (parseFloat(b.value) || 0) - (parseFloat(a.value) || 0);
+    if (assetSort === "lowestValue") return (parseFloat(a.value) || 0) - (parseFloat(b.value) || 0);
     return new Date(b.createdAt) - new Date(a.createdAt); // default newest
   });
 
