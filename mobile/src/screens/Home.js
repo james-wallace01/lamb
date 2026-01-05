@@ -158,8 +158,9 @@ const styles = StyleSheet.create({
   separator: { height: 12 },
   secondaryButton: { paddingVertical: 8, paddingHorizontal: 10, borderRadius: 10, borderWidth: 1, borderColor: '#26344a', backgroundColor: '#1b2535' },
   secondaryText: { color: '#d3dcf2', fontWeight: '700' },
-  sharePill: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 20, backgroundColor: '#172447', borderWidth: 1, borderColor: '#2563eb' },
-  sharePillText: { color: '#cde1ff', fontWeight: '700', fontSize: 13 },
+  sharePill: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 20, backgroundColor: '#22c55e', borderWidth: 2, borderColor: '#16a34a' },
+  sharePillText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+
   typeBadge: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1 },
   vaultBadge: { backgroundColor: '#172466', borderColor: '#2563eb' },
   collectionBadge: { backgroundColor: '#552e9f', borderColor: '#9333ea' },

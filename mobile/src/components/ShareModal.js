@@ -111,6 +111,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                 )}
               />
             )}
+            <View style={styles.divider} />
             <Text style={styles.label}>Role</Text>
             <View style={styles.roleRow}>
               {['Reviewer', 'Editor', 'Manager'].map((r) => (
@@ -135,36 +136,39 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                 <View style={styles.sharedBox}>
                   <Text style={styles.sharedLabel}>Currently shared</Text>
                 <ScrollView style={styles.sharedList} showsVerticalScrollIndicator={false}>
-                  {existingShares.map((s) => (
-                    <View key={s.userId} style={styles.sharedRow}>
-                      <View style={styles.sharedInfo}>
-                        <Text style={styles.sharedName}>{s.user?.username || s.userId}</Text>
-                        <Text style={styles.sharedMeta}>{s.user?.email || ''}</Text>
-                      </View>
-                      <View style={styles.sharedActions}>
-                        <View style={styles.roleRow}>
-                          {['Reviewer', 'Editor', 'Manager'].map((r) => (
-                            <TouchableOpacity key={r} style={[styles.roleChipSmall, s.role === r && styles.roleChipActive]} onPress={() => handleUpdate(s.userId, r, targetType === 'vault' ? s.canCreateCollections : targetType === 'collection' ? s.canCreateAssets : undefined)}>
-                              <Text style={styles.roleText}>{r}</Text>
-                            </TouchableOpacity>
-                          ))}
+                  {existingShares.map((s, idx) => (
+                    <View key={s.userId}>
+                      <View style={styles.sharedRow}>
+                        <View style={styles.sharedInfo}>
+                          <Text style={styles.sharedName}>{s.user?.username || s.userId}</Text>
+                          <Text style={styles.sharedMeta}>{s.user?.email || ''}</Text>
                         </View>
-                        {targetType === 'vault' && (
-                          <TouchableOpacity style={[styles.toggle, s.canCreateCollections && styles.toggleActive]} onPress={() => handleUpdate(s.userId, s.role, !s.canCreateCollections)}>
-                            <Text style={styles.toggleText}>Can create collections</Text>
-                            <Text style={styles.toggleBadge}>{s.canCreateCollections ? 'On' : 'Off'}</Text>
+                        <View style={styles.sharedActions}>
+                          <View style={styles.roleRow}>
+                            {['Reviewer', 'Editor', 'Manager'].map((r) => (
+                              <TouchableOpacity key={r} style={[styles.roleChipSmall, s.role === r && styles.roleChipActive]} onPress={() => handleUpdate(s.userId, r, targetType === 'vault' ? s.canCreateCollections : targetType === 'collection' ? s.canCreateAssets : undefined)}>
+                                <Text style={styles.roleText}>{r}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                          {targetType === 'vault' && (
+                            <TouchableOpacity style={[styles.toggle, s.canCreateCollections && styles.toggleActive]} onPress={() => handleUpdate(s.userId, s.role, !s.canCreateCollections)}>
+                              <Text style={styles.toggleText}>Can create collections</Text>
+                              <Text style={styles.toggleBadge}>{s.canCreateCollections ? 'On' : 'Off'}</Text>
+                            </TouchableOpacity>
+                          )}
+                          {targetType === 'collection' && (
+                            <TouchableOpacity style={[styles.toggle, s.canCreateAssets && styles.toggleActive]} onPress={() => handleUpdate(s.userId, s.role, !s.canCreateAssets)}>
+                              <Text style={styles.toggleText}>Can create assets</Text>
+                              <Text style={styles.toggleBadge}>{s.canCreateAssets ? 'On' : 'Off'}</Text>
+                            </TouchableOpacity>
+                          )}
+                          <TouchableOpacity style={styles.removeBtn} onPress={() => handleRemove(s.userId)}>
+                            <Text style={styles.removeText}>Remove</Text>
                           </TouchableOpacity>
-                        )}
-                        {targetType === 'collection' && (
-                          <TouchableOpacity style={[styles.toggle, s.canCreateAssets && styles.toggleActive]} onPress={() => handleUpdate(s.userId, s.role, !s.canCreateAssets)}>
-                            <Text style={styles.toggleText}>Can create assets</Text>
-                            <Text style={styles.toggleBadge}>{s.canCreateAssets ? 'On' : 'Off'}</Text>
-                          </TouchableOpacity>
-                        )}
-                        <TouchableOpacity style={styles.removeBtn} onPress={() => handleRemove(s.userId)}>
-                          <Text style={styles.removeText}>Remove</Text>
-                        </TouchableOpacity>
+                        </View>
                       </View>
+                      {idx < existingShares.length - 1 && <View style={styles.sharedDivider} />}
                     </View>
                   ))}
                 </ScrollView>
@@ -204,10 +208,12 @@ const styles = StyleSheet.create({
   toggleActive: { borderColor: '#2563eb', backgroundColor: '#172447' },
   toggleText: { color: '#e5e7f0', fontWeight: '600' },
   toggleBadge: { color: '#9aa1b5', fontWeight: '700' },
+  divider: { height: 1, backgroundColor: '#1f2738', marginVertical: 12 },
   sharedBox: { marginTop: 12, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#1f2738', backgroundColor: '#0f111a' },
   sharedLabel: { color: '#e5e7f0', fontWeight: '800', marginBottom: 8 },
   sharedList: { maxHeight: 250 },
-  sharedRow: { flexDirection: 'column', gap: 8 },
+  sharedRow: { flexDirection: 'column', gap: 8, paddingVertical: 10, paddingHorizontal: 10, marginHorizontal: -2, borderRadius: 8, backgroundColor: '#11121a' },
+  sharedDivider: { height: 1, backgroundColor: '#1f2738', marginVertical: 8 },
   sharedInfo: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   sharedName: { color: '#fff', fontWeight: '700' },
   sharedMeta: { color: '#9aa1b5', fontSize: 12 },

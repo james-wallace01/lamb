@@ -385,6 +385,7 @@ export default function Vault({ navigation, route }) {
           )}
         </ScrollView>
       </View>
+      <View style={styles.divider} />
       <View style={styles.createRow}>
         <TextInput
           style={styles.input}
@@ -461,8 +462,8 @@ const styles = StyleSheet.create({
   card: { padding: 14, borderRadius: 10, backgroundColor: '#11121a', borderWidth: 1, borderColor: '#1f2738' },
   cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sharePill: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 20, backgroundColor: '#172447', borderWidth: 1, borderColor: '#2563eb' },
-  sharePillText: { color: '#cde1ff', fontWeight: '700', fontSize: 13 },
+  sharePill: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 20, backgroundColor: '#22c55e', borderWidth: 2, borderColor: '#16a34a' },
+  sharePillText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   typeBadge: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1 },
   vaultBadge: { backgroundColor: '#172466', borderColor: '#2563eb' },
   collectionBadge: { backgroundColor: '#552e9f', borderColor: '#9333ea' },
@@ -481,6 +482,7 @@ const styles = StyleSheet.create({
   dangerButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#dc2626' },
   dangerButtonText: { color: '#fff', fontWeight: '700', textAlign: 'center' },
   separator: { height: 12 },
+  divider: { height: 1, backgroundColor: '#1f2738', marginVertical: 12 },
   buttonDisabled: { backgroundColor: '#1f2738' },
   createRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   input: { flex: 1, backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, borderRadius: 10, padding: 10, color: '#fff' },

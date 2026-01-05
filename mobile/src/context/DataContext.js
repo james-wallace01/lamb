@@ -1,10 +1,10 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { getItem, setItem, removeItem } from '../storage';
 
-const DATA_KEY = 'lamb-mobile-data-v3';
-const STORAGE_VERSION = 3;
-const DEFAULT_PROFILE_IMAGE = 'https://via.placeholder.com/112?text=Profile';
-const DEFAULT_MEDIA_IMAGE = 'https://via.placeholder.com/900x600?text=Image';
+const DATA_KEY = 'lamb-mobile-data-v5';
+const STORAGE_VERSION = 5;
+const DEFAULT_PROFILE_IMAGE = 'http://192.168.7.112:3000/images/default-avatar.png';
+const DEFAULT_MEDIA_IMAGE = 'http://192.168.7.112:3000/images/collection_default.jpg';
 
 const withProfileImage = (user) => user && (user.profileImage ? user : { ...user, profileImage: DEFAULT_PROFILE_IMAGE });
 const withMedia = (item) => {
@@ -69,12 +69,14 @@ export function DataProvider({ children }) {
           setAssets(migrated.assets || []);
           await setItem(DATA_KEY, { ...migrated, version: STORAGE_VERSION });
         } else {
-          setUsers(seedUsers);
-          setCurrentUser(null); // force sign-in
-          setVaults(seedVaults);
-          setCollections(seedCollections);
-          setAssets(seedAssets);
-          await setItem(DATA_KEY, { version: STORAGE_VERSION, users: seedUsers, currentUser: null, vaults: seedVaults, collections: seedCollections, assets: seedAssets });
+          const seedData = { users: seedUsers, vaults: seedVaults, collections: seedCollections, assets: seedAssets, currentUser: null };
+          const migratedSeed = migrateData(seedData);
+          setUsers(migratedSeed.users);
+          setCurrentUser(migratedSeed.currentUser);
+          setVaults(migratedSeed.vaults);
+          setCollections(migratedSeed.collections);
+          setAssets(migratedSeed.assets);
+          await setItem(DATA_KEY, { version: STORAGE_VERSION, users: migratedSeed.users, currentUser: migratedSeed.currentUser, vaults: migratedSeed.vaults, collections: migratedSeed.collections, assets: migratedSeed.assets });
         }
         setLoading(false);
       })();

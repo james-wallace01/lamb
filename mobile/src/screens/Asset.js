@@ -403,10 +403,6 @@ export default function Asset({ route, navigation }) {
             )}
           </ScrollView>
         </View>
-        <Text style={styles.field}>Owner: {owner ? `${owner.firstName} ${owner.lastName}` : 'Unknown'}</Text>
-        <Text style={styles.field}>Manager: {asset.manager || owner?.username || 'Unassigned'}</Text>
-        <Text style={styles.field}>Quantity: {asset.quantity ?? 1}</Text>
-        <Text style={styles.field}>Value: {asset.value ? `$${parseFloat(asset.value).toFixed(2)}` : '$0.00'}</Text>
 
         {showMoveBox && canMove && (
           <View style={styles.moveBox}>
