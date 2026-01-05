@@ -1497,7 +1497,12 @@ export default function App() {
     if (vaultSort === "name") return a.name.localeCompare(b.name);
     if (vaultSort === "newest") return new Date(b.createdAt) - new Date(a.createdAt);
     if (vaultSort === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
-    if (vaultSort === "highestValue") return getVaultTotalValue(b.id) - getVaultTotalValue(a.id);
+    if (vaultSort === "highestValue") {
+      const aVal = getVaultTotalValue(a.id);
+      const bVal = getVaultTotalValue(b.id);
+      console.log(`Comparing vaults: ${a.name}($${aVal}) vs ${b.name}($${bVal}), result: ${bVal - aVal}`);
+      return bVal - aVal;
+    }
     if (vaultSort === "lowestValue") return getVaultTotalValue(a.id) - getVaultTotalValue(b.id);
     return sortByDefaultThenDate(a, b);
   });
