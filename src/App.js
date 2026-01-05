@@ -434,15 +434,25 @@ export default function App() {
   const getRoleForCollection = (collection) => {
     if (!collection || !currentUser) return null;
     if (collection.ownerId === currentUser.id) return "owner";
+    // Check if directly shared
     const entry = (collection.sharedWith || []).find(s => s.userId === currentUser.id || s.username === currentUser.username || s.email === currentUser.email);
-    return entry ? entry.role : null;
+    if (entry) return entry.role;
+    // Check parent vault's share
+    const parentVault = vaults.find(v => v.id === collection.vaultId);
+    if (parentVault) return getRoleForVault(parentVault);
+    return null;
   };
 
   const getRoleForAsset = (asset) => {
     if (!asset || !currentUser) return null;
     if (asset.ownerId === currentUser.id) return "owner";
+    // Check if directly shared
     const entry = (asset.sharedWith || []).find(s => s.userId === currentUser.id || s.username === currentUser.username || s.email === currentUser.email);
-    return entry ? entry.role : null;
+    if (entry) return entry.role;
+    // Check parent collection's share
+    const parentCollection = collections.find(c => c.id === asset.collectionId);
+    if (parentCollection) return getRoleForCollection(parentCollection);
+    return null;
   };
 
   const skipTutorial = () => {
