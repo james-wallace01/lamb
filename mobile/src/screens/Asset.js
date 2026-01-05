@@ -332,7 +332,7 @@ export default function Asset({ route, navigation }) {
             </TouchableOpacity>
           )}
           {canMove && (
-            <TouchableOpacity style={[styles.secondaryButton, styles.actionButton]} onPress={() => setShowMoveBox(!showMoveBox)}>
+            <TouchableOpacity style={[styles.moveButton, styles.actionButton]} onPress={() => setShowMoveBox(!showMoveBox)}>
               <Text style={styles.secondaryButtonText}>Move</Text>
             </TouchableOpacity>
           )}
@@ -535,12 +535,11 @@ const styles = StyleSheet.create({
   addImageButton: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, backgroundColor: '#16a34a' },
   addImageButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   shareButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#16a34a' },
-  secondaryButtonText: { color: '#fff', fontWeight: '700', textAlign: 'center' },
-  dangerButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#dc2626' },
+  secondaryButtonText: { color: '#fff', fontWeight: '700', textAlign: 'center' },  moveButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#eab308' },  dangerButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#dc2626' },
   dangerButtonText: { color: '#fff', fontWeight: '700', textAlign: 'center' },
   buttonDisabled: { backgroundColor: '#1f2738' },
   input: { backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, borderRadius: 10, padding: 12, color: '#fff' },
-  button: { paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#2563eb' },
+  button: { paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#eab308' },
   buttonText: { color: '#fff', fontWeight: '700' },
   moveBox: { marginTop: 12, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#1f2738', backgroundColor: '#0f111a', gap: 8 },
   sectionLabel: { color: '#e5e7f0', fontWeight: '700' },

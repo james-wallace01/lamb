@@ -255,7 +255,7 @@ export default function Collection({ navigation, route }) {
           </TouchableOpacity>
           {canMove && (
             <TouchableOpacity
-              style={[styles.secondaryButton, styles.actionButton]}
+              style={[styles.moveButton, styles.actionButton]}
               onPress={() => setShowMoveBox(!showMoveBox)}
             >
               <Text style={styles.secondaryButtonText}>Move</Text>
@@ -565,12 +565,11 @@ const styles = StyleSheet.create({
   addImageButton: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, backgroundColor: '#16a34a' },
   addImageButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   shareButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#16a34a' },
-  secondaryButtonText: { color: '#fff', fontWeight: '700', textAlign: 'center' },
-  dangerButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#dc2626' },
+  secondaryButtonText: { color: '#fff', fontWeight: '700', textAlign: 'center' },  moveButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#eab308' },  dangerButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#dc2626' },
   dangerButtonText: { color: '#fff', fontWeight: '700', textAlign: 'center' },
   separator: { height: 12 },
   divider: { height: 1, backgroundColor: '#1f2738', marginVertical: 12 },
-  button: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#2563eb' },
+  button: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#eab308' },
   buttonDisabled: { backgroundColor: '#1f2738' },
   buttonText: { color: '#fff', fontWeight: '700' },
   createRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
