@@ -444,8 +444,8 @@ export default function Collection({ navigation, route }) {
                 <View style={[styles.mediaCard, { marginTop: 12 }]}>
                   <View style={styles.mediaHeader}>
                     <Text style={styles.sectionLabel}>Images</Text>
-                    <TouchableOpacity style={styles.secondaryButton} onPress={addImagesToDraft}>
-                      <Text style={styles.secondaryButtonText}>{(editDraft.images || []).length ? 'Add more' : 'Add images'}</Text>
+                  <TouchableOpacity style={styles.addImageButton} onPress={addImagesToDraft}>
+                    <Text style={styles.addImageButtonText}>{(editDraft.images || []).length ? 'Add more' : 'Add images'}</Text>
                     </TouchableOpacity>
                   </View>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow}>
@@ -462,16 +462,14 @@ export default function Collection({ navigation, route }) {
                               </View>
                             )}
                             <Image source={{ uri: img }} style={styles.thumb} />
-                            <View style={styles.thumbActions}>
-                              {!isHeroImg && (
-                                <TouchableOpacity onPress={() => setDraftHero(img)}>
-                                  <Text style={styles.thumbActionText}>Make hero</Text>
-                                </TouchableOpacity>
-                              )}
-                              <TouchableOpacity onPress={() => removeDraftImage(img)}>
-                                <Text style={styles.thumbActionText}>Remove</Text>
+                            <TouchableOpacity style={styles.removeImageBtn} onPress={() => removeDraftImage(img)}>
+                              <Text style={styles.removeImageBtnText}>✕</Text>
+                            </TouchableOpacity>
+                            {!isHeroImg && (
+                              <TouchableOpacity style={styles.makeHeroBtn} onPress={() => setDraftHero(img)}>
+                                <Text style={styles.makeHeroBtnText}>☆</Text>
                               </TouchableOpacity>
-                            </View>
+                            )}
                           </View>
                         );
                       })
@@ -540,6 +538,10 @@ const styles = StyleSheet.create({
   heroThumbCard: { borderWidth: 2, borderColor: '#2563eb', borderRadius: 10 },
   thumbActions: { flexDirection: 'row', gap: 8, marginTop: 4 },
   thumbActionText: { color: '#8ab4ff', fontSize: 12 },
+  removeImageBtn: { position: 'absolute', top: 4, right: 4, width: 24, height: 24, borderRadius: 12, backgroundColor: '#dc2626', justifyContent: 'center', alignItems: 'center' },
+  removeImageBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  makeHeroBtn: { position: 'absolute', top: 6, left: 6, backgroundColor: 'rgba(0,0,0,0.7)', paddingVertical: 2, paddingHorizontal: 6, borderRadius: 8, zIndex: 1 },
+  makeHeroBtnText: { color: '#fcd34d', fontWeight: '800', fontSize: 14 },
   subtitleDim: { color: '#7d8497' },
   subtitle: { color: '#c5c5d0' },
   card: { padding: 14, borderRadius: 10, backgroundColor: '#11121a', borderWidth: 1, borderColor: '#1f2738' },
@@ -559,7 +561,9 @@ const styles = StyleSheet.create({
   actionButton: { flexGrow: 1, flexBasis: '24%', minWidth: '22%' },
   primaryButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#2563eb' },
   primaryButtonText: { color: '#fff', fontWeight: '700', textAlign: 'center' },
-  secondaryButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#eab308' },
+  secondaryButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#374151' },
+  addImageButton: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, backgroundColor: '#16a34a' },
+  addImageButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   shareButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#16a34a' },
   secondaryButtonText: { color: '#fff', fontWeight: '700', textAlign: 'center' },
   dangerButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#dc2626' },
