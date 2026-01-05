@@ -1497,12 +1497,7 @@ export default function App() {
     if (vaultSort === "name") return a.name.localeCompare(b.name);
     if (vaultSort === "newest") return new Date(b.createdAt) - new Date(a.createdAt);
     if (vaultSort === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
-    if (vaultSort === "highestValue") {
-      const aVal = getVaultTotalValue(a.id);
-      const bVal = getVaultTotalValue(b.id);
-      console.log(`Comparing vaults: ${a.name}($${aVal}) vs ${b.name}($${bVal}), result: ${bVal - aVal}`);
-      return bVal - aVal;
-    }
+    if (vaultSort === "highestValue") return getVaultTotalValue(b.id) - getVaultTotalValue(a.id);
     if (vaultSort === "lowestValue") return getVaultTotalValue(a.id) - getVaultTotalValue(b.id);
     return sortByDefaultThenDate(a, b);
   });
@@ -1553,6 +1548,8 @@ export default function App() {
     if (vaultSort === "name") return a.name.localeCompare(b.name);
     if (vaultSort === "newest") return new Date(b.createdAt) - new Date(a.createdAt);
     if (vaultSort === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
+    if (vaultSort === "highestValue") return getVaultTotalValue(b.id) - getVaultTotalValue(a.id);
+    if (vaultSort === "lowestValue") return getVaultTotalValue(a.id) - getVaultTotalValue(b.id);
     return sortByDefaultThenDate(a, b);
   });
 
@@ -1568,6 +1565,8 @@ export default function App() {
     if (collectionSort === "name") return a.name.localeCompare(b.name);
     if (collectionSort === "newest") return new Date(b.createdAt) - new Date(a.createdAt);
     if (collectionSort === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
+    if (collectionSort === "highestValue") return getCollectionTotalValue(b.id) - getCollectionTotalValue(a.id);
+    if (collectionSort === "lowestValue") return getCollectionTotalValue(a.id) - getCollectionTotalValue(b.id);
     return sortByDefaultThenDate(a, b);
   });
 
@@ -1590,6 +1589,8 @@ export default function App() {
   const sortedSharedAssets = [...filteredSharedAssets].sort((a, b) => {
     if (assetSort === "name") return (a.title || "").localeCompare(b.title || "");
     if (assetSort === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
+    if (assetSort === "highestValue") return (parseFloat(b.value) || 0) - (parseFloat(a.value) || 0);
+    if (assetSort === "lowestValue") return (parseFloat(a.value) || 0) - (parseFloat(b.value) || 0);
     return new Date(b.createdAt) - new Date(a.createdAt);
   });
 
