@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { useData } from '../context/DataContext';
+import LambHeader from '../components/LambHeader';
 
 export default function SignIn({ navigation }) {
   const { login, loading } = useData();
@@ -24,6 +25,7 @@ export default function SignIn({ navigation }) {
 
   return (
     <View style={styles.container}>
+        <LambHeader />
       <Text style={styles.title}>Sign In</Text>
       <Text style={styles.subtitle}>Use your LAMB username or email.</Text>
       <TextInput

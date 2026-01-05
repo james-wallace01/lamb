@@ -4,15 +4,22 @@ import { getItem, setItem, removeItem } from '../storage';
 const DATA_KEY = 'lamb-mobile-data-v3';
 const STORAGE_VERSION = 3;
 const DEFAULT_PROFILE_IMAGE = 'https://via.placeholder.com/112?text=Profile';
+const DEFAULT_MEDIA_IMAGE = 'https://via.placeholder.com/900x600?text=Image';
 
 const withProfileImage = (user) => user && (user.profileImage ? user : { ...user, profileImage: DEFAULT_PROFILE_IMAGE });
+const withMedia = (item) => {
+  if (!item) return item;
+  const images = Array.isArray(item.images) ? item.images.filter(Boolean).slice(0, 4) : [];
+  const heroImage = item.heroImage || images[0] || DEFAULT_MEDIA_IMAGE;
+  return { ...item, images, heroImage };
+};
 
 const migrateData = (data) => {
   if (!data) return data;
   const migrated = { ...data };
-  migrated.vaults = (data.vaults || []).map(v => v.name === 'Family Vault' ? { ...v, name: 'Example Vault' } : v);
-  migrated.collections = (data.collections || []).map(c => c.name === 'Watches' ? { ...c, name: 'Example Collection' } : c);
-  migrated.assets = (data.assets || []).map(a => a.title === 'Speedmaster' ? { ...a, title: 'Example Asset' } : a);
+  migrated.vaults = (data.vaults || []).map(v => withMedia(v.name === 'Family Vault' ? { ...v, name: 'Example Vault' } : v));
+  migrated.collections = (data.collections || []).map(c => withMedia(c.name === 'Watches' ? { ...c, name: 'Example Collection' } : c));
+  migrated.assets = (data.assets || []).map(a => withMedia(a.title === 'Speedmaster' ? { ...a, title: 'Example Asset' } : a));
   migrated.users = (data.users || []).map(u => withProfileImage(u));
   migrated.currentUser = withProfileImage(data.currentUser);
   return migrated;
@@ -24,18 +31,18 @@ const seedUsers = [
 ];
 
 const seedVaults = [
-  { id: 'v1', name: 'Example Vault', ownerId: 'u1', sharedWith: [], createdAt: Date.now(), viewedAt: Date.now(), editedAt: Date.now() },
-  { id: 'v2', name: 'Example Vault', ownerId: 'u2', sharedWith: [], createdAt: Date.now(), viewedAt: Date.now(), editedAt: Date.now() }
+  { id: 'v1', name: 'Example Vault', ownerId: 'u1', sharedWith: [], createdAt: Date.now(), viewedAt: Date.now(), editedAt: Date.now(), heroImage: DEFAULT_MEDIA_IMAGE, images: [] },
+  { id: 'v2', name: 'Example Vault', ownerId: 'u2', sharedWith: [], createdAt: Date.now(), viewedAt: Date.now(), editedAt: Date.now(), heroImage: DEFAULT_MEDIA_IMAGE, images: [] }
 ];
 
 const seedCollections = [
-  { id: 'c1', vaultId: 'v1', name: 'Example Collection', ownerId: 'u1', sharedWith: [], createdAt: Date.now(), viewedAt: Date.now(), editedAt: Date.now() },
-  { id: 'c2', vaultId: 'v2', name: 'Example Collection', ownerId: 'u2', sharedWith: [], createdAt: Date.now(), viewedAt: Date.now(), editedAt: Date.now() }
+  { id: 'c1', vaultId: 'v1', name: 'Example Collection', ownerId: 'u1', sharedWith: [], createdAt: Date.now(), viewedAt: Date.now(), editedAt: Date.now(), heroImage: DEFAULT_MEDIA_IMAGE, images: [] },
+  { id: 'c2', vaultId: 'v2', name: 'Example Collection', ownerId: 'u2', sharedWith: [], createdAt: Date.now(), viewedAt: Date.now(), editedAt: Date.now(), heroImage: DEFAULT_MEDIA_IMAGE, images: [] }
 ];
 
 const seedAssets = [
-  { id: 'a1', collectionId: 'c1', vaultId: 'v1', title: 'Example Asset', type: 'Watch', category: 'Collectable', ownerId: 'u1', manager: 'james', createdAt: Date.now(), viewedAt: Date.now(), editedAt: Date.now(), quantity: 1, value: 7200 },
-  { id: 'a2', collectionId: 'c2', vaultId: 'v2', title: 'Example Asset', type: 'Art', category: 'Painting', ownerId: 'u2', manager: 'alex', createdAt: Date.now(), viewedAt: Date.now(), editedAt: Date.now(), quantity: 1, value: 15000 }
+  { id: 'a1', collectionId: 'c1', vaultId: 'v1', title: 'Example Asset', type: 'Watch', category: 'Collectable', ownerId: 'u1', manager: 'james', createdAt: Date.now(), viewedAt: Date.now(), editedAt: Date.now(), quantity: 1, value: 7200, heroImage: DEFAULT_MEDIA_IMAGE, images: [] },
+  { id: 'a2', collectionId: 'c2', vaultId: 'v2', title: 'Example Asset', type: 'Art', category: 'Painting', ownerId: 'u2', manager: 'alex', createdAt: Date.now(), viewedAt: Date.now(), editedAt: Date.now(), quantity: 1, value: 15000, heroImage: DEFAULT_MEDIA_IMAGE, images: [] }
 ];
 
 const DataContext = createContext(null);
@@ -95,9 +102,9 @@ export function DataProvider({ children }) {
     if (exists) return { ok: false, message: 'User already exists' };
       const newUser = { id: `u${Date.now()}`, firstName, lastName, email, username, password, profileImage: DEFAULT_PROFILE_IMAGE };
     const now = Date.now();
-    const newVault = { id: `v${Date.now()}`, name: 'Example Vault', ownerId: newUser.id, sharedWith: [], createdAt: now, viewedAt: now, editedAt: now };
-    const newCollection = { id: `c${Date.now() + 1}`, vaultId: newVault.id, name: 'Example Collection', ownerId: newUser.id, sharedWith: [], createdAt: now, viewedAt: now, editedAt: now };
-    const newAsset = { id: `a${Date.now() + 2}`, vaultId: newVault.id, collectionId: newCollection.id, title: 'Example Asset', type: 'Asset', category: 'Example', ownerId: newUser.id, manager: newUser.username, createdAt: now, viewedAt: now, editedAt: now, quantity: 1 };
+    const newVault = { id: `v${Date.now()}`, name: 'Example Vault', ownerId: newUser.id, sharedWith: [], createdAt: now, viewedAt: now, editedAt: now, heroImage: DEFAULT_MEDIA_IMAGE, images: [] };
+    const newCollection = { id: `c${Date.now() + 1}`, vaultId: newVault.id, name: 'Example Collection', ownerId: newUser.id, sharedWith: [], createdAt: now, viewedAt: now, editedAt: now, heroImage: DEFAULT_MEDIA_IMAGE, images: [] };
+    const newAsset = { id: `a${Date.now() + 2}`, vaultId: newVault.id, collectionId: newCollection.id, title: 'Example Asset', type: 'Asset', category: 'Example', ownerId: newUser.id, manager: newUser.username, createdAt: now, viewedAt: now, editedAt: now, quantity: 1, heroImage: DEFAULT_MEDIA_IMAGE, images: [] };
       setUsers(prev => [...prev, newUser]);
       setVaults(prev => [newVault, ...prev]);
       setCollections(prev => [newCollection, ...prev]);
@@ -146,9 +153,21 @@ export function DataProvider({ children }) {
         return { ok: true };
       };
 
-    const addVault = ({ name }) => {
+    const addVault = ({ name, images = [], heroImage }) => {
       if (!currentUser) return { ok: false, message: 'Not signed in' };
-      const vault = { id: `v${Date.now()}`, name: name || 'Untitled', ownerId: currentUser.id, sharedWith: [], createdAt: Date.now() };
+      const createdAt = Date.now();
+      const normalizedImages = Array.isArray(images) ? images.filter(Boolean).slice(0, 4) : [];
+      const vault = withMedia({
+        id: `v${Date.now()}`,
+        name: name || 'Untitled',
+        ownerId: currentUser.id,
+        sharedWith: [],
+        createdAt,
+        viewedAt: createdAt,
+        editedAt: createdAt,
+        images: normalizedImages,
+        heroImage: heroImage || normalizedImages[0] || DEFAULT_MEDIA_IMAGE,
+      });
       setVaults(prev => [vault, ...prev]);
       return { ok: true, vault };
     };
@@ -164,10 +183,23 @@ export function DataProvider({ children }) {
       return !!match.canCreateCollections;
     };
 
-    const addCollection = ({ vaultId, name }) => {
+    const addCollection = ({ vaultId, name, images = [], heroImage }) => {
       if (!currentUser) return { ok: false, message: 'Not signed in' };
       if (!canCreateCollectionsInVault(vaultId, currentUser.id)) return { ok: false, message: 'No permission to add collections' };
-      const collection = { id: `c${Date.now()}`, vaultId, name: name || 'Untitled', ownerId: currentUser.id, sharedWith: [], createdAt: Date.now() };
+      const createdAt = Date.now();
+      const normalizedImages = Array.isArray(images) ? images.filter(Boolean).slice(0, 4) : [];
+      const collection = withMedia({
+        id: `c${Date.now()}`,
+        vaultId,
+        name: name || 'Untitled',
+        ownerId: currentUser.id,
+        sharedWith: [],
+        createdAt,
+        viewedAt: createdAt,
+        editedAt: createdAt,
+        images: normalizedImages,
+        heroImage: heroImage || normalizedImages[0] || DEFAULT_MEDIA_IMAGE,
+      });
       setCollections(prev => [collection, ...prev]);
       return { ok: true, collection };
     };
@@ -183,10 +215,27 @@ export function DataProvider({ children }) {
       return !!match.canCreateAssets;
     };
 
-    const addAsset = ({ vaultId, collectionId, title, type, category }) => {
+    const addAsset = ({ vaultId, collectionId, title, type, category, images = [], heroImage }) => {
       if (!currentUser) return { ok: false, message: 'Not signed in' };
       if (!canCreateAssetsInCollection(collectionId, currentUser.id)) return { ok: false, message: 'No permission to add assets' };
-      const asset = { id: `a${Date.now()}`, vaultId, collectionId, title: title || 'Untitled', type: type || '', category: category || '', ownerId: currentUser.id, manager: currentUser.username, createdAt: Date.now(), quantity: 1 };
+      const createdAt = Date.now();
+      const normalizedImages = Array.isArray(images) ? images.filter(Boolean).slice(0, 4) : [];
+      const asset = withMedia({
+        id: `a${Date.now()}`,
+        vaultId,
+        collectionId,
+        title: title || 'Untitled',
+        type: type || '',
+        category: category || '',
+        ownerId: currentUser.id,
+        manager: currentUser.username,
+        createdAt,
+        viewedAt: createdAt,
+        editedAt: createdAt,
+        quantity: 1,
+        images: normalizedImages,
+        heroImage: heroImage || normalizedImages[0] || DEFAULT_MEDIA_IMAGE,
+      });
       setAssets(prev => [asset, ...prev]);
       return { ok: true, asset };
     };
@@ -254,8 +303,19 @@ export function DataProvider({ children }) {
       setAssets(prev => prev.map(a => a.id === assetId ? { ...a, sharedWith: (a.sharedWith || []).filter(s => s.userId !== userId) } : a));
     };
 
+  const updateVault = (vaultId, patch) => {
+    const editedAt = Date.now();
+    setVaults(prev => prev.map(v => v.id === vaultId ? withMedia({ ...v, ...patch, editedAt }) : v));
+  };
+
+  const updateCollection = (collectionId, patch) => {
+    const editedAt = Date.now();
+    setCollections(prev => prev.map(c => c.id === collectionId ? withMedia({ ...c, ...patch, editedAt }) : c));
+  };
+
   const updateAsset = (assetId, patch) => {
-    setAssets(prev => prev.map(a => a.id === assetId ? { ...a, ...patch } : a));
+    const editedAt = Date.now();
+    setAssets(prev => prev.map(a => a.id === assetId ? withMedia({ ...a, ...patch, editedAt }) : a));
   };
 
   const moveCollection = ({ collectionId, targetVaultId }) => {
@@ -326,6 +386,8 @@ export function DataProvider({ children }) {
     addVault,
     addCollection,
     addAsset,
+    updateVault,
+    updateCollection,
     shareVault,
     shareCollection,
     shareAsset,

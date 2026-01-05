@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, Image, ScrollView } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useData } from '../context/DataContext';
+import LambHeader from '../components/LambHeader';
 
 const DEFAULT_AVATAR = 'https://via.placeholder.com/112?text=Profile';
 
@@ -58,6 +59,7 @@ export default function Profile() {
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+        <LambHeader />
       <Text style={styles.title}>Profile</Text>
       {currentUser ? (
         <>

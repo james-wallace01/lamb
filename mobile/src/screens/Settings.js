@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Alert } from 'react-native';
 import { useData } from '../context/DataContext';
+import LambHeader from '../components/LambHeader';
 
 export default function Settings() {
   const { resetPassword, deleteAccount } = useData();
@@ -51,6 +52,7 @@ export default function Settings() {
 
   return (
     <View style={styles.container}>
+        <LambHeader />
       <Text style={styles.title}>Settings</Text>
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Account</Text>

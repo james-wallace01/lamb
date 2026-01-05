@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FlatList, StyleSheet, View, Text, TouchableOpacity, TextInput, Alert, ScrollView } from 'react-native';
+import { FlatList, StyleSheet, View, Text, TouchableOpacity, TextInput, Alert, ScrollView, Image, Modal } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useData } from '../context/DataContext';
 import ShareModal from '../components/ShareModal';
+import LambHeader from '../components/LambHeader';
 
 export default function Collection({ navigation, route }) {
   const { collectionId } = route.params || {};
-  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection } = useData();
+  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection } = useData();
   const [newTitle, setNewTitle] = useState('');
   const [shareVisible, setShareVisible] = useState(false);
   const [shareTargetType, setShareTargetType] = useState(null);
@@ -13,6 +15,13 @@ export default function Collection({ navigation, route }) {
   const [moveVaultId, setMoveVaultId] = useState(collection?.vaultId || null);
   const [showMoveBox, setShowMoveBox] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [editVisible, setEditVisible] = useState(false);
+  const [editDraft, setEditDraft] = useState({ name: '', description: '', manager: '', images: [], heroImage: '' });
+  const [previewImage, setPreviewImage] = useState(null);
+  const draftPreviewImages = editDraft.heroImage
+    ? [editDraft.heroImage, ...(editDraft.images || []).filter((img) => img !== editDraft.heroImage)]
+    : editDraft.images || [];
+  const limit20 = (value = '') => value.slice(0, 20);
 
   const collection = useMemo(() => collections.find((c) => c.id === collectionId), [collectionId, collections]);
   const collectionAssets = useMemo(() => assets.filter((a) => a.collectionId === collectionId), [assets, collectionId]);
@@ -21,6 +30,164 @@ export default function Collection({ navigation, route }) {
   const canCreate = canCreateAssetsInCollection(collectionId, currentUser?.id);
   const canMove = role === 'owner' || role === 'manager';
   const ownerVaults = vaults.filter(v => v.ownerId === collection?.ownerId);
+  const collectionImages = collection?.images || [];
+  const heroImage = collection?.heroImage || 'https://via.placeholder.com/900x600?text=Image';
+  const previewImages = heroImage ? [heroImage, ...collectionImages.filter((img) => img !== heroImage)] : collectionImages;
+
+  const ensureHero = (images, currentHero) => {
+    if (currentHero && images.includes(currentHero)) return currentHero;
+    return images[0] || 'https://via.placeholder.com/900x600?text=Image';
+  };
+
+  const handleAddImages = async () => {
+    if (!collection) return;
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Photo library access is required to add images.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes,
+      allowsMultipleSelection: true,
+      selectionLimit: MAX_IMAGES,
+      quality: 0.75,
+      base64: true,
+    });
+
+    if (result.canceled) return;
+    const assets = result.assets || [];
+    const newImages = [];
+    const skipped = [];
+
+    assets.forEach((asset) => {
+      if (!asset?.base64) return;
+      const bytes = Math.ceil(asset.base64.length * 3 / 4);
+      const uri = `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`;
+      if (bytes > MAX_IMAGE_BYTES) {
+        skipped.push(asset.fileName || 'image');
+        return;
+      }
+      newImages.push(uri);
+    });
+
+    const merged = trimToFour([...collectionImages, ...newImages]);
+    const nextHero = ensureHero(merged, heroImage);
+    updateCollection(collectionId, { images: merged, heroImage: nextHero });
+
+    if (skipped.length) {
+      Alert.alert('Skipped large files', `Images over 30MB were skipped: ${skipped.join(', ')}`);
+    }
+  };
+
+  const handleSetHero = (img) => {
+    if (!collection) return;
+    const reordered = trimToFour([img, ...collectionImages.filter((i) => i !== img)]);
+    updateCollection(collectionId, { images: reordered, heroImage: img });
+  };
+
+  const handleRemoveImage = (img) => {
+    if (!collection) return;
+    const remaining = collectionImages.filter((i) => i !== img);
+    const nextHero = ensureHero(remaining, heroImage === img ? remaining[0] : heroImage);
+    updateCollection(collectionId, { images: remaining, heroImage: nextHero });
+  };
+  const MAX_IMAGE_BYTES = 30 * 1024 * 1024;
+  const MAX_IMAGES = 4;
+  const mediaTypes = ImagePicker.MediaType?.Images || ImagePicker.MediaTypeOptions.Images;
+  const trimToFour = (arr = []) => arr.filter(Boolean).slice(0, MAX_IMAGES);
+
+  useEffect(() => {
+    setEditDraft({
+      name: limit20(collection?.name || ''),
+      description: collection?.description || '',
+      manager: collection?.manager || '',
+      images: trimToFour(collectionImages),
+      heroImage: ensureHero(collectionImages, heroImage),
+    });
+  }, [collectionId, collection?.name, collection?.description, collection?.manager, heroImage, collectionImages.join(',')]);
+
+  const addImagesToDraft = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Photo library access is required to add images.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes,
+      allowsMultipleSelection: true,
+      selectionLimit: MAX_IMAGES,
+      quality: 0.75,
+      base64: true,
+    });
+
+    if (result.canceled) return;
+    const assets = result.assets || [];
+    const newImages = [];
+    const skipped = [];
+
+    assets.forEach((asset) => {
+      if (!asset?.base64) return;
+      const bytes = Math.ceil(asset.base64.length * 3 / 4);
+      const uri = `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`;
+      if (bytes > MAX_IMAGE_BYTES) {
+        skipped.push(asset.fileName || 'image');
+        return;
+      }
+      newImages.push(uri);
+    });
+
+    setEditDraft((prev) => {
+      const merged = trimToFour([...(prev.images || []), ...newImages]);
+      return { ...prev, images: merged, heroImage: ensureHero(merged, prev.heroImage) };
+    });
+
+    if (skipped.length) {
+      Alert.alert('Skipped large files', `Images over 30MB were skipped: ${skipped.join(', ')}`);
+    }
+  };
+
+  const setDraftHero = (img) => {
+    setEditDraft((prev) => {
+      const reordered = trimToFour([img, ...(prev.images || []).filter((i) => i !== img)]);
+      return { ...prev, images: reordered, heroImage: img };
+    });
+  };
+
+  const removeDraftImage = (img) => {
+    setEditDraft((prev) => {
+      const remaining = (prev.images || []).filter((i) => i !== img);
+      const nextHero = ensureHero(remaining, prev.heroImage === img ? remaining[0] : prev.heroImage);
+      return { ...prev, images: remaining, heroImage: nextHero };
+    });
+  };
+
+  const openEditModal = () => {
+    if (!collection) return;
+    setEditDraft({
+      name: limit20(collection?.name || ''),
+      description: collection?.description || '',
+      manager: collection?.manager || '',
+      images: trimToFour(collectionImages),
+      heroImage,
+    });
+    setEditVisible(true);
+  };
+
+  const handleSaveDraft = () => {
+    if (!collection) return;
+    const images = trimToFour(editDraft.images || []);
+    const hero = ensureHero(images, editDraft.heroImage);
+    updateCollection(collectionId, {
+      name: limit20((editDraft.name || '').trim() || collection.name || ''),
+      description: (editDraft.description || '').trim(),
+      manager: (editDraft.manager || '').trim(),
+      images,
+      heroImage: hero,
+    });
+    setEditVisible(false);
+  };
 
   const openShare = (targetType, targetId) => {
     setShareTargetType(targetType);
@@ -70,6 +237,7 @@ export default function Collection({ navigation, route }) {
 
   const header = (
     <View style={styles.headerArea}>
+      <LambHeader />
       <View style={styles.headerSection}>
         <Text style={styles.title}>{collection?.name || 'Collection'}</Text>
         <View style={[styles.typeBadge, styles.collectionBadge]}>
@@ -77,6 +245,42 @@ export default function Collection({ navigation, route }) {
         </View>
       </View>
       <Text style={styles.subtitleDim}>{role ? role : 'Shared'}</Text>
+      {isOwner && (
+        <View style={styles.actionsRow}>
+          <TouchableOpacity style={[styles.primaryButton, styles.actionButton]} onPress={openEditModal}>
+            <Text style={styles.primaryButtonText}>Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.shareButton, styles.actionButton]} onPress={() => openShare('collection', collectionId)}>
+            <Text style={styles.secondaryButtonText}>Share</Text>
+          </TouchableOpacity>
+          {canMove && (
+            <TouchableOpacity
+              style={[styles.secondaryButton, styles.actionButton]}
+              onPress={() => setShowMoveBox(!showMoveBox)}
+            >
+              <Text style={styles.secondaryButtonText}>Move</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={[styles.dangerButton, styles.actionButton]}
+            onPress={() => {
+              Alert.alert('Delete Collection?', 'This action cannot be undone.', [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete',
+                  onPress: () => {
+                    deleteCollection(collectionId);
+                    navigation.goBack();
+                  },
+                  style: 'destructive',
+                },
+              ]);
+            }}
+          >
+            <Text style={styles.dangerButtonText}>Delete</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       {collection && (
         <View style={styles.metadataSection}>
           <Text style={styles.metadataRow}>
@@ -97,59 +301,51 @@ export default function Collection({ navigation, route }) {
           </Text>
         </View>
       )}
+      <View style={styles.mediaCard}>
+        <View style={styles.mediaHeader}>
+          <Text style={styles.sectionLabel}>Images</Text>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow}>
+          {previewImages.length === 0 ? (
+            <Text style={styles.subtitle}>No images yet.</Text>
+          ) : (
+            previewImages.map((img) => {
+              const isHeroImg = heroImage === img;
+              return (
+                <TouchableOpacity key={img} style={[styles.thumbCard, isHeroImg && styles.heroThumbCard]} onPress={() => setPreviewImage(img)}>
+                    {isHeroImg && (
+                      <View style={styles.heroBadge}>
+                        <Text style={styles.heroBadgeText}>★</Text>
+                      </View>
+                    )}
+                  <Image source={{ uri: img }} style={styles.thumb} />
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </ScrollView>
+      </View>
       <View style={styles.createRow}>
         <TextInput
           style={styles.input}
           placeholder="New asset title"
           placeholderTextColor="#80869b"
           value={newTitle}
-          onChangeText={setNewTitle}
+          onChangeText={(text) => setNewTitle(limit20(text))}
         />
         <TouchableOpacity
           style={[styles.addButton, !canCreate && styles.buttonDisabled]}
           onPress={() => {
             if (!canCreate) return Alert.alert('No permission to add assets');
-            if (!newTitle.trim()) return;
-            addAsset({ vaultId: collection?.vaultId, collectionId, title: newTitle.trim() });
+              const title = limit20(newTitle.trim());
+              if (!title) return;
+              addAsset({ vaultId: collection?.vaultId, collectionId, title });
             setNewTitle('');
           }}
         >
           <Text style={styles.addButtonText}>Add</Text>
         </TouchableOpacity>
       </View>
-      {isOwner && (
-        <View style={styles.actionsRow}>
-          <TouchableOpacity style={styles.primaryButton}>
-            <Text style={styles.primaryButtonText}>View / Edit</Text>
-          </TouchableOpacity>
-          {canMove && (
-            <TouchableOpacity
-              style={styles.secondaryButton}
-              onPress={() => setShowMoveBox(!showMoveBox)}
-            >
-              <Text style={styles.secondaryButtonText}>Move</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={styles.dangerButton}
-            onPress={() => {
-              Alert.alert('Delete Collection?', 'This action cannot be undone.', [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Delete',
-                  onPress: () => {
-                    deleteCollection(collectionId);
-                    navigation.goBack();
-                  },
-                  style: 'destructive',
-                },
-              ]);
-            }}
-          >
-            <Text style={styles.dangerButtonText}>Delete</Text>
-          </TouchableOpacity>
-        </View>
-      )}
       {showMoveBox && canMove && (
         <View style={styles.moveBox}>
           <Text style={styles.sectionLabel}>Move Collection</Text>
@@ -210,34 +406,139 @@ export default function Collection({ navigation, route }) {
   );
 
   return (
-    <FlatList
-      data={collectionAssets}
-      keyExtractor={(a) => a.id}
-      renderItem={renderAsset}
-      ItemSeparatorComponent={() => <View style={styles.separator} />}
-      ListEmptyComponent={<Text style={styles.subtitle}>No assets yet.</Text>}
-      contentContainerStyle={styles.container}
-      ListHeaderComponent={header}
-      ListFooterComponent={
-        <ShareModal
-          visible={shareVisible}
-          onClose={() => { setShareVisible(false); setShareTargetId(null); setShareTargetType(null); }}
-          targetType={shareTargetType || 'collection'}
-          targetId={shareTargetId || collectionId}
-        />
-      }
-    />
+    <>
+      <Modal visible={editVisible} transparent animationType="fade" onRequestClose={() => setEditVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Edit Collection</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalLabel}>Title</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Collection title"
+                placeholderTextColor="#80869b"
+                  value={editDraft.name}
+                  onChangeText={(name) => setEditDraft((prev) => ({ ...prev, name: limit20(name) }))}
+              />
+
+              <Text style={styles.modalLabel}>Manager</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Manager"
+                placeholderTextColor="#80869b"
+                value={editDraft.manager}
+                onChangeText={(manager) => setEditDraft((prev) => ({ ...prev, manager }))}
+              />
+
+              <Text style={styles.modalLabel}>Description</Text>
+              <TextInput
+                style={[styles.modalInput, styles.modalTextarea]}
+                placeholder="Description"
+                placeholderTextColor="#80869b"
+                value={editDraft.description}
+                onChangeText={(description) => setEditDraft((prev) => ({ ...prev, description }))}
+                multiline
+              />
+
+                <View style={[styles.mediaCard, { marginTop: 12 }]}>
+                  <View style={styles.mediaHeader}>
+                    <Text style={styles.sectionLabel}>Images</Text>
+                    <TouchableOpacity style={styles.secondaryButton} onPress={addImagesToDraft}>
+                      <Text style={styles.secondaryButtonText}>{(editDraft.images || []).length ? 'Add more' : 'Add images'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow}>
+                    {draftPreviewImages.length === 0 ? (
+                      <Text style={styles.subtitle}>No images yet.</Text>
+                    ) : (
+                      draftPreviewImages.map((img) => {
+                        const isHeroImg = editDraft.heroImage === img;
+                        return (
+                          <View key={img} style={[styles.thumbCard, isHeroImg && styles.heroThumbCard]}>
+                            {isHeroImg && (
+                              <View style={styles.heroBadge}>
+                                <Text style={styles.heroBadgeText}>★</Text>
+                              </View>
+                            )}
+                            <Image source={{ uri: img }} style={styles.thumb} />
+                            <View style={styles.thumbActions}>
+                              {!isHeroImg && (
+                                <TouchableOpacity onPress={() => setDraftHero(img)}>
+                                  <Text style={styles.thumbActionText}>Make hero</Text>
+                                </TouchableOpacity>
+                              )}
+                              <TouchableOpacity onPress={() => removeDraftImage(img)}>
+                                <Text style={styles.thumbActionText}>Remove</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        );
+                      })
+                    )}
+                  </ScrollView>
+                </View>
+            </ScrollView>
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.secondaryButton} onPress={() => setEditVisible(false)}>
+                <Text style={styles.secondaryButtonText}>Close</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.primaryButton} onPress={handleSaveDraft}>
+                <Text style={styles.primaryButtonText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <FlatList
+        data={collectionAssets}
+        keyExtractor={(a) => a.id}
+        renderItem={renderAsset}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        ListEmptyComponent={<Text style={styles.subtitle}>No assets yet.</Text>}
+        contentContainerStyle={styles.container}
+        ListHeaderComponent={header}
+        ListFooterComponent={
+          <ShareModal
+            visible={shareVisible}
+            onClose={() => { setShareVisible(false); setShareTargetId(null); setShareTargetType(null); }}
+            targetType={shareTargetType || 'collection'}
+            targetId={shareTargetId || collectionId}
+          />
+        }
+      />
+      <Modal visible={!!previewImage} transparent animationType="fade" onRequestClose={() => setPreviewImage(null)}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity style={[styles.modalCard, { padding: 0 }]} activeOpacity={1} onPress={() => setPreviewImage(null)}>
+            {previewImage ? (
+              <Image source={{ uri: previewImage }} style={{ width: '100%', height: 360, borderRadius: 12 }} resizeMode="contain" />
+            ) : null}
+          </TouchableOpacity>
+        </View>
+      </Modal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flexGrow: 1, padding: 20, backgroundColor: '#0b0b0f', gap: 12 },
   headerArea: { gap: 12 },
-  headerSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 },
+  headerSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   title: { fontSize: 24, fontWeight: '700', color: '#fff', flex: 1 },
   metadataSection: { backgroundColor: '#11121a', borderWidth: 1, borderColor: '#1f2738', borderRadius: 10, padding: 12, gap: 8 },
   metadataRow: { color: '#e5e7f0', fontSize: 13 },
   metadataLabel: { fontWeight: '700', color: '#9aa1b5' },
+  mediaCard: { backgroundColor: '#11121a', borderWidth: 1, borderColor: '#1f2738', borderRadius: 10, padding: 12, gap: 10 },
+  mediaHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  heroImage: { width: '100%', height: 180, borderRadius: 10, backgroundColor: '#0d111a' },
+  thumbRow: { marginTop: 8 },
+  thumbCard: { marginRight: 10, width: 120, position: 'relative' },
+  thumb: { width: '100%', height: 90, borderRadius: 8, backgroundColor: '#0d111a' },
+  heroBadge: { position: 'absolute', top: 6, left: 6, backgroundColor: 'rgba(0,0,0,0.7)', paddingVertical: 2, paddingHorizontal: 6, borderRadius: 8, zIndex: 1 },
+  heroBadgeText: { color: '#fcd34d', fontWeight: '800', fontSize: 14 },
+  heroThumbCard: { borderWidth: 2, borderColor: '#2563eb', borderRadius: 10 },
+  thumbActions: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  thumbActionText: { color: '#8ab4ff', fontSize: 12 },
   subtitleDim: { color: '#7d8497' },
   subtitle: { color: '#c5c5d0' },
   card: { padding: 14, borderRadius: 10, backgroundColor: '#11121a', borderWidth: 1, borderColor: '#1f2738' },
@@ -253,15 +554,16 @@ const styles = StyleSheet.create({
   cardTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
   cardSubtitle: { color: '#9aa1b5', marginTop: 4, fontSize: 13 },
   chevron: { color: '#9aa1b5', fontSize: 20, fontWeight: '700' },
-  actionsRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
-  primaryButton: { flex: 1, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#2563eb' },
+  actionsRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  actionButton: { flexGrow: 1, flexBasis: '24%', minWidth: '22%' },
+  primaryButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#2563eb' },
   primaryButtonText: { color: '#fff', fontWeight: '700', textAlign: 'center' },
-  secondaryButton: { flex: 1, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#eab308' },
+  secondaryButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#eab308' },
+  shareButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#16a34a' },
   secondaryButtonText: { color: '#fff', fontWeight: '700', textAlign: 'center' },
-  dangerButton: { flex: 1, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#dc2626' },
+  dangerButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#dc2626' },
   dangerButtonText: { color: '#fff', fontWeight: '700', textAlign: 'center' },
   separator: { height: 12 },
-  actionsRow: { flexDirection: 'row', gap: 8 },
   button: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#2563eb' },
   buttonDisabled: { backgroundColor: '#1f2738' },
   buttonText: { color: '#fff', fontWeight: '700' },
@@ -284,4 +586,11 @@ const styles = StyleSheet.create({
   chip: { paddingVertical: 12, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: '#1f2738', backgroundColor: '#11121a' },
   chipActive: { borderColor: '#2563eb', backgroundColor: '#172447' },
   chipText: { color: '#e5e7f0' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  modalCard: { width: '100%', maxWidth: 520, backgroundColor: '#0e0f17', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#1f2738', maxHeight: '85%' },
+  modalTitle: { color: '#fff', fontSize: 18, fontWeight: '700', marginBottom: 12 },
+  modalLabel: { color: '#c5c5d0', marginTop: 10, marginBottom: 6, fontWeight: '700' },
+  modalInput: { backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, borderRadius: 10, padding: 10, color: '#fff' },
+  modalTextarea: { minHeight: 90, textAlignVertical: 'top' },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 16 },
 });

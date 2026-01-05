@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { useData } from '../context/DataContext';
+import LambHeader from '../components/LambHeader';
 
 export default function SignUp({ navigation }) {
   const { register, loading } = useData();
@@ -27,6 +28,7 @@ export default function SignUp({ navigation }) {
 
   return (
     <View style={styles.container}>
+        <LambHeader />
       <Text style={styles.title}>Create Account</Text>
       <TextInput style={styles.input} placeholder="First name" placeholderTextColor="#80869b" value={firstName} onChangeText={setFirstName} />
       <TextInput style={styles.input} placeholder="Last name" placeholderTextColor="#80869b" value={lastName} onChangeText={setLastName} />

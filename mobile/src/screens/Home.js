@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ScrollView, TextInput, Alert, Image } from 'react-native';
 import { useData } from '../context/DataContext';
 import ShareModal from '../components/ShareModal';
+import LambHeader from '../components/LambHeader';
 
 export default function Home({ navigation }) {
   const { loading, vaults, currentUser, addVault, logout } = useData();
@@ -44,6 +45,7 @@ export default function Home({ navigation }) {
 
   return (
     <View style={styles.container}>
+        <LambHeader />
         <View style={styles.headerRow}>
           <Text style={styles.title}>Home</Text>
           <View style={styles.headerActions}>
