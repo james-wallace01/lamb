@@ -155,7 +155,7 @@ export default function App() {
   const categoryOptions = {
     Vehicle: ["Automobile", "Motorcycle", "Aircraft", "Watercraft", "Recreational Vehicle"],
     Property: ["Residential", "Commercial", "Land", "Farmland", "Construction"],
-    Collectables: ["Watch", "Jewellery", "Art", "Antique"],
+    Collectables: ["Watch", "Jewellery", "Art", "Antique", "Toys"],
     Business: ["Company", "Partnership", "Trust", "Co-operative", "Patent", "Trademark"],
     Materials: ["Precious Metal", "Precious Stone"],
     Specialty: ["Livestock", "Alcohol"],
@@ -1483,6 +1483,8 @@ export default function App() {
     if (vaultSort === "name") return a.name.localeCompare(b.name);
     if (vaultSort === "newest") return new Date(b.createdAt) - new Date(a.createdAt);
     if (vaultSort === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
+    if (vaultSort === "highestValue") return (b.value || 0) - (a.value || 0);
+    if (vaultSort === "lowestValue") return (a.value || 0) - (b.value || 0);
     return sortByDefaultThenDate(a, b);
   });
   const selectedVault = userVaults.find((v) => v.id === selectedVaultId) || null;
@@ -1498,6 +1500,8 @@ export default function App() {
     if (collectionSort === "name") return a.name.localeCompare(b.name);
     if (collectionSort === "newest") return new Date(b.createdAt) - new Date(a.createdAt);
     if (collectionSort === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
+    if (collectionSort === "highestValue") return (b.value || 0) - (a.value || 0);
+    if (collectionSort === "lowestValue") return (a.value || 0) - (b.value || 0);
     return sortByDefaultThenDate(a, b);
   });
   const selectedCollection = userCollections.find((c) => c.id === selectedCollectionId) || null;
@@ -1513,6 +1517,8 @@ export default function App() {
   const sortedAssets = [...filteredAssets].sort((a, b) => {
     if (assetSort === "name") return (a.title || "").localeCompare(b.title || "");
     if (assetSort === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
+    if (assetSort === "highestValue") return (b.value || 0) - (a.value || 0);
+    if (assetSort === "lowestValue") return (a.value || 0) - (b.value || 0);
     return new Date(b.createdAt) - new Date(a.createdAt); // default newest
   });
 
@@ -1619,7 +1625,7 @@ export default function App() {
           </div>
         </button>
         <div className="flex gap-2 mt-2">
-          <button className={`px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800`} onClick={(e) => { e.stopPropagation(); openEditCollection(collection); }}>View / Edit</button>
+          <button className={`px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800`} onClick={(e) => { e.stopPropagation(); openEditCollection(collection); }}>Edit</button>
           {!sharedMode && (
             <button className={`px-2 py-0.5 rounded text-xs ${isOwner ? "bg-green-700 text-white hover:bg-green-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`} onClick={(e) => { e.stopPropagation(); if (!isOwner) return; openShareDialog('collection', collection); }} title={isOwner ? "" : "Only the vault owner can change sharing"}>Share</button>
           )}
@@ -2159,8 +2165,11 @@ export default function App() {
                           <option value="name">Name</option>
                           <option value="newest">Newest</option>
                           <option value="oldest">Oldest</option>
+                          <option value="highestValue">Highest Value</option>
+                          <option value="lowestValue">Lowest Value</option>
                         </select>
-                      </>
+                          <option value="highestValue">Highest Value</option>
+                          <option value="lowestValue">Lowest Value</option>                      </>
                     ) : (
                       <>
                         <input className="px-3 py-2 rounded bg-neutral-950 border border-neutral-800 flex-1 min-w-[160px]" placeholder="Filter vaults" value={vaultFilter} onChange={(e) => setVaultFilter(e.target.value)} />
@@ -2169,6 +2178,8 @@ export default function App() {
                           <option value="name">Name</option>
                           <option value="newest">Newest</option>
                           <option value="oldest">Oldest</option>
+                          <option value="highestValue">Highest Value</option>
+                          <option value="lowestValue">Lowest Value</option>
                         </select>
                       </>
                     ))}
@@ -2315,7 +2326,7 @@ export default function App() {
                                 </div>
                               </button>
                               <div className="flex gap-2 mt-2">
-                                <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={(e) => { e.stopPropagation(); openEditVault(vault); }}>View / Edit</button>
+                                <button className="px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800" onClick={(e) => { e.stopPropagation(); openEditVault(vault); }}>Edit</button>
                                 {!sharedMode && (
                                   <button className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-800" onClick={(e) => { e.stopPropagation(); openShareDialog('vault', vault); }}>Share</button>
                                 )}
@@ -2388,6 +2399,8 @@ export default function App() {
                           <option value="newest">Newest</option>
                           <option value="oldest">Oldest</option>
                           <option value="name">Name</option>
+                          <option value="highestValue">Highest Value</option>
+                          <option value="lowestValue">Lowest Value</option>
                         </select>
                       </>
                     ) : (
@@ -2398,6 +2411,8 @@ export default function App() {
                           <option value="name">Name</option>
                           <option value="newest">Newest</option>
                           <option value="oldest">Oldest</option>
+                          <option value="highestValue">Highest Value</option>
+                          <option value="lowestValue">Lowest Value</option>
                         </select>
                       </>
                     ))}
@@ -2679,7 +2694,7 @@ export default function App() {
                                         <button
                                           className={`px-2 py-0.5 bg-blue-700 text-white rounded text-xs hover:bg-blue-800`}
                                           onClick={() => { openViewAsset(asset); }}
-                                        >View / Edit</button>
+                                        >Edit</button>
                                         {!sharedMode && (
                                           <button
                                             className={`px-2 py-0.5 rounded text-xs ${isOwner ? "bg-green-700 text-white hover:bg-green-800" : "bg-neutral-800 text-neutral-400 cursor-not-allowed"}`}
