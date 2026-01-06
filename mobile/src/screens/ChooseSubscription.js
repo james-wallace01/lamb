@@ -85,7 +85,8 @@ export default function ChooseSubscription({ navigation, route }) {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 24,
+    paddingVertical: 24,
+    paddingHorizontal: 24,
     backgroundColor: '#0b0b0f',
     gap: 20,
   },
@@ -175,5 +176,6 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontWeight: '600',
     textAlign: 'center',
+    paddingBottom: 32,
   },
 });
