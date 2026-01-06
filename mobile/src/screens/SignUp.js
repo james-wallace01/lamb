@@ -119,7 +119,7 @@ export default function SignUp({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { paddingVertical: 24, paddingHorizontal: 24, paddingBottom: 40, backgroundColor: '#0b0b0f', gap: 12, justifyContent: 'center' },
+  container: { flexGrow: 1, paddingVertical: 24, paddingHorizontal: 24, backgroundColor: '#0b0b0f', gap: 12, justifyContent: 'center' },
   title: { fontSize: 28, fontWeight: '800', color: '#fff' },
   input: { backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, borderRadius: 10, padding: 12, color: '#fff' },
   inputError: { borderColor: '#ef4444', borderWidth: 2 },
@@ -127,5 +127,5 @@ const styles = StyleSheet.create({
   button: { backgroundColor: '#2563eb', padding: 14, borderRadius: 10, alignItems: 'center', marginTop: 8 },
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: '#fff', fontWeight: '700' },
-  link: { color: '#9ab6ff', marginTop: 12, fontWeight: '600', textAlign: 'center', paddingBottom: 32 },
+  link: { color: '#9ab6ff', marginTop: 12, fontWeight: '600', textAlign: 'center', marginBottom: 32 },
 });
