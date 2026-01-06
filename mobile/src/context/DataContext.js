@@ -1,4 +1,11 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+i
+// Subscription tiers
+const SUBSCRIPTION_TIERS = {
+  BASIC: { id: 'basic', name: 'Basic', price: 4.99, period: 'month', description: 'Get started with LAMB' },
+  PREMIUM: { id: 'premium', name: 'Premium', price: 9.99, period: 'month', description: 'Advanced features' },
+  PRO: { id: 'pro', name: 'Pro', price: 19.99, period: 'month', description: 'Full access' }
+};
+mport React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { getItem, setItem, removeItem } from '../storage';
 
 const DATA_KEY = 'lamb-mobile-data-v5';
@@ -26,8 +33,8 @@ const migrateData = (data) => {
 };
 
 const seedUsers = [
-  { id: 'u1', username: 'james', firstName: 'James', lastName: 'Wallace', email: 'james@example.com', password: 'pass123', profileImage: DEFAULT_PROFILE_IMAGE },
-  { id: 'u2', username: 'alex', firstName: 'Alex', lastName: 'Smith', email: 'alex@example.com', password: 'pass123', profileImage: DEFAULT_PROFILE_IMAGE }
+  { id: 'u1', username: 'james', firstName: 'James', lastName: 'Wallace', email: 'james@example.com', password: 'pass123', profileImage: DEFAULT_PROFILE_IMAGE, subscription: { tier: 'pro', startDate: Date.now(), renewalDate: Date.now() + (30 * 24 * 60 * 60 * 1000) } },
+  { id: 'u2', username: 'alex', firstName: 'Alex', lastName: 'Smith', email: 'alex@example.com', password: 'pass123', profileImage: DEFAULT_PROFILE_IMAGE, subscription: { tier: 'premium', startDate: Date.now(), renewalDate: Date.now() + (30 * 24 * 60 * 60 * 1000) } }
 ];
 
 const seedVaults = [
@@ -90,6 +97,12 @@ export function DataProvider({ children }) {
     const login = (identifier, password) => {
       const found = users.find(u => (u.username === identifier || u.email === identifier) && u.password === password);
       if (!found) return { ok: false, message: 'Invalid credentials' };
+      
+      // Check if user has an active subscription
+      if (!found.subscription || !found.subscription.tier) {
+        return { ok: false, message: 'No active subscription. Please purchase a subscription to continue.' };
+      }
+      
       const ensured = withProfileImage(found);
       setCurrentUser(ensured);
       return { ok: true };
@@ -99,14 +112,33 @@ export function DataProvider({ children }) {
     setCurrentUser(null);
   };
 
-    const register = ({ firstName, lastName, email, username, password }) => {
-    const exists = users.find(u => u.username === username || u.email === email);
-    if (exists) return { ok: false, message: 'User already exists' };
-      const newUser = { id: `u${Date.now()}`, firstName, lastName, email, username, password, profileImage: DEFAULT_PROFILE_IMAGE };
-    const now = Date.now();
-    const newVault = { id: `v${Date.now()}`, name: 'Example Vault', ownerId: newUser.id, sharedWith: [], createdAt: now, viewedAt: now, editedAt: now, heroImage: DEFAULT_MEDIA_IMAGE, images: [] };
-    const newCollection = { id: `c${Date.now() + 1}`, vaultId: newVault.id, name: 'Example Collection', ownerId: newUser.id, sharedWith: [], createdAt: now, viewedAt: now, editedAt: now, heroImage: DEFAULT_MEDIA_IMAGE, images: [] };
-    const newAsset = { id: `a${Date.now() + 2}`, vaultId: newVault.id, collectionId: newCollection.id, title: 'Example Asset', type: 'Asset', category: 'Example', ownerId: newUser.id, manager: newUser.username, createdAt: now, viewedAt: now, editedAt: now, quantity: 1, heroImage: DEFAULT_MEDIA_IMAGE, images: [] };
+const register = ({ firstName, lastName, email, username, password, subscriptionTier }) => {
+      const exists = users.find(u => u.username === username || u.email === email);
+      if (exists) return { ok: false, message: 'User already exists' };
+      
+      // Subscription is required
+      if (!subscriptionTier) return { ok: false, message: 'You must select a subscription plan' };
+      
+      const now = Date.now();
+      const newUser = { 
+        id: `u${Date.now()}`, 
+        firstName, 
+        lastName, 
+        email, 
+        username, 
+        password, 
+        profileImage: DEFAULT_PROFILE_IMAGE,
+        subscription: {
+          tier: subscriptionTier,
+          startDate: now,
+          renewalDate: now + (30 * 24 * 60 * 60 * 1000) // 30 days from now
+        }
+      };
+      
+      const newVault = { id: `v${Date.now()}`, name: 'Example Vault', ownerId: newUser.id, sharedWith: [], createdAt: now, viewedAt: now, editedAt: now, heroImage: DEFAULT_MEDIA_IMAGE, images: [] };
+      const newCollection = { id: `c${Date.now() + 1}`, vaultId: newVault.id, name: 'Example Collection', ownerId: newUser.id, sharedWith: [], createdAt: now, viewedAt: now, editedAt: now, heroImage: DEFAULT_MEDIA_IMAGE, images: [] };
+      const newAsset = { id: `a${Date.now() + 2}`, vaultId: newVault.id, collectionId: newCollection.id, title: 'Example Asset', type: 'Asset', category: 'Example', ownerId: newUser.id, manager: newUser.username, createdAt: now, viewedAt: now, editedAt: now, quantity: 1, heroImage: DEFAULT_MEDIA_IMAGE, images: [] };
+      
       setUsers(prev => [...prev, newUser]);
       setVaults(prev => [newVault, ...prev]);
       setCollections(prev => [newCollection, ...prev]);
@@ -368,11 +400,31 @@ export function DataProvider({ children }) {
     return match?.role || null;
   };
 
+  const updateSubscription = (subscriptionTier) => {
+    if (!currentUser) return { ok: false, message: 'Not signed in' };
+    if (!subscriptionTier) return { ok: false, message: 'Invalid subscription tier' };
+    
+    const now = Date.now();
+    const updated = {
+      ...currentUser,
+      subscription: {
+        tier: subscriptionTier,
+        startDate: now,
+        renewalDate: now + (30 * 24 * 60 * 60 * 1000)
+      }
+    };
+    
+    setCurrentUser(updated);
+    setUsers(prev => prev.map(u => u.id === currentUser.id ? updated : u));
+    return { ok: true };
+  };
+
   const value = useMemo(() => ({
     loading,
     users,
     currentUser,
     setCurrentUser,
+    subscriptionTiers: SUBSCRIPTION_TIERS,
     vaults,
     collections,
     assets,
@@ -383,6 +435,7 @@ export function DataProvider({ children }) {
     logout,
     register,
     updateCurrentUser,
+    updateSubscription,
     resetPassword,
     deleteAccount,
     addVault,

@@ -1,7 +1,8 @@
 import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
+import SubscriptionManager from '../components/SubscriptionManager';
 
 export default function Settings() {
   const { resetPassword, deleteAccount } = useData();
@@ -51,9 +52,12 @@ export default function Settings() {
   };
 
   return (
-    <View style={styles.container}>
-        <LambHeader />
+    <ScrollView contentContainerStyle={styles.container}>
+      <LambHeader />
       <Text style={styles.title}>Settings</Text>
+      
+      <SubscriptionManager />
+      
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Account</Text>
         <TouchableOpacity style={styles.button} onPress={handleResetPassword}>
@@ -63,12 +67,12 @@ export default function Settings() {
           <Text style={[styles.buttonText, styles.deleteButtonText]}>Delete Account</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: '#0b0b0f', gap: 12 },
+  container: { padding: 20, backgroundColor: '#0b0b0f', gap: 12 },
   title: { fontSize: 24, fontWeight: '700', color: '#fff' },
   subtitle: { color: '#c5c5d0' },
   card: { padding: 14, borderRadius: 10, backgroundColor: '#11121a', borderWidth: 1, borderColor: '#1f2738', gap: 10 },

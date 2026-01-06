@@ -14,6 +14,7 @@ import SettingsScreen from './src/screens/Settings';
 import ProfileScreen from './src/screens/Profile';
 import SignInScreen from './src/screens/SignIn';
 import SignUpScreen from './src/screens/SignUp';
+import ChooseSubscriptionScreen from './src/screens/ChooseSubscription';
 
 enableScreens();
 
@@ -23,6 +24,7 @@ const AuthStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="SignIn" component={SignInScreen} />
     <Stack.Screen name="SignUp" component={SignUpScreen} />
+    <Stack.Screen name="ChooseSubscription" component={ChooseSubscriptionScreen} />
   </Stack.Navigator>
 );
 
