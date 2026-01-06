@@ -1,7 +1,7 @@
 // Stripe Configuration
 // For production, use environment variables or secure storage
 
-export const STRIPE_PUBLISHABLE_KEY = 'pk_test_YOUR_PUBLISHABLE_KEY_HERE';
+export const STRIPE_PUBLISHABLE_KEY = 'pk_test_51SmPtKGfJUDcxcWzCZGOUyiTBNTgmC8zJjYmIJncmez9g1O8mJODJexNhVOJdWZQsxFhF9qIFbniQqVGzlThCAL700j1BKEQeK';
 
 // Backend API endpoint for creating payment intents
 // Replace with your actual backend URL
