@@ -191,6 +191,7 @@ export default function App() {
   const [managerDialog, setManagerDialog] = useState({ show: false, type: null, id: null, username: "" });
   const [shareDialog, setShareDialog] = useState({ show: false, type: 'vault', targetId: null, username: "", role: 'viewer', canCreateCollections: false, canCreateAssets: false });
   const [showShareSuggestions, setShowShareSuggestions] = useState(false);
+  const [appVersion, setAppVersion] = useState("");
 
   const ROLES = ['viewer', 'editor', 'manager'];
 
@@ -790,6 +791,24 @@ export default function App() {
   useEffect(() => {
     safeSetItem("assets", JSON.stringify(assets));
   }, [assets]);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetch('/version.json')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (isMounted && data?.version) {
+          setAppVersion(data.version);
+        }
+      })
+      .catch(() => {
+        if (isMounted) setAppVersion("");
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // One-time migration to recompress stored images to smaller size/quality to save storage
   useEffect(() => {
@@ -2811,6 +2830,13 @@ export default function App() {
           )}
         </div>
       </main>
+
+      <footer className="border-t border-neutral-900 bg-neutral-950/80">
+        <div className="max-w-6xl mx-auto px-4 py-6 flex items-center justify-between text-xs text-neutral-500">
+          <span>Liquid Asset Management Board</span>
+          <span>{appVersion ? `v${appVersion}` : "Version unavailable"}</span>
+        </div>
+      </footer>
 
       {viewAsset && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={closeViewAsset}>

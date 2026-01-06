@@ -10,7 +10,8 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "test": "react-scripts test"
+    "test": "react-scripts test",
+    "release": "node scripts/release.js"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.14",

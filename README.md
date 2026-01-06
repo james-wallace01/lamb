@@ -6,6 +6,11 @@ Liquid Asset Management Board
 - mobile app (Expo React Native) in `mobile/`
 - shared assets/config in root
 
+## Versioning
+- Semantic versioning via git tags (vMAJOR.MINOR.PATCH) driven by Conventional Commits (`feat` = MINOR, `fix` = PATCH, `feat!`/`BREAKING CHANGE` = MAJOR).
+- Run `npm run release` locally or rely on the `Release` GitHub Action (pushes on `main`) to bump, tag, and update `public/version.json`.
+- The app reads `public/version.json` at runtime for the footer; avoid hardcoding version strings anywhere else.
+
 ## Mobile setup
 1) Install: `cd mobile && npm install`
 2) iOS simulator: `npm run ios`
