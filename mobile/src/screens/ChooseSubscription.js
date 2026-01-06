@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { useStripe } from '@stripe/stripe-react-native';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
+import { API_URL } from '../config/stripe';
 
 export default function ChooseSubscription({ navigation, route }) {
   const { subscriptionTiers } = useData();
@@ -9,14 +11,72 @@ export default function ChooseSubscription({ navigation, route }) {
   const [selectedTier, setSelectedTier] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const { register, loading } = useData();
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
-  const handleContinue = () => {
+  const initializePaymentSheet = async (tier) => {
+    try {
+      // Fetch payment intent from your backend
+      const response = await fetch(`${API_URL}/create-payment-intent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: Math.round(subscriptionTiers[tier.toUpperCase()].price * 100), // Convert to cents
+          currency: 'usd',
+          email,
+          subscriptionTier: tier,
+        }),
+      });
+
+      const { paymentIntent, ephemeralKey, customer } = await response.json();
+
+      const { error } = await initPaymentSheet({
+        merchantDisplayName: 'LAMB',
+        customerId: customer,
+        customerEphemeralKeySecret: ephemeralKey,
+        paymentIntentClientSecret: paymentIntent,
+        allowsDelayedPaymentMethods: true,
+      });
+
+      if (error) {
+        Alert.alert('Error', error.message);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      Alert.alert('Error', 'Unable to initialize payment. Please try again.');
+      console.error(error);
+      return false;
+    }
+  };
+
+  const handleContinue = async () => {
     if (!selectedTier) {
       Alert.alert('Select Plan', 'Please choose a subscription plan to continue');
       return;
     }
 
     setSubmitting(true);
+
+    // Initialize payment sheet
+    const initialized = await initializePaymentSheet(selectedTier);
+    if (!initialized) {
+      setSubmitting(false);
+      return;
+    }
+
+    // Present payment sheet
+    const { error } = await presentPaymentSheet();
+    
+    if (error) {
+      Alert.alert('Payment cancelled', error.message);
+      setSubmitting(false);
+      return;
+    }
+
+    // Payment successful - create account
     const res = register({
       firstName,
       lastName,
@@ -25,12 +85,15 @@ export default function ChooseSubscription({ navigation, route }) {
       password,
       subscriptionTier: selectedTier
     });
+
     setSubmitting(false);
 
     if (!res.ok) {
       Alert.alert('Sign up failed', res.message || 'Try again');
       return;
     }
+
+    Alert.alert('Success!', 'Your account has been created and subscription is active.');
   };
 
   const tiers = Object.values(subscriptionTiers);

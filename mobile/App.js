@@ -4,8 +4,10 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { enableScreens } from 'react-native-screens';
 import { StatusBar } from 'expo-status-bar';
+import { StripeProvider } from '@stripe/stripe-react-native';
 import { DataProvider } from './src/context/DataContext';
 import { useData } from './src/context/DataContext';
+import { STRIPE_PUBLISHABLE_KEY, STRIPE_MERCHANT_NAME } from './src/config/stripe';
 import HomeScreen from './src/screens/Home';
 import VaultScreen from './src/screens/Vault';
 import CollectionScreen from './src/screens/Collection';
@@ -48,12 +50,14 @@ function RootNavigator() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <DataProvider>
-        <NavigationContainer>
-          <RootNavigator />
-        </NavigationContainer>
-        <StatusBar style="light" />
-      </DataProvider>
+      <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY} merchantIdentifier={STRIPE_MERCHANT_NAME}>
+        <DataProvider>
+          <NavigationContainer>
+            <RootNavigator />
+          </NavigationContainer>
+          <StatusBar style="light" />
+        </DataProvider>
+      </StripeProvider>
     </SafeAreaProvider>
   );
 }
