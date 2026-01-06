@@ -264,24 +264,6 @@ export default function Collection({ navigation, route }) {
               <Text style={styles.secondaryButtonText}>Move</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity
-            style={[styles.dangerButton, styles.actionButton]}
-            onPress={() => {
-              Alert.alert('Delete Collection?', 'This action cannot be undone.', [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Delete',
-                  onPress: () => {
-                    deleteCollection(collectionId);
-                    navigation.goBack();
-                  },
-                  style: 'destructive',
-                },
-              ]);
-            }}
-          >
-            <Text style={styles.dangerButtonText}>Delete</Text>
-          </TouchableOpacity>
         </View>
       )}
       <View style={styles.mediaCard}>
@@ -467,6 +449,27 @@ export default function Collection({ navigation, route }) {
               <TouchableOpacity style={styles.primaryButton} onPress={handleSaveDraft}>
                 <Text style={styles.primaryButtonText}>Save</Text>
               </TouchableOpacity>
+              {isOwner && (
+                <TouchableOpacity
+                  style={styles.dangerButton}
+                  onPress={() => {
+                    Alert.alert('Delete Collection?', 'This action cannot be undone.', [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete',
+                        onPress: () => {
+                          setEditVisible(false);
+                          deleteCollection(collectionId);
+                          navigation.goBack();
+                        },
+                        style: 'destructive',
+                      },
+                    ]);
+                  }}
+                >
+                  <Text style={styles.dangerButtonText}>Delete</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>
@@ -496,33 +499,29 @@ export default function Collection({ navigation, route }) {
           animationType="fade"
           onRequestClose={() => setInfoVisible(false)}
         >
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            onPress={() => setInfoVisible(false)}
-            activeOpacity={1}
-          >
-            <View style={styles.infoModalContent}>
-              <Text style={styles.infoModalTitle}>Information</Text>
-              <View style={styles.infoModalMetadata}>
-                <Text style={styles.infoModalRow}>
-                  <Text style={styles.infoModalLabel}>Created:</Text>{' '}
-                  {collection.createdAt ? new Date(collection.createdAt).toLocaleDateString() : '-'}
-                </Text>
-                <Text style={styles.infoModalRow}>
-                  <Text style={styles.infoModalLabel}>Viewed:</Text>{' '}
-                  {collection.viewedAt ? new Date(collection.viewedAt).toLocaleDateString() : '-'}
-                </Text>
-                <Text style={styles.infoModalRow}>
-                  <Text style={styles.infoModalLabel}>Edited:</Text>{' '}
-                  {collection.editedAt ? new Date(collection.editedAt).toLocaleDateString() : '-'}
-                </Text>
-                <Text style={styles.infoModalRow}>
-                  <Text style={styles.infoModalLabel}>Manager:</Text>{' '}
-                  {users.find((u) => u.id === collection.ownerId)?.username || 'Unknown'}
-                </Text>
+            <TouchableOpacity style={styles.modalOverlay} onPress={() => setInfoVisible(false)} activeOpacity={1}>
+              <View style={styles.infoModalContent}>
+                <Text style={styles.infoModalTitle}>Information</Text>
+                <View style={styles.infoModalMetadata}>
+                  <Text style={styles.infoModalRow}>
+                    <Text style={styles.infoModalLabel}>Created:</Text>{' '}
+                    {new Date(collection.createdAt).toLocaleDateString()}
+                  </Text>
+                  <Text style={styles.infoModalRow}>
+                    <Text style={styles.infoModalLabel}>Viewed:</Text>{' '}
+                    {new Date(collection.viewedAt).toLocaleDateString()}
+                  </Text>
+                  <Text style={styles.infoModalRow}>
+                    <Text style={styles.infoModalLabel}>Edited:</Text>{' '}
+                    {new Date(collection.editedAt).toLocaleDateString()}
+                  </Text>
+                  <Text style={styles.infoModalRow}>
+                    <Text style={styles.infoModalLabel}>Manager:</Text>{' '}
+                    {users.find((u) => u.id === collection.ownerId)?.username || 'Unknown'}
+                  </Text>
+                </View>
               </View>
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
         </Modal>
       )}
       <Modal visible={!!previewImage} transparent animationType="fade" onRequestClose={() => setPreviewImage(null)}>

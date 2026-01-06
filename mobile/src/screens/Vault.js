@@ -299,6 +299,27 @@ export default function Vault({ navigation, route }) {
                   <TouchableOpacity style={styles.primaryButton} onPress={handleSaveDraft}>
                     <Text style={styles.primaryButtonText}>Save</Text>
                   </TouchableOpacity>
+                  {isOwner && (
+                    <TouchableOpacity
+                      style={styles.dangerButton}
+                      onPress={() => {
+                        Alert.alert('Delete Vault?', 'This action cannot be undone.', [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Delete',
+                            onPress: () => {
+                              setEditVisible(false);
+                              deleteVault(vaultId);
+                              navigation.goBack();
+                            },
+                            style: 'destructive',
+                          },
+                        ]);
+                      }}
+                    >
+                      <Text style={styles.dangerButtonText}>Delete</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
             </View>
@@ -321,24 +342,6 @@ export default function Vault({ navigation, route }) {
           </TouchableOpacity>
           <TouchableOpacity style={[styles.shareButton, styles.actionButton]} onPress={() => openShare('vault', vaultId)}>
             <Text style={styles.secondaryButtonText}>Share</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.dangerButton, styles.actionButton]}
-            onPress={() => {
-              Alert.alert('Delete Vault?', 'This action cannot be undone.', [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Delete',
-                  onPress: () => {
-                    deleteVault(vaultId);
-                    navigation.goBack();
-                  },
-                  style: 'destructive',
-                },
-              ]);
-            }}
-          >
-            <Text style={styles.dangerButtonText}>Delete</Text>
           </TouchableOpacity>
         </View>
       )}

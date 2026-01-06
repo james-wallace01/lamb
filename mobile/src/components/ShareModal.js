@@ -118,7 +118,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
               />
             )}
             <View style={styles.divider} />
-            <Text style={styles.label}>Role</Text>
+            <Text style={styles.label}>Access Type</Text>
             <View style={styles.roleRow}>
               {['Reviewer', 'Editor', 'Manager'].map((r) => (
                 <TouchableOpacity key={r} style={[styles.roleChip, role === r && styles.roleChipActive]} onPress={() => setRole(r)}>
