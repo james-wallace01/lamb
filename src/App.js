@@ -792,23 +792,26 @@ export default function App() {
     safeSetItem("assets", JSON.stringify(assets));
   }, [assets]);
 
-  useEffect(() => {
-    let isMounted = true;
-    fetch('/version.json')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (isMounted && data?.version) {
-          setAppVersion(data.version);
-        }
-      })
-      .catch(() => {
-        if (isMounted) setAppVersion("");
-      });
+    useEffect(() => {
+      let isMounted = true;
+      const base = (process.env.PUBLIC_URL || '').replace(/\/$/, '');
+      const url = `${base}/version.json` || '/version.json';
 
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+      fetch(url)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (isMounted && data?.version) {
+            setAppVersion(data.version);
+          }
+        })
+        .catch(() => {
+          if (isMounted) setAppVersion("");
+        });
+
+      return () => {
+        isMounted = false;
+      };
+    }, []);
 
   // One-time migration to recompress stored images to smaller size/quality to save storage
   useEffect(() => {
