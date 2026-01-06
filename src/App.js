@@ -1824,7 +1824,7 @@ export default function App() {
       )}
 
       <main className={`${shouldCenter ? "flex items-center justify-center min-h-screen" : ""}`}>
-        <div className={`${shouldCenter ? "max-w-3xl w-full mx-auto" : "max-w-6xl mx-auto"} px-4 py-10`}>
+        <div className={`${shouldCenter ? "max-w-3xl w-full mx-auto" : "max-w-6xl mx-auto"} px-4 py-10 pb-24`}>
           {shouldCenter ? (
             <div className="max-w-xl mx-auto relative min-h-[520px]">
               <div className={`transition-all duration-300 ease-out ${activeCenteredView === "landing" ? "opacity-100 translate-y-0 relative" : "opacity-0 -translate-y-3 pointer-events-none absolute inset-0"}`}>
@@ -2834,8 +2834,8 @@ export default function App() {
         </div>
       </main>
 
-      <footer className="border-t border-neutral-900 bg-neutral-950/80">
-        <div className="max-w-6xl mx-auto px-4 py-6 flex items-center justify-between text-xs text-neutral-500">
+      <footer className="fixed bottom-0 left-0 right-0 border-t border-neutral-900 bg-neutral-950/90 backdrop-blur z-40">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between text-xs text-neutral-400">
           <span>Liquid Asset Management Board</span>
           <span>{appVersion ? `v${appVersion}` : "Version unavailable"}</span>
         </div>
