@@ -85,6 +85,7 @@ export default function ChooseSubscription({ navigation, route }) {
 
 const styles = StyleSheet.create({
   container: {
+    flexGrow: 1,
     paddingVertical: 24,
     paddingHorizontal: 24,
     backgroundColor: '#0b0b0f',
@@ -176,6 +177,6 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontWeight: '600',
     textAlign: 'center',
-    paddingBottom: 32,
+    marginBottom: 32,
   },
 });
