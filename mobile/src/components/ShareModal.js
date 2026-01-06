@@ -2,6 +2,12 @@ import React, { useMemo, useState } from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, TextInput, FlatList, ScrollView } from 'react-native';
 import { useData } from '../context/DataContext';
 
+const ROLE_HELP = {
+  Reviewer: 'View access.',
+  Editor: 'View and Edit access.',
+  Manager: 'View, Edit and Move access.',
+};
+
 export default function ShareModal({ visible, onClose, targetType, targetId }) {
   const {
     users,
@@ -120,6 +126,9 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                 </TouchableOpacity>
               ))}
             </View>
+            {ROLE_HELP[role] && (
+              <Text style={styles.roleHelp}>{ROLE_HELP[role]}</Text>
+            )}
               {targetType === 'vault' && (
                 <TouchableOpacity style={[styles.toggle, canCreateCollections && styles.toggleActive]} onPress={() => setCanCreateCollections((prev) => !prev)}>
                   <Text style={styles.toggleText}>Allow creating collections</Text>
@@ -151,6 +160,9 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                               </TouchableOpacity>
                             ))}
                           </View>
+                          {ROLE_HELP[s.role] && (
+                            <Text style={styles.roleHelp}>{ROLE_HELP[s.role]}</Text>
+                          )}
                           {targetType === 'vault' && (
                             <TouchableOpacity style={[styles.toggle, s.canCreateCollections && styles.toggleActive]} onPress={() => handleUpdate(s.userId, s.role, !s.canCreateCollections)}>
                               <Text style={styles.toggleText}>Can create collections</Text>
@@ -201,6 +213,7 @@ const styles = StyleSheet.create({
   roleChipActive: { borderColor: '#2563eb', backgroundColor: '#172447' },
   roleChipSmall: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 10, borderWidth: 1, borderColor: '#1f2738', backgroundColor: '#11121a' },
   roleText: { color: '#e5e7f0', fontWeight: '700' },
+  roleHelp: { color: '#cbd2e8', marginTop: 6, lineHeight: 18 },
   actions: { marginTop: 12, flexDirection: 'row', justifyContent: 'flex-end' },
   secondary: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 10, borderWidth: 1, borderColor: '#26344a' },
   secondaryText: { color: '#e5e7f0', fontWeight: '700' },
