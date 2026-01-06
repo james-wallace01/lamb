@@ -1,17 +1,17 @@
-i
-// Subscription tiers
-const SUBSCRIPTION_TIERS = {
-  BASIC: { id: 'basic', name: 'Basic', price: 4.99, period: 'month', description: 'Get started with LAMB' },
-  PREMIUM: { id: 'premium', name: 'Premium', price: 9.99, period: 'month', description: 'Advanced features' },
-  PRO: { id: 'pro', name: 'Pro', price: 19.99, period: 'month', description: 'Full access' }
-};
-mport React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { getItem, setItem, removeItem } from '../storage';
 
 const DATA_KEY = 'lamb-mobile-data-v5';
 const STORAGE_VERSION = 5;
 const DEFAULT_PROFILE_IMAGE = 'http://192.168.7.112:3000/images/default-avatar.png';
 const DEFAULT_MEDIA_IMAGE = 'http://192.168.7.112:3000/images/collection_default.jpg';
+
+// Subscription tiers
+const SUBSCRIPTION_TIERS = {
+  BASIC: { id: 'basic', name: 'Basic', price: 4.99, period: 'month', description: 'Get started with LAMB' },
+  PREMIUM: { id: 'premium', name: 'Premium', price: 9.99, period: 'month', description: 'Advanced features' },
+  PRO: { id: 'pro', name: 'Pro', price: 19.99, period: 'month', description: 'Full access' }
+};
 
 const withProfileImage = (user) => user && (user.profileImage ? user : { ...user, profileImage: DEFAULT_PROFILE_IMAGE });
 const withMedia = (item) => {
