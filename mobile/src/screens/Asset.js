@@ -310,9 +310,7 @@ export default function Asset({ route, navigation }) {
             <View>
               <Text style={styles.title}>{asset.title}</Text>
             </View>
-            <View style={[styles.typeBadge, styles.assetBadge]}>
-              <Text style={styles.badgeText}>Asset</Text>
-            </View>
+
           </View>
           <Text style={styles.roleBadge}>Role: {role || 'viewer'}</Text>
         <View style={styles.actionsRow}>

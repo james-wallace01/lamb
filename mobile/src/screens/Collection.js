@@ -240,9 +240,6 @@ export default function Collection({ navigation, route }) {
       <LambHeader />
       <View style={styles.headerSection}>
         <Text style={styles.title}>{collection?.name || 'Collection'}</Text>
-        <View style={[styles.typeBadge, styles.collectionBadge]}>
-          <Text style={styles.badgeText}>Collection</Text>
-        </View>
       </View>
       <Text style={styles.subtitleDim}>{role ? role : 'Shared'}</Text>
       {isOwner && (

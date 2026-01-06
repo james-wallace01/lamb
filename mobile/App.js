@@ -28,7 +28,7 @@ const AuthStack = () => (
 
 const MainStack = () => (
   <Stack.Navigator screenOptions={{ headerStyle: { backgroundColor: '#0b0b0f' }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }}>
-    <Stack.Screen name="Home" component={HomeScreen} />
+    <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
     <Stack.Screen name="Vault" component={VaultScreen} />
     <Stack.Screen name="Collection" component={CollectionScreen} />
     <Stack.Screen name="Asset" component={AssetScreen} />
