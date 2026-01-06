@@ -26,17 +26,6 @@ export default function Home({ navigation }) {
           <Text style={styles.cardSubtitle}>Vault • {new Date(item.createdAt).toLocaleDateString()}</Text>
         </View>
         <View style={styles.cardActions}>
-          {item.ownerId === currentUser?.id && (
-            <TouchableOpacity
-              style={styles.sharePill}
-              onPress={(e) => {
-                e.stopPropagation();
-                setShareVaultId(item.id);
-              }}
-            >
-              <Text style={styles.sharePillText}>Share</Text>
-            </TouchableOpacity>
-          )}
           <Text style={styles.chevron}>›</Text>
         </View>
       </View>

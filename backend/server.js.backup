@@ -1,0 +1,369 @@
+// LAMB Backend Server for Stripe Payment Processing
+// Install dependencies: npm install express stripe cors dotenv
+// Run: node server.js
+
+const express = require('express');
+const cors = require('cors');
+require('dotenv').config();
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const PORT = process.env.PORT || 3001;
+
+// Stripe Price IDs - In production, create these in Stripe Dashboard
+// For now, we'll create them on the fly or use hardcoded price amounts
+const PRICE_MAP = {
+  BASIC: 499, // $4.99 in cents
+  PREMIUM: 999, // $9.99
+  PRO: 1999 // $19.99
+};
+
+// Create or get Stripe customer
+async function getOrCreateCustomer(email, name) {
+  const customers = await stripe.customers.list({
+    email: email,
+    limit: 1
+  });
+
+  if (customers.data.length > 0) {
+    return customers.data[0];
+  }
+
+  return await stripe.customers.create({
+    email: email,
+    name: name,
+  });
+}
+
+// Create subscription endpoint
+app.post('/create-subscription', async (req, res) => {
+  try {
+    const { email, name, subscriptionTier } = req.body;
+
+    // Get or create customer
+    const customer = await getOrCreateCustomer(email, name);
+
+    // Create ephemeral key
+    const ephemeralKey = await stripe.ephemeralKeys.create(
+      { customer: customer.id },
+      { apiVersion: '2024-11-20.acacia' }
+    );
+
+    // Create subscription with payment intent
+    const subscription = await stripe.subscriptions.create({
+      customer: customer.id,
+      items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: `LAMB ${subscriptionTier} Plan`,
+            },
+            unit_amount: PRICE_MAP[subscriptionTier],
+            recurring: {
+              interval: 'month',
+            },
+          },
+        },
+      ],
+      payment_behavior: 'default_incomplete',
+      payment_settings: { 
+        save_default_payment_method: 'on_subscription',
+        payment_method_types: ['card']
+      },
+      expand: ['latest_invoice.payment_intent'],
+      metadata: {
+        tier: subscriptionTier
+      }
+    });
+
+    console.log('Subscription created:', subscription.id);
+    console.log('Latest invoice:', subscription.latest_invoice);
+    
+    // Ensure we have a payment intent with client secret
+    if (!subscription.latest_invoice || !subscription.latest_invoice.payment_intent) {
+      throw new Error('Failed to create subscription with payment intent');
+    }
+
+    const clientSecret = subscription.latest_invoice.payment_intent.client_secret;
+    if (!clientSecret) {
+      throw new Error('Payment intent client secret is missing');
+    }
+
+    console.log('Client secret obtained successfully');
+
+    res.json({
+      subscriptionId: subscription.id,
+      clientSecret: clientSecret,
+      ephemeralKey: ephemeralKey.secret,
+      customer: customer.id,
+    });
+  } catch (error) {
+    console.error('Error creating subscription:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update subscription endpoint
+app.post('/update-subscription', async (req, res) => {
+  try {
+    const { subscriptionId, newSubscriptionTier } = req.body;
+
+    console.log('Updating subscription:', { subscriptionId, newSubscriptionTier });
+
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    
+    // Update subscription
+    const updatedSubscription = await stripe.subscriptions.update(subscriptionId, {
+      items: [
+        {
+          id: subscription.items.data[0].id,
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: `LAMB ${newTier} Plan`,
+            },
+            unit_amount: PRICE_MAP[newTier],
+            recurring: {
+              interval: 'month',
+            },
+          },
+        },
+      ],
+      proration_behavior: 'always_invoice',
+      proration_date: prorationDate || Math.floor(Date.now() / 1000),
+      metadata: {
+        tier: newTier
+      }
+    });
+
+    // If there's a proration invoice, return its payment intent
+    if (updatedSubscription.latest_invoice) {
+      const invoice = await stripe.invoices.retrieve(updatedSubscription.latest_invoice);
+      
+      if (invoice.amount_due > 0 && invoice.payment_intent) {
+        const paymentIntent = await stripe.paymentIntents.retrieve(invoice.payment_intent);
+        
+        return res.json({
+          subscriptionId: updatedSubscription.id,
+          clientSecret: paymentIntent.client_secret,
+          amountDue: invoice.amount_due,
+          requiresPayment: true
+        });
+      }
+    }
+
+    res.json({
+      subscriptionId: updatedSubscription.id,
+      requiresPayment: false
+    });
+  } catch (error) {
+    console.error('Error updating subscription:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Downgrade subscription endpoint (schedule for next billing cycle)
+app.post('/schedule-subscription-change', async (req, res) => {
+  try {
+    const { subscriptionId, newTier } = req.body;
+
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+
+    // Schedule the change for the next billing cycle
+    const schedulePhase = {
+      items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: `LAMB ${newTier} Plan`,
+            },
+            unit_amount: PRICE_MAP[newTier],
+            recurring: {
+              interval: 'month',
+            },
+          },
+        },
+      ],
+      metadata: {
+        tier: newTier
+      },
+      start_date: subscription.current_period_end,
+    };
+
+    // Create or update subscription schedule
+    try {
+      const schedules = await stripe.subscriptionSchedules.list({
+        subscription: subscriptionId,
+        limit: 1
+      });
+
+      if (schedules.data.length > 0) {
+        await stripe.subscriptionSchedules.update(schedules.data[0].id, {
+          phases: [
+            {
+              items: subscription.items.data.map(item => ({
+                price: item.price.id,
+                quantity: item.quantity
+              })),
+              start_date: subscription.current_period_start,
+              end_date: subscription.current_period_end,
+            },
+            schedulePhase
+          ]
+        });
+      } else {
+        await stripe.subscriptionSchedules.create({
+          from_subscription: subscriptionId,
+        });
+        
+        const newSchedules = await stripe.subscriptionSchedules.list({
+          subscription: subscriptionId,
+          limit: 1
+        });
+        
+        if (newSchedules.data.length > 0) {
+          await stripe.subscriptionSchedules.update(newSchedules.data[0].id, {
+            phases: [
+              {
+                items: subscription.items.data.map(item => ({
+                  price: item.price.id,
+                  quantity: item.quantity
+                })),
+                start_date: subscription.current_period_start,
+                end_date: subscription.current_period_end,
+              },
+              schedulePhase
+            ]
+          });
+        }
+      }
+
+      res.json({
+        success: true,
+        effectiveDate: subscription.current_period_end
+      });
+    } catch (scheduleError) {
+      console.error('Error with subscription schedule:', scheduleError);
+      // Fallback: just update metadata to track the pending change
+      await stripe.subscriptions.update(subscriptionId, {
+        metadata: {
+          pending_tier: newTier,
+          change_at: subscription.current_period_end.toString()
+        }
+      });
+      
+      res.json({
+        success: true,
+        effectiveDate: subscription.current_period_end,
+        note: 'Change scheduled in metadata'
+      });
+    }
+  } catch (error) {
+    console.error('Error scheduling subscription change:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Cancel subscription endpoint
+app.post('/cancel-subscription', async (req, res) => {
+  try {
+    const { subscriptionId, immediate } = req.body;
+
+    if (immediate) {
+      await stripe.subscriptions.cancel(subscriptionId);
+    } else {
+      await stripe.subscriptions.update(subscriptionId, {
+        cancel_at_period_end: true
+      });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error canceling subscription:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Legacy endpoint for backward compatibility
+app.post('/create-payment-intent', async (req, res) => {
+  try {
+    const { amount, currency, email, subscriptionTier } = req.body;
+
+    const customer = await getOrCreateCustomer(email, '');
+
+    const ephemeralKey = await stripe.ephemeralKeys.create(
+      { customer: customer.id },
+      { apiVersion: '2024-11-20.acacia' }
+    );
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amount,
+      currency: currency,
+      customer: customer.id,
+      metadata: {
+        subscriptionTier: subscriptionTier,
+        email: email
+      },
+      automatic_payment_methods: {
+        enabled: true,
+      },
+    });
+
+    res.json({
+      paymentIntent: paymentIntent.client_secret,
+      ephemeralKey: ephemeralKey.secret,
+      customer: customer.id,
+    });
+  } catch (error) {
+    console.error('Error creating payment intent:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Webhook endpoint for Stripe events
+app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  const webhookSecret = 'whsec_YOUR_WEBHOOK_SECRET'; // Replace with your webhook secret
+
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+  } catch (err) {
+    console.error('Webhook signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  // Handle the event
+  switch (event.type) {
+    case 'payment_intent.succeeded':
+      const paymentIntent = event.data.object;
+      console.log('PaymentIntent was successful!', paymentIntent.id);
+      // Update your database to activate subscription
+      break;
+    case 'payment_intent.payment_failed':
+      const failedPayment = event.data.object;
+      console.log('PaymentIntent failed:', failedPayment.id);
+      // Handle failed payment
+      break;
+    default:
+      console.log(`Unhandled event type ${event.type}`);
+  }
+
+  res.json({ received: true });
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
+app.listen(PORT, () => {
+  console.log(`LAMB backend server running on http://localhost:${PORT}`);
+  console.log(`Make sure to update your Stripe keys!`);
+});

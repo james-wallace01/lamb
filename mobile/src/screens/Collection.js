@@ -16,6 +16,7 @@ export default function Collection({ navigation, route }) {
   const [showMoveBox, setShowMoveBox] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
+  const [infoVisible, setInfoVisible] = useState(false);
   const [editDraft, setEditDraft] = useState({ name: '', description: '', manager: '', images: [], heroImage: '' });
   const [previewImage, setPreviewImage] = useState(null);
   const draftPreviewImages = editDraft.heroImage
@@ -239,7 +240,12 @@ export default function Collection({ navigation, route }) {
     <View style={styles.headerArea}>
       <LambHeader />
       <View style={styles.headerSection}>
-        <Text style={styles.title}>{collection?.name || 'Collection'}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>{collection?.name || 'Collection'}</Text>
+        </View>
+        <TouchableOpacity style={styles.infoButton} onPress={() => setInfoVisible(true)}>
+          <Text style={styles.infoButtonText}>ℹ</Text>
+        </TouchableOpacity>
       </View>
       <Text style={styles.subtitleDim}>{role ? role : 'Shared'}</Text>
       {isOwner && (
@@ -276,26 +282,6 @@ export default function Collection({ navigation, route }) {
           >
             <Text style={styles.dangerButtonText}>Delete</Text>
           </TouchableOpacity>
-        </View>
-      )}
-      {collection && (
-        <View style={styles.metadataSection}>
-          <Text style={styles.metadataRow}>
-            <Text style={styles.metadataLabel}>Created:</Text>{' '}
-            {new Date(collection.createdAt).toLocaleDateString()}
-          </Text>
-          <Text style={styles.metadataRow}>
-            <Text style={styles.metadataLabel}>Viewed:</Text>{' '}
-            {new Date(collection.viewedAt).toLocaleDateString()}
-          </Text>
-          <Text style={styles.metadataRow}>
-            <Text style={styles.metadataLabel}>Edited:</Text>{' '}
-            {new Date(collection.editedAt).toLocaleDateString()}
-          </Text>
-          <Text style={styles.metadataRow}>
-            <Text style={styles.metadataLabel}>Manager:</Text>{' '}
-            {users.find(u => u.id === collection.ownerId)?.username || 'Unknown'}
-          </Text>
         </View>
       )}
       <View style={styles.mediaCard}>
@@ -503,6 +489,42 @@ export default function Collection({ navigation, route }) {
           />
         }
       />
+      {collection && (
+        <Modal
+          visible={infoVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setInfoVisible(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            onPress={() => setInfoVisible(false)}
+            activeOpacity={1}
+          >
+            <View style={styles.infoModalContent}>
+              <Text style={styles.infoModalTitle}>Information</Text>
+              <View style={styles.infoModalMetadata}>
+                <Text style={styles.infoModalRow}>
+                  <Text style={styles.infoModalLabel}>Created:</Text>{' '}
+                  {collection.createdAt ? new Date(collection.createdAt).toLocaleDateString() : '-'}
+                </Text>
+                <Text style={styles.infoModalRow}>
+                  <Text style={styles.infoModalLabel}>Viewed:</Text>{' '}
+                  {collection.viewedAt ? new Date(collection.viewedAt).toLocaleDateString() : '-'}
+                </Text>
+                <Text style={styles.infoModalRow}>
+                  <Text style={styles.infoModalLabel}>Edited:</Text>{' '}
+                  {collection.editedAt ? new Date(collection.editedAt).toLocaleDateString() : '-'}
+                </Text>
+                <Text style={styles.infoModalRow}>
+                  <Text style={styles.infoModalLabel}>Manager:</Text>{' '}
+                  {users.find((u) => u.id === collection.ownerId)?.username || 'Unknown'}
+                </Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      )}
       <Modal visible={!!previewImage} transparent animationType="fade" onRequestClose={() => setPreviewImage(null)}>
         <View style={styles.modalOverlay}>
           <TouchableOpacity style={[styles.modalCard, { padding: 0 }]} activeOpacity={1} onPress={() => setPreviewImage(null)}>
@@ -520,7 +542,14 @@ const styles = StyleSheet.create({
   container: { flexGrow: 1, padding: 20, backgroundColor: '#0b0b0f', gap: 12 },
   headerArea: { gap: 12 },
   headerSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
-  title: { fontSize: 24, fontWeight: '700', color: '#fff', flex: 1 },
+  title: { fontSize: 24, fontWeight: '700', color: '#fff', flex: 1, lineHeight: 32 },
+  infoButton: { padding: 8, marginLeft: 8, alignSelf: 'flex-start' },
+  infoButtonText: { color: '#e5e7f0', fontSize: 20, fontWeight: '700' },
+  infoModalContent: { backgroundColor: '#1a1b24', borderRadius: 12, padding: 16, marginHorizontal: 16, maxWidth: '90%' },
+  infoModalTitle: { color: '#fff', fontSize: 18, fontWeight: '700', marginBottom: 12 },
+  infoModalMetadata: { gap: 8 },
+  infoModalRow: { color: '#e5e7f0', fontSize: 13, lineHeight: 18 },
+  infoModalLabel: { color: '#9aa1b5', fontWeight: '600' },
   metadataSection: { backgroundColor: '#11121a', borderWidth: 1, borderColor: '#1f2738', borderRadius: 10, padding: 12, gap: 8 },
   metadataRow: { color: '#e5e7f0', fontSize: 13 },
   metadataLabel: { fontWeight: '700', color: '#9aa1b5' },

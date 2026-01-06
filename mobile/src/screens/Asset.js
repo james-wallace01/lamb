@@ -17,6 +17,7 @@ export default function Asset({ route, navigation }) {
   const [vaultDropdownOpen, setVaultDropdownOpen] = useState(false);
   const [collectionDropdownOpen, setCollectionDropdownOpen] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
+  const [infoVisible, setInfoVisible] = useState(false);
   const [editDraft, setEditDraft] = useState({
     title: '',
     type: '',
@@ -289,6 +290,27 @@ export default function Asset({ route, navigation }) {
               >
                 <Text style={styles.primaryButtonText}>Save</Text>
               </TouchableOpacity>
+              {canEdit && (
+                <TouchableOpacity
+                  style={styles.dangerButton}
+                  onPress={() => {
+                    Alert.alert('Delete Asset?', 'This action cannot be undone.', [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete',
+                        onPress: () => {
+                          setEditVisible(false);
+                          deleteAsset(assetId);
+                          navigation.goBack();
+                        },
+                        style: 'destructive',
+                      },
+                    ]);
+                  }}
+                >
+                  <Text style={styles.dangerButtonText}>Delete</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>
@@ -307,10 +329,12 @@ export default function Asset({ route, navigation }) {
         <ScrollView contentContainerStyle={styles.container}>
           <LambHeader />
           <View style={styles.headerSection}>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.title}>{asset.title}</Text>
             </View>
-
+            <TouchableOpacity style={styles.infoButton} onPress={() => setInfoVisible(true)}>
+              <Text style={styles.infoButtonText}>ℹ</Text>
+            </TouchableOpacity>
           </View>
           <Text style={styles.roleBadge}>Role: {role || 'viewer'}</Text>
         <View style={styles.actionsRow}>
@@ -334,52 +358,8 @@ export default function Asset({ route, navigation }) {
               <Text style={styles.secondaryButtonText}>Move</Text>
             </TouchableOpacity>
           )}
-          {canMove && (
-            <TouchableOpacity
-              style={[styles.dangerButton, styles.actionButton]}
-              onPress={() => {
-                Alert.alert('Delete Asset?', 'This action cannot be undone.', [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Delete',
-                    onPress: () => {
-                      deleteAsset(assetId);
-                      navigation.goBack();
-                    },
-                    style: 'destructive',
-                  },
-                ]);
-              }}
-            >
-              <Text style={styles.dangerButtonText}>Delete</Text>
-            </TouchableOpacity>
-          )}
         </View>
-        {asset && (
-          <View style={styles.metadataSection}>
-            <Text style={styles.metadataRow}>
-              <Text style={styles.metadataLabel}>Viewed:</Text>{' '}
-              {new Date(asset.viewedAt).toLocaleDateString()}
-            </Text>
-            <Text style={styles.metadataRow}>
-              <Text style={styles.metadataLabel}>Edited:</Text>{' '}
-              {new Date(asset.editedAt).toLocaleDateString()}
-            </Text>
-            <Text style={styles.metadataRow}>
-              <Text style={styles.metadataLabel}>Manager:</Text>{' '}
-              {asset.manager || 'Unassigned'}
-            </Text>
-            <Text style={styles.metadataRow}>
-              <Text style={styles.metadataLabel}>Value:</Text>{' '}
-              {(() => {
-                const v = parseFloat(asset.value);
-                return Number.isFinite(v)
-                  ? `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                  : '$0.00';
-              })()}
-            </Text>
-          </View>
-        )}
+
         <View style={styles.mediaCard}>
           <View style={styles.mediaHeader}>
             <Text style={styles.sectionLabel}>Images</Text>
@@ -495,6 +475,55 @@ export default function Asset({ route, navigation }) {
             </TouchableOpacity>
           </View>
         )}
+        {asset && (
+          <Modal
+            visible={infoVisible}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setInfoVisible(false)}
+          >
+            <TouchableOpacity
+              style={styles.modalOverlay}
+              onPress={() => setInfoVisible(false)}
+              activeOpacity={1}
+            >
+              <View style={styles.infoModalContent}>
+                <View style={styles.infoModalHeader}>
+                  <Text style={styles.infoModalTitle}>Information</Text>
+                  <TouchableOpacity onPress={() => setInfoVisible(false)}>
+                    <Text style={styles.infoModalClose}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.infoModalBody}>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Created</Text>
+                    <Text style={styles.infoValue}>
+                      {asset.createdAt ? new Date(asset.createdAt).toLocaleDateString() : '-'}
+                    </Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Viewed</Text>
+                    <Text style={styles.infoValue}>
+                      {asset.viewedAt ? new Date(asset.viewedAt).toLocaleDateString() : '-'}
+                    </Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Edited</Text>
+                    <Text style={styles.infoValue}>
+                      {asset.editedAt ? new Date(asset.editedAt).toLocaleDateString() : '-'}
+                    </Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Manager</Text>
+                    <Text style={styles.infoValue}>
+                      {owner?.username || asset.manager || 'Unknown'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </TouchableOpacity>
+          </Modal>
+        )}
         <ShareModal visible={showShare} onClose={() => setShowShare(false)} targetType="asset" targetId={assetId} />
       </ScrollView>
     </>
@@ -502,9 +531,20 @@ export default function Asset({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
+    infoButton: { padding: 8, marginLeft: 8, alignSelf: 'flex-start' },
+  infoButtonText: { fontSize: 20, color: '#22c55e', fontWeight: '600', lineHeight: 24 },
+  infoModalContent: { backgroundColor: '#0b0b0f', borderRadius: 12, padding: 20, width: '85%', maxHeight: '70%' },
+  infoModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderBottomWidth: 1, borderBottomColor: '#1f2738', paddingBottom: 12 },
+  infoModalTitle: { fontSize: 18, fontWeight: '700', color: '#fff' },
+  infoModalClose: { fontSize: 24, color: '#999', fontWeight: '300' },
+  infoModalBody: { gap: 12 },
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 },
+  infoLabel: { fontSize: 14, color: '#999', fontWeight: '500', lineHeight: 20 },
+  infoValue: { fontSize: 14, color: '#22c55e', fontWeight: '600', lineHeight: 20 },
+
   container: { flexGrow: 1, padding: 20, backgroundColor: '#0b0b0f', gap: 12 },
   headerSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
-  title: { fontSize: 24, fontWeight: '700', color: '#fff', flex: 1 },
+  title: { fontSize: 24, fontWeight: '700', color: '#fff', flex: 1, lineHeight: 32 },
   metadataSection: { backgroundColor: '#11121a', borderWidth: 1, borderColor: '#1f2738', borderRadius: 10, padding: 12, gap: 8 },
   metadataRow: { color: '#e5e7f0', fontSize: 13 },
   metadataLabel: { fontWeight: '700', color: '#9aa1b5' },

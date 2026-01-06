@@ -13,6 +13,7 @@ export default function Vault({ navigation, route }) {
   const [shareTargetType, setShareTargetType] = useState(null);
   const [shareTargetId, setShareTargetId] = useState(null);
   const [editVisible, setEditVisible] = useState(false);
+  const [infoVisible, setInfoVisible] = useState(false);
   const [editDraft, setEditDraft] = useState({ name: '', description: '', manager: '', images: [], heroImage: '' });
   const [previewImage, setPreviewImage] = useState(null);
   const draftPreviewImages = editDraft.heroImage
@@ -304,13 +305,15 @@ export default function Vault({ navigation, route }) {
             </Modal>
           <View style={styles.container}>
         <LambHeader />
-      <View style={styles.headerSection}>
-        <Text style={styles.title}>{vault?.name || 'Vault'}</Text>
-        <View style={[styles.typeBadge, styles.vaultBadge]}>
-          <Text style={styles.badgeText}>Vault</Text>
+      <View style={styles.headerArea}>
+        <View style={styles.headerSection}>
+          <Text style={styles.title}>{vault?.name || 'Vault'}</Text>
+          <TouchableOpacity style={styles.infoButton} onPress={() => setInfoVisible(true)}>
+            <Text style={styles.infoButtonText}>ℹ</Text>
+          </TouchableOpacity>
         </View>
+        <Text style={styles.subtitleDim}>{role ? role : 'Shared'}</Text>
       </View>
-      <Text style={styles.subtitleDim}>{role ? role : 'Shared'}</Text>
       {isOwner && (
         <View style={styles.actionsRow}>
           <TouchableOpacity style={[styles.primaryButton, styles.actionButton]} onPress={openEditModal}>
@@ -339,26 +342,7 @@ export default function Vault({ navigation, route }) {
           </TouchableOpacity>
         </View>
       )}
-      {vault && (
-        <View style={styles.metadataSection}>
-          <Text style={styles.metadataRow}>
-            <Text style={styles.metadataLabel}>Created:</Text>{' '}
-            {new Date(vault.createdAt).toLocaleDateString()}
-          </Text>
-          <Text style={styles.metadataRow}>
-            <Text style={styles.metadataLabel}>Viewed:</Text>{' '}
-            {new Date(vault.viewedAt).toLocaleDateString()}
-          </Text>
-          <Text style={styles.metadataRow}>
-            <Text style={styles.metadataLabel}>Edited:</Text>{' '}
-            {new Date(vault.editedAt).toLocaleDateString()}
-          </Text>
-          <Text style={styles.metadataRow}>
-            <Text style={styles.metadataLabel}>Manager:</Text>{' '}
-            {users.find(u => u.id === vault.ownerId)?.username || 'Unknown'}
-          </Text>
-        </View>
-      )}
+
       <View style={styles.mediaCard}>
         <View style={styles.mediaHeader}>
           <Text style={styles.sectionLabel}>Images</Text>
@@ -422,6 +406,31 @@ export default function Vault({ navigation, route }) {
         targetType={shareTargetType || 'vault'}
         targetId={shareTargetId || vaultId}
       />
+      <Modal visible={infoVisible} transparent animationType="fade" onRequestClose={() => setInfoVisible(false)}>
+        <TouchableOpacity style={styles.modalOverlay} onPress={() => setInfoVisible(false)} activeOpacity={1}>
+          <View style={styles.infoModalContent}>
+            <Text style={styles.infoModalTitle}>Information</Text>
+            <View style={styles.infoModalMetadata}>
+              <Text style={styles.infoModalRow}>
+                <Text style={styles.infoModalLabel}>Created:</Text>{' '}
+                {new Date(vault.createdAt).toLocaleDateString()}
+              </Text>
+              <Text style={styles.infoModalRow}>
+                <Text style={styles.infoModalLabel}>Viewed:</Text>{' '}
+                {new Date(vault.viewedAt).toLocaleDateString()}
+              </Text>
+              <Text style={styles.infoModalRow}>
+                <Text style={styles.infoModalLabel}>Edited:</Text>{' '}
+                {new Date(vault.editedAt).toLocaleDateString()}
+              </Text>
+              <Text style={styles.infoModalRow}>
+                <Text style={styles.infoModalLabel}>Manager:</Text>{' '}
+                {users.find(u => u.id === vault.ownerId)?.username || 'Unknown'}
+              </Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
       <Modal visible={!!previewImage} transparent animationType="fade" onRequestClose={() => setPreviewImage(null)}>
         <View style={styles.modalOverlay}>
           <TouchableOpacity style={[styles.modalCard, { padding: 0 }]} activeOpacity={1} onPress={() => setPreviewImage(null)}>
@@ -438,8 +447,9 @@ export default function Vault({ navigation, route }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20, backgroundColor: '#0b0b0f', gap: 12 },
+  headerArea: { gap: 12 },
   headerSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
-  title: { fontSize: 24, fontWeight: '700', color: '#fff', flex: 1 },
+  title: { fontSize: 24, fontWeight: '700', color: '#fff', lineHeight: 32, flexShrink: 1 },
   metadataSection: { backgroundColor: '#11121a', borderWidth: 1, borderColor: '#1f2738', borderRadius: 10, padding: 12, gap: 8 },
   metadataRow: { color: '#e5e7f0', fontSize: 13 },
   metadataLabel: { fontWeight: '700', color: '#9aa1b5' },
@@ -499,4 +509,12 @@ const styles = StyleSheet.create({
   modalInput: { backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, borderRadius: 10, padding: 10, color: '#fff' },
   modalTextarea: { minHeight: 90, textAlignVertical: 'top' },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 16 },
+  infoButton: { padding: 8, marginLeft: 8, alignSelf: 'flex-start' },
+  infoButtonText: { color: '#e5e7f0', fontSize: 20, fontWeight: '700' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.7)', justifyContent: 'center', alignItems: 'center' },
+  infoModalContent: { backgroundColor: '#1a1b24', borderRadius: 12, padding: 16, marginHorizontal: 16, maxWidth: '90%' },
+  infoModalTitle: { color: '#fff', fontSize: 18, fontWeight: '700', marginBottom: 12 },
+  infoModalMetadata: { gap: 8 },
+  infoModalRow: { color: '#e5e7f0', fontSize: 13, lineHeight: 18 },
+  infoModalLabel: { color: '#9aa1b5', fontWeight: '600' },
 });
