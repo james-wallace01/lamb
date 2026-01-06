@@ -6,7 +6,7 @@ import LambHeader from '../components/LambHeader';
 import { API_URL } from '../config/stripe';
 
 export default function ChooseSubscription({ navigation, route }) {
-  const { subscriptionTiers } = useData();
+  const { subscriptionTiers, convertPrice } = useData();
   const { firstName, lastName, email, username, password } = route.params || {};
   const [selectedTier, setSelectedTier] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -15,40 +15,39 @@ export default function ChooseSubscription({ navigation, route }) {
 
   const initializePaymentSheet = async (tier) => {
     try {
-      // Fetch payment intent from your backend
-      const response = await fetch(`${API_URL}/create-payment-intent`, {
+      // Create Stripe subscription
+      const response = await fetch(`${API_URL}/create-subscription`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          amount: Math.round(subscriptionTiers[tier.toUpperCase()].price * 100), // Convert to cents
-          currency: 'usd',
           email,
-          subscriptionTier: tier,
+          name: `${firstName} ${lastName}`,
+          subscriptionTier: tier.toUpperCase(),
         }),
       });
 
-      const { paymentIntent, ephemeralKey, customer } = await response.json();
+      const { subscriptionId, clientSecret, ephemeralKey, customer } = await response.json();
 
       const { error } = await initPaymentSheet({
         merchantDisplayName: 'LAMB',
         customerId: customer,
         customerEphemeralKeySecret: ephemeralKey,
-        paymentIntentClientSecret: paymentIntent,
+        paymentIntentClientSecret: clientSecret,
         allowsDelayedPaymentMethods: true,
       });
 
       if (error) {
         Alert.alert('Error', error.message);
-        return false;
+        return null;
       }
 
-      return true;
+      return { subscriptionId, customerId: customer };
     } catch (error) {
       Alert.alert('Error', 'Unable to initialize payment. Please try again.');
       console.error(error);
-      return false;
+      return null;
     }
   };
 
@@ -61,8 +60,8 @@ export default function ChooseSubscription({ navigation, route }) {
     setSubmitting(true);
 
     // Initialize payment sheet
-    const initialized = await initializePaymentSheet(selectedTier);
-    if (!initialized) {
+    const subscriptionData = await initializePaymentSheet(selectedTier);
+    if (!subscriptionData) {
       setSubmitting(false);
       return;
     }
@@ -76,14 +75,37 @@ export default function ChooseSubscription({ navigation, route }) {
       return;
     }
 
-    // Payment successful - create account
+    // Verify the payment actually went through
+    console.log('Payment sheet closed, verifying payment for subscription...');
+    const confirmResponse = await fetch(`${API_URL}/confirm-subscription-payment`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        subscriptionId: subscriptionData.subscriptionId,
+      }),
+    });
+    
+    const confirmResult = await confirmResponse.json();
+    
+    if (!confirmResult.success) {
+      Alert.alert('Payment failed', 
+        `Payment status: ${confirmResult.status}. ${confirmResult.error || 'Please try again.'}`);
+      setSubmitting(false);
+      return;
+    }
+
+    console.log('Payment successful - creating account');
     const res = register({
       firstName,
       lastName,
       email,
       username,
       password,
-      subscriptionTier: selectedTier
+      subscriptionTier: selectedTier.toUpperCase(),
+      stripeSubscriptionId: subscriptionData.subscriptionId,
+      stripeCustomerId: subscriptionData.customerId
     });
 
     setSubmitting(false);
@@ -105,28 +127,31 @@ export default function ChooseSubscription({ navigation, route }) {
       <Text style={styles.subtitle}>Select a subscription to get started with LAMB</Text>
 
       <View style={styles.plansContainer}>
-        {tiers.map((tier) => (
-          <TouchableOpacity
-            key={tier.id}
-            style={[
-              styles.planCard,
-              selectedTier === tier.id && styles.planCardSelected
-            ]}
-            onPress={() => setSelectedTier(tier.id)}
-          >
-            <Text style={styles.planName}>{tier.name}</Text>
-            <Text style={styles.planDescription}>{tier.description}</Text>
-            <View style={styles.priceContainer}>
-              <Text style={styles.price}>${tier.price}</Text>
-              <Text style={styles.period}>/{tier.period}</Text>
-            </View>
-            {selectedTier === tier.id && (
-              <View style={styles.checkmark}>
-                <Text style={styles.checkmarkText}>✓</Text>
+        {tiers.map((tier) => {
+          const localPrice = convertPrice(tier.price);
+          return (
+            <TouchableOpacity
+              key={tier.id}
+              style={[
+                styles.planCard,
+                selectedTier === tier.id && styles.planCardSelected
+              ]}
+              onPress={() => setSelectedTier(tier.id)}
+            >
+              <Text style={styles.planName}>{tier.name}</Text>
+              <Text style={styles.planDescription}>{tier.description}</Text>
+              <View style={styles.priceContainer}>
+                <Text style={styles.price}>{localPrice.symbol}{localPrice.amount}</Text>
+                <Text style={styles.period}>/{tier.period}</Text>
               </View>
-            )}
-          </TouchableOpacity>
-        ))}
+              {selectedTier === tier.id && (
+                <View style={styles.checkmark}>
+                  <Text style={styles.checkmarkText}>✓</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       <TouchableOpacity

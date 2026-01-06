@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, Modal } from 'react-native';
 import { useData } from '../context/DataContext';
+import { useStripe } from '@stripe/stripe-react-native';
+import { API_URL } from '../config/stripe';
 
 export default function SubscriptionManager() {
-  const { currentUser, subscriptionTiers, updateSubscription } = useData();
-  const [selectedTier, setSelectedTier] = useState(currentUser?.subscription?.tier || null);
+  const { currentUser, subscriptionTiers, updateSubscription, calculateProration, getFeaturesComparison, convertPrice, setCancelAtPeriodEnd } = useData();
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
+  const [selectedTier, setSelectedTier] = useState(currentUser?.subscription?.tier.toUpperCase() || null);
   const [submitting, setSubmitting] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmData, setConfirmData] = useState(null);
 
   if (!currentUser?.subscription) {
     return (
@@ -19,29 +24,235 @@ export default function SubscriptionManager() {
   const tiers = Object.values(subscriptionTiers);
   const renewalDate = new Date(currentUser.subscription.renewalDate);
 
-  const handleChangePlan = () => {
-    if (!selectedTier || selectedTier === currentUser.subscription.tier) {
+  const initializePaymentSheet = async (tier) => {
+    try {
+      const response = await fetch(`${API_URL}/create-payment-intent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: Math.round(subscriptionTiers[tier].price * 100),
+          currency: 'usd',
+          email: currentUser.email,
+          subscriptionTier: tier,
+        }),
+      });
+
+      const { paymentIntent, ephemeralKey, customer } = await response.json();
+
+      const { error } = await initPaymentSheet({
+        merchantDisplayName: 'LAMB',
+        customerId: customer,
+        customerEphemeralKeySecret: ephemeralKey,
+        paymentIntentClientSecret: paymentIntent,
+        allowsDelayedPaymentMethods: true,
+      });
+
+      if (error) {
+        Alert.alert('Error', error.message);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      Alert.alert('Error', 'Unable to initialize payment. Please try again.');
+      console.error(error);
+      return false;
+    }
+  };
+
+  const handleChangePlan = async () => {
+    console.log('handleChangePlan called', { selectedTier, currentTier: currentUser.subscription.tier });
+    
+    if (!selectedTier || selectedTier === currentUser.subscription.tier.toUpperCase()) {
       Alert.alert('Select Plan', 'Please choose a different plan');
       return;
     }
 
-    Alert.alert(
-      'Change Plan',
-      `Switch to ${subscriptionTiers[selectedTier].name}? Changes take effect next billing cycle.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Change',
-          style: 'default',
-          onPress: () => {
-            setSubmitting(true);
-            const res = updateSubscription(selectedTier);
+    const newTier = subscriptionTiers[selectedTier];
+    const isUpgrade = newTier.price > currentTier.price;
+    const prorationData = calculateProration(currentUser.subscription.tier, selectedTier);
+    const { featuresLost, featuresGained } = getFeaturesComparison(currentUser.subscription.tier, selectedTier);
+
+    console.log('Plan change details:', { newTier, isUpgrade, prorationData });
+
+    // Show confirmation modal with detailed proration info
+    setConfirmData({
+      isUpgrade,
+      newTierName: newTier.name,
+      prorationData,
+      featuresLost,
+      featuresGained,
+      selectedTier
+    });
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmChange = async () => {
+    setShowConfirmModal(false);
+    setSubmitting(true);
+
+    try {
+      if (confirmData.isUpgrade) {
+        // For upgrades, we need to collect payment for the prorated amount
+        const response = await fetch(`${API_URL}/update-subscription`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            subscriptionId: currentUser.subscription.stripeSubscriptionId,
+            newSubscriptionTier: confirmData.selectedTier,
+          }),
+        });
+
+        const { requiresPayment, clientSecret, ephemeralKey, customer, invoiceId } = await response.json();
+
+        if (requiresPayment && clientSecret) {
+          console.log('Processing upgrade payment...');
+          console.log('Client secret received:', clientSecret?.substring(0, 20) + '...');
+          console.log('Customer ID:', customer);
+          console.log('Invoice ID:', invoiceId);
+          
+          // Initialize payment sheet for proration payment
+          const { error: initError } = await initPaymentSheet({
+            merchantDisplayName: 'LAMB',
+            customerId: customer,
+            customerEphemeralKeySecret: ephemeralKey,
+            paymentIntentClientSecret: clientSecret,
+            allowsDelayedPaymentMethods: true,
+          });
+
+          if (initError) {
+            console.error('Init payment sheet error:', JSON.stringify(initError));
+            Alert.alert('Error', initError.message);
             setSubmitting(false);
-            if (res.ok) {
-              Alert.alert('Success', 'Your plan has been updated');
-            } else {
-              Alert.alert('Error', res.message);
+            return;
+          }
+
+          console.log('Payment sheet initialized successfully');
+
+          // Present payment sheet
+          console.log('About to present payment sheet...');
+          const { error: presentError } = await presentPaymentSheet();
+          console.log('presentPaymentSheet completed');
+          console.log('Present error:', JSON.stringify(presentError, null, 2));
+          
+          if (presentError) {
+            console.error('Payment sheet error details:', JSON.stringify(presentError));
+            console.error('Error code:', presentError.code);
+            console.error('Error message:', presentError.message);
+            console.error('Error type:', presentError.type);
+            Alert.alert('Payment error', `${presentError.message}\n\nPlease try again or contact support.`);
+            setSubmitting(false);
+            return;
+          }
+          
+          console.log('Payment sheet closed successfully, verifying with invoiceId:', invoiceId);
+          
+          // Verify the payment actually went through
+          try {
+            const confirmResponse = await fetch(`${API_URL}/confirm-payment`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                invoiceId: invoiceId,
+              }),
+            });
+            
+            console.log('Confirm response status:', confirmResponse.status);
+            const confirmData = await confirmResponse.json();
+            console.log('Confirm payment data:', JSON.stringify(confirmData));
+            
+            if (!confirmData.success) {
+              Alert.alert('Payment failed', 
+                `Payment status: ${confirmData.status}. ${confirmData.error || 'Please try again.'}`);
+              setSubmitting(false);
+              return;
             }
+            
+            console.log('Payment verified successfully');
+          } catch (confirmError) {
+            console.error('Error confirming payment:', confirmError);
+            Alert.alert('Error', 'Failed to verify payment. Please contact support.');
+            setSubmitting(false);
+            return;
+          }
+        }
+
+        // Update local subscription
+        console.log('Updating subscription in database...');
+        const res = updateSubscription(confirmData.selectedTier, currentUser.subscription.stripeSubscriptionId);
+        setSubmitting(false);
+        
+        if (res.ok) {
+          console.log('Subscription updated successfully');
+          setSelectedTier(confirmData.selectedTier);
+          Alert.alert('Success', `Your plan has been upgraded to ${confirmData.newTierName}!`);
+        } else {
+          console.log('Subscription update failed:', res.message);
+          Alert.alert('Error', res.message);
+        }
+      } else {
+        // For downgrades, schedule the change for the next billing cycle
+        if (currentUser.subscription.stripeSubscriptionId) {
+          const response = await fetch(`${API_URL}/schedule-subscription-change`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              subscriptionId: currentUser.subscription.stripeSubscriptionId,
+              newSubscriptionTier: confirmData.selectedTier,
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to schedule downgrade');
+          }
+        } else {
+          // No Stripe subscription yet (seeded users), just update locally
+          console.log('No Stripe subscription found, updating locally only');
+          const res = updateSubscription(confirmData.selectedTier, null);
+          if (!res.ok) {
+            throw new Error(res.message);
+          }
+        }
+
+        setSubmitting(false);
+
+        Alert.alert(
+          'Success', 
+          `Your plan will change to ${confirmData.newTierName} on ${confirmData.prorationData.nextBillDate.toLocaleDateString()}.`
+        );
+      }
+    } catch (error) {
+      console.error('Error changing subscription:', error);
+      Alert.alert('Error', 'Unable to change subscription. Please try again.');
+      setSubmitting(false);
+    }
+  };
+
+  const handleCancelSubscription = () => {
+    Alert.alert(
+      'Cancel Subscription',
+      'Are you sure you want to cancel? Your plan will remain active until the end of the current billing period.',
+      [
+        { text: 'Keep Plan', style: 'cancel' },
+        {
+          text: 'Cancel Subscription',
+          style: 'destructive',
+          onPress: () => {
+            setCancelAtPeriodEnd(true);
+            setSelectedTier(null);
+            Alert.alert(
+              'Subscription Cancelled',
+              `Your ${currentTier.name} plan will remain active until ${renewalDate.toLocaleDateString()}.`
+            );
+            // In a real app, you would call a backend endpoint to cancel the Stripe subscription
           }
         }
       ]
@@ -56,57 +267,200 @@ export default function SubscriptionManager() {
         <Text style={styles.currentPlanLabel}>Current Plan</Text>
         <Text style={styles.currentPlanName}>{currentTier?.name || 'Unknown'}</Text>
         <Text style={styles.currentPlanPrice}>
-          ${currentTier?.price || 0}/{currentTier?.period || 'month'}
+          {convertPrice(currentTier?.price || 0).symbol}{convertPrice(currentTier?.price || 0).amount}/{currentTier?.period || 'month'}
         </Text>
         <Text style={styles.renewalText}>
-          Renews on {renewalDate.toLocaleDateString()}
+          {currentUser.subscription.cancelAtPeriodEnd 
+            ? `Cancels on ${renewalDate.toLocaleDateString()}`
+            : `Renews on ${renewalDate.toLocaleDateString()}`
+          }
         </Text>
       </View>
 
       <Text style={styles.sectionTitle}>Change Your Plan</Text>
 
       <View style={styles.plansContainer}>
-        {tiers.map((tier) => (
-          <TouchableOpacity
-            key={tier.id}
-            style={[
-              styles.planCard,
-              selectedTier === tier.id && styles.planCardSelected,
-              currentUser.subscription.tier === tier.id && styles.planCardCurrent
-            ]}
-            onPress={() => setSelectedTier(tier.id)}
-          >
-            <Text style={styles.planName}>{tier.name}</Text>
-            <Text style={styles.planDescription}>{tier.description}</Text>
-            <View style={styles.priceContainer}>
-              <Text style={styles.price}>${tier.price}</Text>
-              <Text style={styles.period}>/{tier.period}</Text>
-            </View>
-            {selectedTier === tier.id && (
-              <View style={styles.checkmark}>
-                <Text style={styles.checkmarkText}>✓</Text>
+        {tiers.map((tier) => {
+          // Only treat as "current/disabled" if it's the active subscription AND not cancelled
+          const isCurrent = currentUser.subscription.tier.toUpperCase() === tier.id && !currentUser.subscription.cancelAtPeriodEnd;
+          const localPrice = convertPrice(tier.price);
+          return (
+            <TouchableOpacity
+              key={tier.id}
+              style={[
+                styles.planCard,
+                selectedTier === tier.id && styles.planCardSelected,
+                isCurrent && styles.planCardCurrent,
+                isCurrent && styles.planCardDisabled
+              ]}
+              onPress={() => !isCurrent && setSelectedTier(tier.id)}
+              disabled={isCurrent}
+              activeOpacity={isCurrent ? 1 : 0.7}
+            >
+              <Text style={styles.planName}>{tier.name}</Text>
+              <Text style={styles.planDescription}>{tier.description}</Text>
+              <View style={styles.priceContainer}>
+                <Text style={styles.price}>{localPrice.symbol}{localPrice.amount}</Text>
+                <Text style={styles.period}>/{tier.period}</Text>
               </View>
-            )}
-            {currentUser.subscription.tier === tier.id && (
-              <View style={styles.currentBadge}>
-                <Text style={styles.currentBadgeText}>Current</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        ))}
+              {selectedTier === tier.id && !isCurrent && (
+                <View style={styles.checkmark}>
+                  <Text style={styles.checkmarkText}>✓</Text>
+                </View>
+              )}
+              {isCurrent && (
+                <View style={styles.currentBadge}>
+                  <Text style={styles.currentBadgeText}>Current Plan</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
-      {selectedTier !== currentUser.subscription.tier && (
+      {selectedTier && selectedTier !== currentUser.subscription.tier.toUpperCase() && (
         <TouchableOpacity
           style={[styles.button, submitting && styles.buttonDisabled]}
           onPress={handleChangePlan}
           disabled={submitting}
         >
           <Text style={styles.buttonText}>
-            {submitting ? 'Updating…' : 'Update Plan'}
+            {submitting 
+              ? 'Processing…' 
+              : subscriptionTiers[selectedTier].price > currentTier.price 
+                ? `Upgrade to ${subscriptionTiers[selectedTier].name}` 
+                : `Change to ${subscriptionTiers[selectedTier].name}`
+            }
           </Text>
         </TouchableOpacity>
       )}
+
+      {!currentUser.subscription.cancelAtPeriodEnd && (
+        <TouchableOpacity
+          style={styles.cancelButton}
+          onPress={handleCancelSubscription}
+        >
+          <Text style={styles.cancelButtonText}>Cancel Subscription</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Confirmation Modal */}
+      <Modal
+        visible={showConfirmModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowConfirmModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <ScrollView contentContainerStyle={styles.modalContent}>
+            <Text style={styles.modalTitle}>Confirm Plan Change</Text>
+
+            {confirmData && (
+              <>
+                {/* Features section */}
+                {confirmData.featuresLost && confirmData.featuresLost.length > 0 && (
+                  <View style={styles.featureSection}>
+                    <Text style={styles.featureSectionTitle}>Features You'll Lose</Text>
+                    {confirmData.featuresLost.map((feature, idx) => (
+                      <Text key={idx} style={styles.featureLost}>
+                        • {feature}
+                      </Text>
+                    ))}
+                  </View>
+                )}
+
+                {confirmData.featuresGained && confirmData.featuresGained.length > 0 && (
+                  <View style={styles.featureSection}>
+                    <Text style={styles.featureSectionTitle}>Features You'll Gain</Text>
+                    {confirmData.featuresGained.map((feature, idx) => (
+                      <Text key={idx} style={styles.featureGained}>
+                        ✓ {feature}
+                      </Text>
+                    ))}
+                  </View>
+                )}
+
+                {/* Pricing Details */}
+                <View style={styles.pricingSection}>
+                  <Text style={styles.pricingSectionTitle}>Billing Details</Text>
+
+                  {confirmData.isUpgrade ? (
+                    <>
+                      {confirmData.prorationData.chargeNow > 0 && (
+                        <View style={styles.pricingRow}>
+                          <Text style={styles.pricingLabel}>You'll be charged today:</Text>
+                          <Text style={styles.pricingAmount}>
+                            {convertPrice(confirmData.prorationData.chargeNow).symbol}{convertPrice(confirmData.prorationData.chargeNow).amount}
+                          </Text>
+                        </View>
+                      )}
+                      {confirmData.prorationData.chargeNow === 0 && (
+                        <View style={styles.pricingRow}>
+                          <Text style={styles.pricingLabel}>No additional charge today</Text>
+                        </View>
+                      )}
+                      <View style={styles.pricingDivider} />
+                      <View style={styles.pricingRow}>
+                        <Text style={styles.pricingLabel}>Your next bill:</Text>
+                        <Text style={styles.pricingAmount}>
+                          {convertPrice(confirmData.prorationData.nextBillAmount).symbol}{convertPrice(confirmData.prorationData.nextBillAmount).amount}
+                        </Text>
+                      </View>
+                      <View style={styles.pricingRow}>
+                        <Text style={styles.pricingLabel}>Next billing date:</Text>
+                        <Text style={styles.pricingValue}>
+                          {confirmData.prorationData.nextBillDate.toLocaleDateString()}
+                        </Text>
+                      </View>
+                      <View style={styles.effectiveRow}>
+                        <Text style={styles.effectiveLabel}>⚡ Changes take effect immediately</Text>
+                      </View>
+                    </>
+                  ) : (
+                    <>
+                      <View style={styles.pricingRow}>
+                        <Text style={styles.pricingLabel}>Your next bill:</Text>
+                        <Text style={styles.pricingAmount}>
+                          {convertPrice(confirmData.prorationData.nextBillAmount).symbol}{convertPrice(confirmData.prorationData.nextBillAmount).amount}
+                        </Text>
+                      </View>
+                      <View style={styles.pricingRow}>
+                        <Text style={styles.pricingLabel}>Change effective date:</Text>
+                        <Text style={styles.pricingValue}>
+                          {confirmData.prorationData.nextBillDate.toLocaleDateString()}
+                        </Text>
+                      </View>
+                      <View style={styles.effectiveRow}>
+                        <Text style={styles.effectiveLabel}>📅 Changes take effect at next billing cycle</Text>
+                      </View>
+                    </>
+                  )}
+                </View>
+
+                {/* Action Buttons */}
+                <View style={styles.modalButtonContainer}>
+                  <TouchableOpacity
+                    style={styles.modalCancelButton}
+                    onPress={() => setShowConfirmModal(false)}
+                  >
+                    <Text style={styles.modalCancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.modalConfirmButton, submitting && styles.buttonDisabled]}
+                    onPress={handleConfirmChange}
+                    disabled={submitting}
+                  >
+                    <Text style={styles.modalConfirmButtonText}>
+                      {submitting ? 'Processing…' : confirmData.isUpgrade ? 'Upgrade & Pay' : 'Confirm Change'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -177,6 +531,9 @@ const styles = StyleSheet.create({
     borderColor: '#16a34a',
     borderWidth: 1,
   },
+  planCardDisabled: {
+    opacity: 0.6,
+  },
   planName: {
     fontSize: 18,
     fontWeight: '700',
@@ -243,6 +600,149 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   buttonText: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  cancelButton: {
+    backgroundColor: 'transparent',
+    borderColor: '#dc2626',
+    borderWidth: 1,
+    padding: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  cancelButtonText: {
+    color: '#dc2626',
+    fontWeight: '700',
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#0b0b0f',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 40,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#fff',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  featureSection: {
+    backgroundColor: '#11121a',
+    borderColor: '#1f2738',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  featureSectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 12,
+  },
+  featureLost: {
+    fontSize: 13,
+    color: '#dc2626',
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  featureGained: {
+    fontSize: 13,
+    color: '#16a34a',
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  pricingSection: {
+    backgroundColor: '#11121a',
+    borderColor: '#1f2738',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  pricingSectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 12,
+  },
+  pricingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  pricingLabel: {
+    fontSize: 13,
+    color: '#9aa1b5',
+    fontWeight: '500',
+  },
+  pricingValue: {
+    fontSize: 13,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  pricingAmount: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#2563eb',
+  },
+  pricingDivider: {
+    height: 1,
+    backgroundColor: '#1f2738',
+    marginVertical: 12,
+  },
+  effectiveRow: {
+    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+    borderColor: '#2563eb',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 12,
+  },
+  effectiveLabel: {
+    fontSize: 13,
+    color: '#2563eb',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  modalButtonContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  modalCancelButton: {
+    flex: 1,
+    backgroundColor: 'transparent',
+    borderColor: '#1f2738',
+    borderWidth: 1,
+    padding: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  modalCancelButtonText: {
+    color: '#9aa1b5',
+    fontWeight: '700',
+  },
+  modalConfirmButton: {
+    flex: 1,
+    backgroundColor: '#2563eb',
+    padding: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  modalConfirmButtonText: {
     color: '#fff',
     fontWeight: '700',
   },

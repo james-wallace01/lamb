@@ -3,57 +3,352 @@
 // Run: node server.js
 
 const express = require('express');
-const stripe = require('stripe')('sk_test_YOUR_SECRET_KEY_HERE'); // Replace with your Stripe secret key
 const cors = require('cors');
 require('dotenv').config();
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
-// Create Payment Intent endpoint
-app.post('/create-payment-intent', async (req, res) => {
+// Price amounts in cents
+const PRICE_MAP = {
+  BASIC: 499,
+  PREMIUM: 999,
+  PRO: 1999
+};
+
+// Cache for Stripe Price IDs
+let stripePriceIds = {};
+
+// Initialize Stripe Products and Prices
+async function initializeStripePrices() {
   try {
-    const { amount, currency, email, subscriptionTier } = req.body;
-
-    // Create or retrieve customer
-    const customers = await stripe.customers.list({
-      email: email,
-      limit: 1
-    });
-
-    let customer;
-    if (customers.data.length > 0) {
-      customer = customers.data[0];
-    } else {
-      customer = await stripe.customers.create({
-        email: email,
-        metadata: {
-          subscriptionTier: subscriptionTier
-        }
+    console.log('Initializing Stripe products and prices...');
+    
+    for (const [tier, amount] of Object.entries(PRICE_MAP)) {
+      const products = await stripe.products.search({
+        query: `name:'LAMB ${tier} Plan'`,
       });
-    }
 
-    // Create ephemeral key
+      let product;
+      if (products.data.length > 0) {
+        product = products.data[0];
+      } else {
+        product = await stripe.products.create({
+          name: `LAMB ${tier} Plan`,
+          description: `${tier} subscription plan`,
+        });
+      }
+
+      const prices = await stripe.prices.list({
+        product: product.id,
+        active: true,
+      });
+
+      let price;
+      const existingPrice = prices.data.find(p => p.unit_amount === amount && p.recurring?.interval === 'month');
+      
+      if (existingPrice) {
+        price = existingPrice;
+      } else {
+        price = await stripe.prices.create({
+          product: product.id,
+          unit_amount: amount,
+          currency: 'usd',
+          recurring: { interval: 'month' },
+        });
+      }
+
+      stripePriceIds[tier] = price.id;
+    }
+    
+    console.log('Stripe prices ready:', stripePriceIds);
+  } catch (error) {
+    console.error('Error initializing Stripe prices:', error);
+  }
+}
+
+async function getOrCreateCustomer(email, name) {
+  const customers = await stripe.customers.list({ email, limit: 1 });
+  if (customers.data.length > 0) return customers.data[0];
+  return await stripe.customers.create({ email, name });
+}
+
+app.post('/create-subscription', async (req, res) => {
+  try {
+    const { email, name, subscriptionTier } = req.body;
+    const customer = await getOrCreateCustomer(email, name);
     const ephemeralKey = await stripe.ephemeralKeys.create(
       { customer: customer.id },
       { apiVersion: '2024-11-20.acacia' }
     );
 
-    // Create payment intent
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: amount,
-      currency: currency,
+    const subscription = await stripe.subscriptions.create({
       customer: customer.id,
-      metadata: {
-        subscriptionTier: subscriptionTier,
-        email: email
+      items: [{ price: stripePriceIds[subscriptionTier] }],
+      payment_behavior: 'default_incomplete',
+      payment_settings: { 
+        save_default_payment_method: 'on_subscription',
+        payment_method_types: ['card']
       },
-      automatic_payment_methods: {
-        enabled: true,
+      expand: ['latest_invoice.payment_intent'],
+      metadata: { tier: subscriptionTier }
+    });
+
+    if (!subscription.latest_invoice?.payment_intent?.client_secret) {
+      throw new Error('Failed to create subscription with payment intent');
+    }
+
+    res.json({
+      subscriptionId: subscription.id,
+      clientSecret: subscription.latest_invoice.payment_intent.client_secret,
+      ephemeralKey: ephemeralKey.secret,
+      customer: customer.id,
+    });
+  } catch (error) {
+    console.error('Error creating subscription:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/update-subscription', async (req, res) => {
+  try {
+    const { subscriptionId, newSubscriptionTier } = req.body;
+    console.log(`Updating subscription ${subscriptionId} to ${newSubscriptionTier}`);
+    
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    
+    const updatedSubscription = await stripe.subscriptions.update(subscriptionId, {
+      items: [{
+        id: subscription.items.data[0].id,
+        price: stripePriceIds[newSubscriptionTier],
+      }],
+      proration_behavior: 'always_invoice',
+      payment_behavior: 'default_incomplete',
+      payment_settings: {
+        payment_method_types: ['card'],
+        save_default_payment_method: 'on_subscription'
       },
+      metadata: { tier: newSubscriptionTier }
+    });
+
+    if (updatedSubscription.latest_invoice) {
+      let invoice = await stripe.invoices.retrieve(updatedSubscription.latest_invoice, {
+        expand: ['payment_intent']
+      });
+      
+      console.log(`Invoice status: ${invoice.status}, amount_due: ${invoice.amount_due}`);
+      
+      if (invoice.amount_due > 0) {
+        // If invoice is in draft, we need to finalize it to get a payment intent
+        // But we set collection_method to prevent automatic charge attempt
+        if (invoice.status === 'draft') {
+          console.log('Finalizing invoice with manual collection...');
+          
+          // Update invoice to prevent automatic charge
+          await stripe.invoices.update(invoice.id, {
+            collection_method: 'charge_automatically',
+            auto_advance: false  // Prevents automatic payment attempt
+          });
+          
+          // Now finalize to create payment intent
+          invoice = await stripe.invoices.finalize(invoice.id);
+          
+          // Re-retrieve with payment_intent expanded
+          invoice = await stripe.invoices.retrieve(invoice.id, {
+            expand: ['payment_intent']
+          });
+        }
+        
+        if (invoice.payment_intent) {
+          console.log(`Payment intent status: ${invoice.payment_intent.status}`);
+          console.log(`Payment intent client_secret exists: ${!!invoice.payment_intent.client_secret}`);
+          
+          const ephemeralKey = await stripe.ephemeralKeys.create(
+            { customer: subscription.customer },
+            { apiVersion: '2024-11-20.acacia' }
+          );
+          
+          return res.json({
+            requiresPayment: true,
+            clientSecret: invoice.payment_intent.client_secret,
+            ephemeralKey: ephemeralKey.secret,
+            customer: subscription.customer,
+            invoiceId: invoice.id,
+          });
+        }
+      }
+    }
+
+    console.log('No payment required for subscription update');
+    res.json({ requiresPayment: false, subscriptionId: updatedSubscription.id });
+  } catch (error) {
+    console.error('Error updating subscription:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/confirm-payment', async (req, res) => {
+  try {
+    const { invoiceId } = req.body;
+    
+    // Retrieve the invoice to get the payment intent
+    const invoice = await stripe.invoices.retrieve(invoiceId, {
+      expand: ['payment_intent']
+    });
+    
+    if (!invoice.payment_intent) {
+      return res.json({ success: false, status: 'no_payment' });
+    }
+    
+    const paymentIntent = invoice.payment_intent;
+    
+    console.log('Payment intent status:', paymentIntent.status, 'Invoice status:', invoice.status);
+    
+    // Check if payment succeeded
+    if (paymentIntent.status === 'succeeded') {
+      // Payment succeeded, mark invoice as paid if needed
+      if (invoice.status === 'open') {
+        await stripe.invoices.pay(invoiceId);
+      }
+      return res.json({ success: true, status: 'succeeded' });
+    }
+    
+    // Check for other statuses
+    if (paymentIntent.status === 'processing') {
+      return res.json({ success: false, status: 'processing' });
+    }
+    
+    if (paymentIntent.status === 'requires_payment_method' || paymentIntent.status === 'requires_action') {
+      return res.json({ success: false, status: 'requires_payment_method' });
+    }
+    
+    // Payment failed or cancelled
+    return res.json({ success: false, status: paymentIntent.status, error: 'Payment did not complete' });
+  } catch (error) {
+    console.error('Error confirming payment:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/confirm-subscription-payment', async (req, res) => {
+  try {
+    const { subscriptionId } = req.body;
+    
+    // Retrieve the subscription to get the latest invoice
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
+      expand: ['latest_invoice.payment_intent']
+    });
+    
+    if (!subscription.latest_invoice) {
+      return res.json({ success: false, status: 'no_invoice' });
+    }
+    
+    const invoice = subscription.latest_invoice;
+    const paymentIntent = invoice.payment_intent;
+    
+    if (!paymentIntent) {
+      return res.json({ success: false, status: 'no_payment_intent' });
+    }
+    
+    console.log('Subscription payment intent status:', paymentIntent.status, 'Invoice status:', invoice.status);
+    
+    // Check if payment succeeded
+    if (paymentIntent.status === 'succeeded') {
+      return res.json({ success: true, status: 'succeeded' });
+    }
+    
+    // Check for other statuses
+    if (paymentIntent.status === 'processing') {
+      return res.json({ success: false, status: 'processing' });
+    }
+    
+    if (paymentIntent.status === 'requires_payment_method' || paymentIntent.status === 'requires_action') {
+      return res.json({ success: false, status: 'requires_payment_method' });
+    }
+    
+    // Payment failed or cancelled
+    return res.json({ success: false, status: paymentIntent.status, error: 'Payment did not complete' });
+  } catch (error) {
+    console.error('Error confirming subscription payment:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/schedule-subscription-change', async (req, res) => {
+  try {
+    const { subscriptionId, newSubscriptionTier } = req.body;
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    
+    const schedule = await stripe.subscriptionSchedules.create({
+      from_subscription: subscriptionId,
+    });
+
+    const updatedSchedule = await stripe.subscriptionSchedules.update(schedule.id, {
+      phases: [
+        {
+          items: [{ price: subscription.items.data[0].price.id }],
+          start_date: schedule.phases[0].start_date,
+          end_date: subscription.current_period_end,
+        },
+        {
+          items: [{ price: stripePriceIds[newSubscriptionTier] }],
+          start_date: subscription.current_period_end,
+        },
+      ],
+      end_behavior: 'release',
+    });
+
+    res.json({
+      scheduleId: updatedSchedule.id,
+      changeDate: new Date(subscription.current_period_end * 1000),
+    });
+  } catch (error) {
+    console.error('Error scheduling subscription change:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/cancel-subscription', async (req, res) => {
+  try {
+    const { subscriptionId, immediate } = req.body;
+    if (immediate) {
+      const canceled = await stripe.subscriptions.cancel(subscriptionId);
+      res.json({ subscriptionId: canceled.id, status: 'canceled' });
+    } else {
+      const updated = await stripe.subscriptions.update(subscriptionId, {
+        cancel_at_period_end: true,
+      });
+      res.json({ 
+        subscriptionId: updated.id, 
+        status: 'canceling',
+        cancelAt: new Date(updated.current_period_end * 1000)
+      });
+    }
+  } catch (error) {
+    console.error('Error cancelling subscription:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/create-payment-intent', async (req, res) => {
+  try {
+    const { amount, currency, email, subscriptionTier } = req.body;
+    const customer = await getOrCreateCustomer(email, 'LAMB User');
+    const ephemeralKey = await stripe.ephemeralKeys.create(
+      { customer: customer.id },
+      { apiVersion: '2024-11-20.acacia' }
+    );
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount,
+      currency,
+      customer: customer.id,
+      automatic_payment_methods: { enabled: true },
+      metadata: { subscriptionTier },
     });
 
     res.json({
@@ -67,45 +362,95 @@ app.post('/create-payment-intent', async (req, res) => {
   }
 });
 
-// Webhook endpoint for Stripe events
-app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  const sig = req.headers['stripe-signature'];
-  const webhookSecret = 'whsec_YOUR_WEBHOOK_SECRET'; // Replace with your webhook secret
-
-  let event;
-
-  try {
-    event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
-  } catch (err) {
-    console.error('Webhook signature verification failed:', err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
-  }
-
-  // Handle the event
-  switch (event.type) {
-    case 'payment_intent.succeeded':
-      const paymentIntent = event.data.object;
-      console.log('PaymentIntent was successful!', paymentIntent.id);
-      // Update your database to activate subscription
-      break;
-    case 'payment_intent.payment_failed':
-      const failedPayment = event.data.object;
-      console.log('PaymentIntent failed:', failedPayment.id);
-      // Handle failed payment
-      break;
-    default:
-      console.log(`Unhandled event type ${event.type}`);
-  }
-
-  res.json({ received: true });
-});
-
-// Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', stripePrices: stripePriceIds });
 });
 
-app.listen(PORT, () => {
-  console.log(`LAMB backend server running on http://localhost:${PORT}`);
-  console.log(`Make sure to update your Stripe keys!`);
+// Get all subscriptions for cleanup
+app.get('/all-subscriptions', async (req, res) => {
+  try {
+    const subscriptions = await stripe.subscriptions.list({
+      limit: 100,
+      status: 'all'
+    });
+    
+    res.json({
+      total: subscriptions.data.length,
+      subscriptions: subscriptions.data.map(sub => ({
+        id: sub.id,
+        customer: sub.customer,
+        status: sub.status,
+        current_period_end: new Date(sub.current_period_end * 1000),
+        items: sub.items.data.map(item => ({
+          price: item.price.id,
+          quantity: item.quantity
+        }))
+      }))
+    });
+  } catch (error) {
+    console.error('Error listing subscriptions:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
+
+// Cancel all test subscriptions
+app.post('/cleanup-subscriptions', async (req, res) => {
+  try {
+    console.log('Starting subscription cleanup...');
+    const subscriptions = await stripe.subscriptions.list({
+      limit: 100,
+      status: 'all'
+    });
+    
+    const canceled = [];
+    const errors = [];
+    
+    for (const sub of subscriptions.data) {
+      try {
+        if (sub.status !== 'canceled') {
+          console.log(`Canceling subscription ${sub.id}...`);
+          await stripe.subscriptions.cancel(sub.id);
+          canceled.push(sub.id);
+        }
+      } catch (error) {
+        errors.push({ subscriptionId: sub.id, error: error.message });
+      }
+    }
+    
+    // Delete test customers
+    const customers = await stripe.customers.list({
+      limit: 100
+    });
+    
+    const deletedCustomers = [];
+    for (const customer of customers.data) {
+      try {
+        console.log(`Deleting customer ${customer.id}...`);
+        await stripe.customers.del(customer.id);
+        deletedCustomers.push(customer.id);
+      } catch (error) {
+        // Some customers may have active subscriptions, that's okay
+        console.log(`Could not delete customer ${customer.id}: ${error.message}`);
+      }
+    }
+    
+    res.json({
+      message: 'Cleanup completed',
+      canceledSubscriptions: canceled,
+      deletedCustomers: deletedCustomers,
+      errors: errors
+    });
+  } catch (error) {
+    console.error('Error during cleanup:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+async function startServer() {
+  await initializeStripePrices();
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Backend running on http://0.0.0.0:${PORT}`);
+  });
+}
+
+startServer();

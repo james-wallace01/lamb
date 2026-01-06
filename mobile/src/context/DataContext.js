@@ -6,11 +6,51 @@ const STORAGE_VERSION = 5;
 const DEFAULT_PROFILE_IMAGE = 'http://192.168.7.112:3000/images/default-avatar.png';
 const DEFAULT_MEDIA_IMAGE = 'http://192.168.7.112:3000/images/collection_default.jpg';
 
-// Subscription tiers
+// Subscription tiers with features
 const SUBSCRIPTION_TIERS = {
-  BASIC: { id: 'basic', name: 'Basic', price: 4.99, period: 'month', description: 'Get started with LAMB' },
-  PREMIUM: { id: 'premium', name: 'Premium', price: 9.99, period: 'month', description: 'Advanced features' },
-  PRO: { id: 'pro', name: 'Pro', price: 19.99, period: 'month', description: 'Full access' }
+  BASIC: { 
+    id: 'BASIC', 
+    name: 'Basic', 
+    price: 4.99, 
+    period: 'month', 
+    description: 'Get started with LAMB',
+    features: [
+      'Up to 5 vaults',
+      'Basic organization tools',
+      'Email support',
+      'Mobile app access'
+    ]
+  },
+  PREMIUM: { 
+    id: 'PREMIUM', 
+    name: 'Premium', 
+    price: 9.99, 
+    period: 'month', 
+    description: 'Advanced features',
+    features: [
+      'Unlimited vaults',
+      'Advanced analytics',
+      'Priority email support',
+      'API access',
+      'Custom metadata'
+    ]
+  },
+  PRO: { 
+    id: 'PRO', 
+    name: 'Pro', 
+    price: 19.99, 
+    period: 'month', 
+    description: 'Full access',
+    features: [
+      'Unlimited everything',
+      'Advanced analytics & reports',
+      'Priority 24/7 support',
+      'API access + webhooks',
+      'Custom workflows',
+      'Team collaboration',
+      'Advanced security'
+    ]
+  }
 };
 
 const withProfileImage = (user) => user && (user.profileImage ? user : { ...user, profileImage: DEFAULT_PROFILE_IMAGE });
@@ -32,25 +72,13 @@ const migrateData = (data) => {
   return migrated;
 };
 
-const seedUsers = [
-  { id: 'u1', username: 'james', firstName: 'James', lastName: 'Wallace', email: 'james@example.com', password: 'pass123', profileImage: DEFAULT_PROFILE_IMAGE, subscription: { tier: 'pro', startDate: Date.now(), renewalDate: Date.now() + (30 * 24 * 60 * 60 * 1000) } },
-  { id: 'u2', username: 'alex', firstName: 'Alex', lastName: 'Smith', email: 'alex@example.com', password: 'pass123', profileImage: DEFAULT_PROFILE_IMAGE, subscription: { tier: 'premium', startDate: Date.now(), renewalDate: Date.now() + (30 * 24 * 60 * 60 * 1000) } }
-];
+const seedUsers = [];
 
-const seedVaults = [
-  { id: 'v1', name: 'Example Vault', ownerId: 'u1', sharedWith: [], createdAt: Date.now(), viewedAt: Date.now(), editedAt: Date.now(), heroImage: DEFAULT_MEDIA_IMAGE, images: [] },
-  { id: 'v2', name: 'Example Vault', ownerId: 'u2', sharedWith: [], createdAt: Date.now(), viewedAt: Date.now(), editedAt: Date.now(), heroImage: DEFAULT_MEDIA_IMAGE, images: [] }
-];
+const seedVaults = [];
 
-const seedCollections = [
-  { id: 'c1', vaultId: 'v1', name: 'Example Collection', ownerId: 'u1', sharedWith: [], createdAt: Date.now(), viewedAt: Date.now(), editedAt: Date.now(), heroImage: DEFAULT_MEDIA_IMAGE, images: [] },
-  { id: 'c2', vaultId: 'v2', name: 'Example Collection', ownerId: 'u2', sharedWith: [], createdAt: Date.now(), viewedAt: Date.now(), editedAt: Date.now(), heroImage: DEFAULT_MEDIA_IMAGE, images: [] }
-];
+const seedCollections = [];
 
-const seedAssets = [
-  { id: 'a1', collectionId: 'c1', vaultId: 'v1', title: 'Example Asset', type: 'Watch', category: 'Collectable', ownerId: 'u1', manager: 'james', createdAt: Date.now(), viewedAt: Date.now(), editedAt: Date.now(), quantity: 1, value: 7200, heroImage: DEFAULT_MEDIA_IMAGE, images: [] },
-  { id: 'a2', collectionId: 'c2', vaultId: 'v2', title: 'Example Asset', type: 'Art', category: 'Painting', ownerId: 'u2', manager: 'alex', createdAt: Date.now(), viewedAt: Date.now(), editedAt: Date.now(), quantity: 1, value: 15000, heroImage: DEFAULT_MEDIA_IMAGE, images: [] }
-];
+const seedAssets = [];
 
 const DataContext = createContext(null);
 
@@ -112,7 +140,24 @@ export function DataProvider({ children }) {
     setCurrentUser(null);
   };
 
-const register = ({ firstName, lastName, email, username, password, subscriptionTier }) => {
+  // Reset all data - useful for testing
+  const resetAllData = async () => {
+    try {
+      setCurrentUser(null);
+      setUsers([]);
+      setVaults([]);
+      setCollections([]);
+      setAssets([]);
+      await removeItem(DATA_KEY);
+      console.log('All data cleared successfully');
+      return { ok: true, message: 'All data cleared' };
+    } catch (error) {
+      console.error('Error clearing data:', error);
+      return { ok: false, message: error.message };
+    }
+  };
+
+const register = ({ firstName, lastName, email, username, password, subscriptionTier, stripeSubscriptionId, stripeCustomerId }) => {
       const exists = users.find(u => u.username === username || u.email === email);
       if (exists) return { ok: false, message: 'User already exists' };
       
@@ -131,7 +176,10 @@ const register = ({ firstName, lastName, email, username, password, subscription
         subscription: {
           tier: subscriptionTier,
           startDate: now,
-          renewalDate: now + (30 * 24 * 60 * 60 * 1000) // 30 days from now
+          renewalDate: now + (30 * 24 * 60 * 60 * 1000), // 30 days from now
+          stripeSubscriptionId: stripeSubscriptionId || null,
+          stripeCustomerId: stripeCustomerId || null,
+          cancelAtPeriodEnd: false
         }
       };
       
@@ -400,23 +448,136 @@ const register = ({ firstName, lastName, email, username, password, subscription
     return match?.role || null;
   };
 
-  const updateSubscription = (subscriptionTier) => {
+  const updateSubscription = (subscriptionTier, stripeSubscriptionId) => {
     if (!currentUser) return { ok: false, message: 'Not signed in' };
     if (!subscriptionTier) return { ok: false, message: 'Invalid subscription tier' };
+    
+    const tierUpper = subscriptionTier.toUpperCase();
+    if (!SUBSCRIPTION_TIERS[tierUpper]) {
+      return { ok: false, message: 'Invalid subscription tier' };
+    }
     
     const now = Date.now();
     const updated = {
       ...currentUser,
       subscription: {
-        tier: subscriptionTier,
+        ...currentUser.subscription,
+        tier: tierUpper,
         startDate: now,
-        renewalDate: now + (30 * 24 * 60 * 60 * 1000)
+        renewalDate: now + (30 * 24 * 60 * 60 * 1000),
+        stripeSubscriptionId: stripeSubscriptionId || currentUser.subscription?.stripeSubscriptionId,
+        cancelAtPeriodEnd: false
       }
     };
     
     setCurrentUser(updated);
     setUsers(prev => prev.map(u => u.id === currentUser.id ? updated : u));
     return { ok: true };
+  };
+
+  // Set subscription cancellation flag
+  const setCancelAtPeriodEnd = (cancelAtPeriodEnd) => {
+    if (!currentUser) return { ok: false, message: 'Not signed in' };
+    
+    const updated = {
+      ...currentUser,
+      subscription: {
+        ...currentUser.subscription,
+        cancelAtPeriodEnd: cancelAtPeriodEnd
+      }
+    };
+    
+    setCurrentUser(updated);
+    setUsers(prev => prev.map(u => u.id === currentUser.id ? updated : u));
+    return { ok: true };
+  };
+
+  // Calculate proration for plan changes
+  const calculateProration = (fromTier, toTier) => {
+    const now = Date.now();
+    const renewalDate = new Date(currentUser?.subscription?.renewalDate || now);
+    const daysRemaining = Math.max(1, Math.ceil((renewalDate - now) / (1000 * 60 * 60 * 24)));
+    const totalDaysInMonth = 30; // Approximate
+    
+    const currentPlan = SUBSCRIPTION_TIERS[fromTier.toUpperCase()];
+    const newPlan = SUBSCRIPTION_TIERS[toTier.toUpperCase()];
+    
+    // Calculate daily rates
+    const currentDailyRate = currentPlan.price / totalDaysInMonth;
+    const newDailyRate = newPlan.price / totalDaysInMonth;
+    
+    // Calculate remaining value of current plan
+    const remainingValue = currentDailyRate * daysRemaining;
+    
+    // Calculate cost of new plan for remaining period
+    const costForRemaining = newDailyRate * daysRemaining;
+    
+    // Difference owed (positive = upgrade charge, negative = credit but no refund per user spec)
+    const differenceOwed = Math.max(0, costForRemaining - remainingValue);
+    
+    // Next bill amount (full price of new plan)
+    const nextBillAmount = newPlan.price;
+    
+    // Next bill date (renewal date)
+    const nextBillDate = new Date(renewalDate);
+    
+    return {
+      daysRemaining,
+      remainingValue: parseFloat(remainingValue.toFixed(2)),
+      costForRemaining: parseFloat(costForRemaining.toFixed(2)),
+      chargeNow: parseFloat(differenceOwed.toFixed(2)),
+      nextBillAmount: nextBillAmount,
+      nextBillDate: nextBillDate,
+      isUpgrade: newPlan.price > currentPlan.price
+    };
+  };
+
+  // Get features comparison
+  const getFeaturesComparison = (fromTier, toTier) => {
+    const from = SUBSCRIPTION_TIERS[fromTier.toUpperCase()];
+    const to = SUBSCRIPTION_TIERS[toTier.toUpperCase()];
+    
+    const isUpgrade = to.price > from.price;
+    
+    // When upgrading: only gain features (no losses)
+    // When downgrading: only lose features (no gains)
+    const featuresLost = isUpgrade ? [] : from.features.filter(f => !to.features.includes(f));
+    const featuresGained = isUpgrade ? to.features.filter(f => !from.features.includes(f)) : [];
+    
+    return { featuresLost, featuresGained };
+  };
+
+  // Get currency and exchange rate based on locale
+  const getCurrencyInfo = () => {
+    const locale = Intl.DateTimeFormat().resolvedOptions().locale;
+    const currencyMap = {
+      'en-AU': { code: 'AUD', rate: 1.50 },
+      'en-GB': { code: 'GBP', rate: 0.79 },
+      'en-NZ': { code: 'NZD', rate: 1.65 },
+      'en-CA': { code: 'CAD', rate: 1.35 },
+      'en-US': { code: 'USD', rate: 1.00 },
+    };
+    
+    // Check for exact match first
+    if (currencyMap[locale]) {
+      return currencyMap[locale];
+    }
+    
+    // Check for country match (e.g., 'en-AU' or 'en_AU')
+    const country = locale.split(/[-_]/)[1]?.toUpperCase();
+    const match = Object.keys(currencyMap).find(key => key.includes(country));
+    
+    return match ? currencyMap[match] : { code: 'USD', rate: 1.00 };
+  };
+
+  // Convert price to local currency
+  const convertPrice = (usdPrice) => {
+    const { code, rate } = getCurrencyInfo();
+    return {
+      amount: (usdPrice * rate).toFixed(2),
+      currency: code,
+      symbol: code === 'USD' ? '$' : code === 'AUD' ? 'A$' : code === 'GBP' ? '£' : code === 'CAD' ? 'C$' : code === 'NZD' ? 'NZ$' : '$'
+    };
   };
 
   const value = useMemo(() => ({
@@ -433,9 +594,11 @@ const register = ({ firstName, lastName, email, username, password, subscription
     setAssets,
     login,
     logout,
+    resetAllData,
     register,
     updateCurrentUser,
     updateSubscription,
+    setCancelAtPeriodEnd,
     resetPassword,
     deleteAccount,
     addVault,
@@ -463,6 +626,11 @@ const register = ({ firstName, lastName, email, username, password, subscription
     getRoleForAsset,
       canCreateCollectionsInVault,
       canCreateAssetsInCollection,
+      updateSubscription,
+      calculateProration,
+      getFeaturesComparison,
+      convertPrice,
+      getCurrencyInfo,
   }), [loading, users, currentUser, vaults, collections, assets]);
 
   return (
