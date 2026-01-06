@@ -193,16 +193,16 @@ export default function Vault({ navigation, route }) {
   };
 
   const renderCollection = ({ item }) => (
-    <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('Collection', { collectionId: item.id })}>
+    <TouchableOpacity style={[styles.card, styles.collectionStripe]} onPress={() => navigation.navigate('Collection', { collectionId: item.id })}>
       <View style={styles.cardRow}>
         <View>
-          <Text style={styles.cardTitle}>{item.name}</Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.cardTitle}>{item.name}</Text>
+            <View style={[styles.sharedDot, (item.sharedWith || []).length > 0 ? styles.sharedDotOn : styles.sharedDotOff]} />
+          </View>
           <Text style={styles.cardSubtitle}>Collection • {new Date(item.createdAt).toLocaleDateString()}</Text>
         </View>
         <View style={styles.cardActions}>
-          <View style={[styles.typeBadge, styles.collectionBadge]}>
-            <Text style={styles.badgeText}>Collection</Text>
-          </View>
           {isOwner && (
             <TouchableOpacity
               style={styles.sharePill}
@@ -462,20 +462,20 @@ const styles = StyleSheet.create({
   subtitleDim: { color: '#7d8497' },
   subtitle: { color: '#c5c5d0' },
   card: { padding: 14, borderRadius: 10, backgroundColor: '#11121a', borderWidth: 1, borderColor: '#1f2738' },
+  collectionStripe: { borderLeftWidth: 4, borderLeftColor: '#9333ea', paddingLeft: 12 },
   cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sharePill: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 20, backgroundColor: '#22c55e', borderWidth: 2, borderColor: '#16a34a' },
-  sharePillText: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  typeBadge: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1 },
-  vaultBadge: { backgroundColor: '#172466', borderColor: '#2563eb' },
-  collectionBadge: { backgroundColor: '#552e9f', borderColor: '#9333ea' },
-  assetBadge: { backgroundColor: '#1b6b2e', borderColor: '#16a34a' },
-  badgeText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   cardTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
   cardSubtitle: { color: '#9aa1b5', marginTop: 4, fontSize: 13 },
+  sharedDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 1, borderColor: '#0f172a' },
+  sharedDotOn: { backgroundColor: '#16a34a', borderColor: '#16a34a' },
+  sharedDotOff: { backgroundColor: '#475569', borderColor: '#475569' },
   chevron: { color: '#9aa1b5', fontSize: 20, fontWeight: '700' },
   actionsRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
   actionButton: { flexGrow: 1, flexBasis: '24%', minWidth: '22%' },
+  sharePill: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 20, backgroundColor: '#22c55e', borderWidth: 2, borderColor: '#16a34a' },
+  sharePillText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   primaryButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#2563eb' },
   primaryButtonText: { color: '#fff', fontWeight: '700', textAlign: 'center' },
   secondaryButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#374151' },

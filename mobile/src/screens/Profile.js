@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, Image, ScrollView } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useData } from '../context/DataContext';
@@ -7,9 +7,15 @@ import LambHeader from '../components/LambHeader';
 const DEFAULT_AVATAR = 'https://via.placeholder.com/112?text=Profile';
 
 export default function Profile() {
-  const { currentUser, updateCurrentUser } = useData();
+  const { currentUser, updateCurrentUser, assets } = useData();
   const [draft, setDraft] = useState(currentUser || {});
   const [loading, setLoading] = useState(false);
+
+  const netWorth = useMemo(() => {
+    if (!currentUser) return 0;
+    const ownedAssets = assets.filter((a) => a.ownerId === currentUser.id);
+    return ownedAssets.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
+  }, [assets, currentUser]);
 
   useEffect(() => {
     setDraft(currentUser || {});
@@ -73,6 +79,13 @@ export default function Profile() {
                 <Text style={styles.cameraText}>📷</Text>
               </View>
             </TouchableOpacity>
+          </View>
+
+          <View style={styles.netWorthCard}>
+            <Text style={styles.netWorthLabel}>Net Worth</Text>
+            <Text style={styles.netWorthValue}>
+              ${netWorth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </Text>
           </View>
 
           <View style={styles.fieldGroup}>
@@ -141,6 +154,9 @@ const styles = StyleSheet.create({
   avatar: { width: 112, height: 112, borderRadius: 56, borderWidth: 1, borderColor: '#1f2738' },
   cameraBadge: { position: 'absolute', bottom: 6, right: 6, backgroundColor: '#2563eb', borderRadius: 14, paddingHorizontal: 8, paddingVertical: 4 },
   cameraText: { fontSize: 16 },
+  netWorthCard: { marginBottom: 16, padding: 12, borderRadius: 12, backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1 },
+  netWorthLabel: { color: '#9aa1b5', fontSize: 12, marginBottom: 4, fontWeight: '600' },
+  netWorthValue: { color: '#fff', fontSize: 18, fontWeight: '700' },
   fieldGroup: { marginBottom: 12 },
   label: { color: '#9aa1b5', marginBottom: 4, fontWeight: '600', fontSize: 13 },
   input: { backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, borderRadius: 10, padding: 12, color: '#fff' },

@@ -16,16 +16,16 @@ export default function Home({ navigation }) {
   const sharedVaults = useMemo(() => vaults.filter((v) => v.ownerId !== currentUser?.id && (v.sharedWith || []).some(sw => sw.userId === currentUser?.id)), [vaults, currentUser]);
 
   const renderVault = (item) => (
-    <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('Vault', { vaultId: item.id })}>
+    <TouchableOpacity style={[styles.card, styles.vaultStripe]} onPress={() => navigation.navigate('Vault', { vaultId: item.id })}>
       <View style={styles.cardRow}>
         <View>
-          <Text style={styles.cardTitle}>{item.name}</Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.cardTitle}>{item.name}</Text>
+            <View style={[styles.sharedDot, (item.sharedWith || []).length > 0 ? styles.sharedDotOn : styles.sharedDotOff]} />
+          </View>
           <Text style={styles.cardSubtitle}>Vault • {new Date(item.createdAt).toLocaleDateString()}</Text>
         </View>
         <View style={styles.cardActions}>
-          <View style={[styles.typeBadge, styles.vaultBadge]}>
-            <Text style={styles.badgeText}>Vault</Text>
-          </View>
           {item.ownerId === currentUser?.id && (
             <TouchableOpacity
               style={styles.sharePill}
@@ -49,13 +49,15 @@ export default function Home({ navigation }) {
         <View style={styles.headerRow}>
           <Text style={styles.title}>Home</Text>
           <View style={styles.headerActions}>
-            {currentUser?.profileImage ? (
-              <Image source={{ uri: currentUser.profileImage }} style={styles.avatar} />
-            ) : (
-              <View style={[styles.avatar, styles.avatarFallback]}>
-                <Text style={styles.avatarFallbackText}>?</Text>
-              </View>
-            )}
+            <TouchableOpacity onPress={() => navigation.navigate('Profile')} activeOpacity={0.8}>
+              {currentUser?.profileImage ? (
+                <Image source={{ uri: currentUser.profileImage }} style={styles.avatar} />
+              ) : (
+                <View style={[styles.avatar, styles.avatarFallback]}>
+                  <Text style={styles.avatarFallbackText}>?</Text>
+                </View>
+              )}
+            </TouchableOpacity>
             <TouchableOpacity style={styles.secondaryButton} onPress={logout}>
               <Text style={styles.secondaryText}>Sign out</Text>
             </TouchableOpacity>
@@ -150,10 +152,15 @@ const styles = StyleSheet.create({
   quickTitle: { color: '#e5e7f0', fontWeight: '700', fontSize: 16 },
   quickMeta: { color: '#9aa1b5', fontSize: 12 },
   card: { padding: 14, borderRadius: 10, backgroundColor: '#11121a', borderWidth: 1, borderColor: '#1f2738' },
+  vaultStripe: { borderLeftWidth: 4, borderLeftColor: '#2563eb', paddingLeft: 12 },
   cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   cardTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
   cardSubtitle: { color: '#9aa1b5', marginTop: 4, fontSize: 13 },
+  sharedDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 1, borderColor: '#0f172a' },
+  sharedDotOn: { backgroundColor: '#16a34a', borderColor: '#16a34a' },
+  sharedDotOff: { backgroundColor: '#475569', borderColor: '#475569' },
   chevron: { color: '#9aa1b5', fontSize: 20, fontWeight: '700' },
   separator: { height: 12 },
   secondaryButton: { paddingVertical: 8, paddingHorizontal: 10, borderRadius: 10, borderWidth: 1, borderColor: '#26344a', backgroundColor: '#1b2535' },
@@ -161,11 +168,6 @@ const styles = StyleSheet.create({
   sharePill: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 20, backgroundColor: '#22c55e', borderWidth: 2, borderColor: '#16a34a' },
   sharePillText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 
-  typeBadge: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1 },
-  vaultBadge: { backgroundColor: '#172466', borderColor: '#2563eb' },
-  collectionBadge: { backgroundColor: '#552e9f', borderColor: '#9333ea' },
-  assetBadge: { backgroundColor: '#1b6b2e', borderColor: '#16a34a' },
-  badgeText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   scrollGap: { gap: 16 },
   sectionHeader: { marginTop: 8, marginBottom: 8 },
   sectionTitle: { color: '#e5e7f0', fontSize: 18, fontWeight: '700' },

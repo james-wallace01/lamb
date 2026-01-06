@@ -373,7 +373,12 @@ export default function Asset({ route, navigation }) {
             </Text>
             <Text style={styles.metadataRow}>
               <Text style={styles.metadataLabel}>Value:</Text>{' '}
-              ${asset.value ? parseFloat(asset.value).toFixed(2) : '0.00'}
+              {(() => {
+                const v = parseFloat(asset.value);
+                return Number.isFinite(v)
+                  ? `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : '$0.00';
+              })()}
             </Text>
           </View>
         )}
