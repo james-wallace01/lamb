@@ -15,7 +15,7 @@ export default function SubscriptionManager() {
     );
   }
 
-  const currentTier = subscriptionTiers[currentUser.subscription.tier];
+  const currentTier = subscriptionTiers[currentUser.subscription.tier.toUpperCase()];
   const tiers = Object.values(subscriptionTiers);
   const renewalDate = new Date(currentUser.subscription.renewalDate);
 
@@ -50,7 +50,7 @@ export default function SubscriptionManager() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Subscription</Text>
+      <Text style={styles.title}>Current Plan</Text>
 
       <View style={styles.currentPlanBox}>
         <Text style={styles.currentPlanLabel}>Current Plan</Text>
