@@ -1,13 +1,15 @@
 import React from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet, Platform, useSafeAreaInsets } from 'react-native';
 import versionInfo from '../../../public/version.json';
 
 const version = versionInfo?.version || '';
 
 export default function VersionFooter() {
+  const insets = useSafeAreaInsets();
+
   return (
-    <View style={styles.container} pointerEvents="none">
-      <Text style={styles.text}>Liquid Asset Management Board</Text>
+    <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 8) }]} pointerEvents="none">
+      <Text style={styles.text}>LAMB</Text>
       <Text style={styles.text}>{version ? `v${version}` : 'Version unavailable'}</Text>
     </View>
   );
@@ -20,7 +22,8 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     paddingHorizontal: 16,
-    paddingVertical: Platform.OS === 'ios' ? 12 : 10,
+    paddingVertical: Platform.OS === 'ios' ? 8 : 10,
+    paddingTop: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -31,7 +34,7 @@ const styles = StyleSheet.create({
   },
   text: {
     color: '#9aa1b5',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
   },
 });
