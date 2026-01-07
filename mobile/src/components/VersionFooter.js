@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, Platform, useSafeAreaInsets } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import versionInfo from '../../../public/version.json';
 
 const version = versionInfo?.version || '';
