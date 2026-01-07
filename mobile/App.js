@@ -36,9 +36,9 @@ const MainStack = () => (
     screenOptions={{ headerStyle: { backgroundColor: '#0b0b0f' }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }}
   >
     <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
-    <Stack.Screen name="Vault" component={VaultScreen} />
-    <Stack.Screen name="Collection" component={CollectionScreen} />
-    <Stack.Screen name="Asset" component={AssetScreen} />
+    <Stack.Screen name="Vault" component={VaultScreen} options={{ headerShown: false }} />
+    <Stack.Screen name="Collection" component={CollectionScreen} options={{ headerShown: false }} />
+    <Stack.Screen name="Asset" component={AssetScreen} options={{ headerShown: false }} />
     <Stack.Screen name="Settings" component={SettingsScreen} />
     <Stack.Screen name="Profile" component={ProfileScreen} />
   </Stack.Navigator>
