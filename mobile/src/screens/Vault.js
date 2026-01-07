@@ -335,7 +335,7 @@ export default function Vault({ navigation, route }) {
             <Text style={styles.infoButtonText}>ℹ</Text>
           </TouchableOpacity>
         </View>
-        <Text style={styles.subtitleDim}>{role ? role : 'Shared'}</Text>
+        <Text style={[styles.subtitleDim, role === 'owner' ? styles.visuallyHidden : null]}>{role ? role : 'Shared'}</Text>
       </View>
       {isOwner && (
         <View style={styles.actionsRow}>
@@ -430,7 +430,7 @@ export default function Vault({ navigation, route }) {
               </Text>
               <Text style={styles.infoModalRow}>
                 <Text style={styles.infoModalLabel}>Manager:</Text>{' '}
-                {users.find(u => u.id === vault.ownerId)?.username || 'Unknown'}
+                <Text style={styles.visuallyHidden}>{users.find(u => u.id === vault.ownerId)?.username || 'Unknown'}</Text>
               </Text>
             </View>
           </View>
@@ -522,4 +522,14 @@ const styles = StyleSheet.create({
   infoModalMetadata: { gap: 8 },
   infoModalRow: { color: '#e5e7f0', fontSize: 13, lineHeight: 18 },
   infoModalLabel: { color: '#9aa1b5', fontWeight: '600' },
+  visuallyHidden: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    margin: -1,
+    padding: 0,
+    overflow: 'hidden',
+    clipPath: 'inset(100%)',
+    border: 0,
+  },
 });

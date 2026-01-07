@@ -250,7 +250,7 @@ export default function Collection({ navigation, route }) {
           <Text style={styles.infoButtonText}>ℹ</Text>
         </TouchableOpacity>
       </View>
-      <Text style={styles.subtitleDim}>{role ? role : 'Shared'}</Text>
+      <Text style={[styles.subtitleDim, role === 'owner' ? styles.visuallyHidden : null]}>{role ? role : 'Shared'}</Text>
       {isOwner && (
         <View style={styles.actionsRow}>
           <TouchableOpacity style={[styles.primaryButton, styles.actionButton]} onPress={openEditModal}>
@@ -521,7 +521,7 @@ export default function Collection({ navigation, route }) {
                   </Text>
                   <Text style={styles.infoModalRow}>
                     <Text style={styles.infoModalLabel}>Manager:</Text>{' '}
-                    {users.find((u) => u.id === collection.ownerId)?.username || 'Unknown'}
+                    <Text style={styles.visuallyHidden}>{users.find((u) => u.id === collection.ownerId)?.username || 'Unknown'}</Text>
                   </Text>
                 </View>
               </View>
@@ -627,4 +627,14 @@ const styles = StyleSheet.create({
   modalInput: { backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, borderRadius: 10, padding: 10, color: '#fff' },
   modalTextarea: { minHeight: 90, textAlignVertical: 'top' },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 16 },
+  visuallyHidden: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    margin: -1,
+    padding: 0,
+    overflow: 'hidden',
+    clipPath: 'inset(100%)',
+    border: 0,
+  },
 });

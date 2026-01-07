@@ -338,7 +338,7 @@ export default function Asset({ route, navigation }) {
               <Text style={styles.infoButtonText}>ℹ</Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.roleBadge}>Role: {role || 'viewer'}</Text>
+          <Text style={[styles.roleBadge, role === 'owner' ? styles.visuallyHidden : null]}>Role: {role || 'viewer'}</Text>
         <View style={styles.actionsRow}>
           <TouchableOpacity
             style={[styles.primaryButton, styles.actionButton, (!canEdit && styles.buttonDisabled)]}
@@ -517,9 +517,7 @@ export default function Asset({ route, navigation }) {
                   </View>
                   <View style={styles.infoRow}>
                     <Text style={styles.infoLabel}>Manager</Text>
-                    <Text style={styles.infoValue}>
-                      {owner?.username || asset.manager || 'Unknown'}
-                    </Text>
+                    <Text style={styles.visuallyHidden}>{owner?.username || asset.manager || 'Unknown'}</Text>
                   </View>
                 </View>
               </View>
@@ -543,6 +541,16 @@ const styles = StyleSheet.create({
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 },
   infoLabel: { fontSize: 14, color: '#999', fontWeight: '500', lineHeight: 20 },
   infoValue: { fontSize: 14, color: '#22c55e', fontWeight: '600', lineHeight: 20 },
+  visuallyHidden: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    margin: -1,
+    padding: 0,
+    overflow: 'hidden',
+    clipPath: 'inset(100%)',
+    border: 0,
+  },
 
   container: { flexGrow: 1, padding: 20, backgroundColor: '#0b0b0f', gap: 12 },
   headerSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
