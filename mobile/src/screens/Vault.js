@@ -325,9 +325,9 @@ export default function Vault({ navigation, route }) {
             </View>
             </Modal>
           <View style={styles.container}>
-        <LambHeader />
-      <View style={styles.headerArea}>
-        <View style={styles.headerSection}>
+            <LambHeader />
+            <View style={styles.headerArea}>
+              <View style={styles.headerSection}>
           <Text style={styles.title}>{vault?.name || 'Vault'}</Text>
           <TouchableOpacity style={styles.infoButton} onPress={() => setInfoVisible(true)}>
             <Text style={styles.infoButtonText}>ℹ</Text>
