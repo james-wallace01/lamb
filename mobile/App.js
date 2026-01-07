@@ -17,6 +17,7 @@ import ProfileScreen from './src/screens/Profile';
 import SignInScreen from './src/screens/SignIn';
 import SignUpScreen from './src/screens/SignUp';
 import ChooseSubscriptionScreen from './src/screens/ChooseSubscription';
+import VersionFooter from './src/components/VersionFooter';
 
 enableScreens();
 
@@ -31,7 +32,9 @@ const AuthStack = () => (
 );
 
 const MainStack = () => (
-  <Stack.Navigator screenOptions={{ headerStyle: { backgroundColor: '#0b0b0f' }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }}>
+  <Stack.Navigator
+    screenOptions={{ headerStyle: { backgroundColor: '#0b0b0f' }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }}
+  >
     <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
     <Stack.Screen name="Vault" component={VaultScreen} />
     <Stack.Screen name="Collection" component={CollectionScreen} />
@@ -55,6 +58,7 @@ export default function App() {
           <NavigationContainer>
             <RootNavigator />
           </NavigationContainer>
+          <VersionFooter />
           <StatusBar style="light" />
         </DataProvider>
       </StripeProvider>
