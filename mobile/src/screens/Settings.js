@@ -53,7 +53,7 @@ export default function Settings() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <LambHeader />
+      <LambHeader showBackButton />
       <Text style={styles.title}>Settings</Text>
       
       <SubscriptionManager />
@@ -67,12 +67,14 @@ export default function Settings() {
           <Text style={[styles.buttonText, styles.deleteButtonText]}>Delete Account</Text>
         </TouchableOpacity>
       </View>
+
+      <View style={styles.spacer} />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, backgroundColor: '#0b0b0f', gap: 12 },
+  container: { padding: 20, backgroundColor: '#0b0b0f', gap: 12, paddingBottom: 100 },
   title: { fontSize: 24, fontWeight: '700', color: '#fff' },
   subtitle: { color: '#c5c5d0' },
   card: { padding: 14, borderRadius: 10, backgroundColor: '#11121a', borderWidth: 1, borderColor: '#1f2738', gap: 10 },
@@ -81,4 +83,5 @@ const styles = StyleSheet.create({
   buttonText: { color: '#fff', fontWeight: '700' },
   deleteButton: { backgroundColor: '#3b0f0f', borderColor: '#ef4444', borderWidth: 1 },
   deleteButtonText: { color: '#fecaca' },
+  spacer: { height: 40 },
 });

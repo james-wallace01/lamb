@@ -24,13 +24,13 @@ export default function Profile() {
   const handleSave = () => {
     if (!currentUser) return;
     setLoading(true);
-      const result = updateCurrentUser({
-        firstName: draft.firstName || '',
-        lastName: draft.lastName || '',
-        email: draft.email || '',
-        username: draft.username || '',
-        profileImage: draft.profileImage || currentUser.profileImage || DEFAULT_AVATAR,
-      });
+    const result = updateCurrentUser({
+      firstName: draft.firstName || '',
+      lastName: draft.lastName || '',
+      email: draft.email || '',
+      username: draft.username || '',
+      profileImage: draft.profileImage || currentUser.profileImage || DEFAULT_AVATAR,
+    });
     setLoading(false);
     if (!result.ok) {
       Alert.alert(result.message || 'Could not save');
@@ -40,16 +40,15 @@ export default function Profile() {
   };
 
   const handleProfilePictureChange = async () => {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
       Alert.alert('Permission needed', 'Camera roll permission is required to select an image');
       return;
     }
 
-      const mediaTypes = ImagePicker.MediaType?.Images || ImagePicker.MediaTypeOptions.Images;
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes,
+    const mediaTypes = ImagePicker.MediaType?.Images || ImagePicker.MediaTypeOptions.Images;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes,
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
@@ -64,8 +63,8 @@ export default function Profile() {
   };
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-        <LambHeader />
+    <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <LambHeader showBackButton />
       <Text style={styles.title}>Profile</Text>
       {currentUser ? (
         <>
@@ -142,12 +141,14 @@ export default function Profile() {
       ) : (
         <Text style={styles.subtitle}>No user loaded.</Text>
       )}
+
+      <View style={styles.spacer} />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: '#0b0b0f', gap: 12 },
+  container: { padding: 20, backgroundColor: '#0b0b0f', gap: 12, paddingBottom: 100 },
   title: { fontSize: 24, fontWeight: '700', color: '#fff', marginBottom: 16 },
   subtitle: { color: '#c5c5d0' },
   avatarContainer: { alignItems: 'center', marginBottom: 24 },
@@ -163,4 +164,5 @@ const styles = StyleSheet.create({
   button: { paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#2563eb', alignItems: 'center', marginTop: 8 },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontWeight: '700' },
+  spacer: { height: 40 },
 });
