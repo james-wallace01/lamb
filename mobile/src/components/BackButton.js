@@ -17,7 +17,7 @@ export default function BackButton({ style }) {
     <TouchableOpacity
       onPress={handlePress}
       activeOpacity={0.7}
-      style={[styles.container, { top: Math.max(insets.top, 8) - 6 }, style]}
+      style={[styles.container, { top: Math.max(insets.top, 8) }, style]}
     >
       <View style={styles.buttonInner}>
         <Text style={styles.arrow}>{'‹'}</Text>
@@ -31,7 +31,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 16,
     zIndex: 10,
-    height: 40,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -39,7 +39,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(232, 237, 255, 0.12)',
     borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 8,
     borderWidth: 1,
     borderColor: 'rgba(232, 237, 255, 0.2)',
   },

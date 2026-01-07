@@ -29,7 +29,7 @@ export default function LambHeader({ style }) {
 }
 
 const styles = StyleSheet.create({
-  container: { width: '100%', alignItems: 'center', marginBottom: 16, alignSelf: 'center' },
+  container: { width: '100%', height: 44, justifyContent: 'center', alignItems: 'center', marginBottom: 16, alignSelf: 'center' },
   titleWrap: { paddingVertical: 0, paddingHorizontal: 0 },
   title: { fontSize: 26, fontWeight: '800', color: '#e8edff', letterSpacing: 1.5, textShadowColor: 'rgba(0,0,0,0.35)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
 });
