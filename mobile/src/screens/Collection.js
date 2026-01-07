@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FlatList, StyleSheet, View, Text, TouchableOpacity, TextInput, Alert, ScrollView, Image, Modal } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, TextInput, Alert, ScrollView, Image, Modal } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useData } from '../context/DataContext';
 import ShareModal from '../components/ShareModal';
@@ -478,24 +478,28 @@ export default function Collection({ navigation, route }) {
           </View>
         </View>
       </Modal>
-
-      <FlatList
-        data={collectionAssets}
-        keyExtractor={(a) => a.id}
-        renderItem={renderAsset}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-        ListEmptyComponent={<Text style={styles.subtitle}>No assets yet.</Text>}
-        contentContainerStyle={styles.container}
-        ListHeaderComponent={header}
-        ListFooterComponent={
-          <ShareModal
-            visible={shareVisible}
-            onClose={() => { setShareVisible(false); setShareTargetId(null); setShareTargetType(null); }}
-            targetType={shareTargetType || 'collection'}
-            targetId={shareTargetId || collectionId}
-          />
-        }
-      />
+      
+      <ScrollView contentContainerStyle={styles.container}>
+        {header}
+        {/* Images section, actions, etc. remain unchanged */}
+        {/* Render assets */}
+        {collectionAssets.length === 0 ? (
+          <Text style={styles.subtitle}>No assets yet.</Text>
+        ) : (
+          collectionAssets.map((asset, idx) => (
+            <View key={asset.id}>
+              {renderAsset({ item: asset })}
+              {idx < collectionAssets.length - 1 && <View style={styles.separator} />}
+            </View>
+          ))
+        )}
+        <ShareModal
+          visible={shareVisible}
+          onClose={() => { setShareVisible(false); setShareTargetId(null); setShareTargetType(null); }}
+          targetType={shareTargetType || 'collection'}
+          targetId={shareTargetId || collectionId}
+        />
+      </ScrollView>
       {collection && (
         <Modal
           visible={infoVisible}
@@ -545,8 +549,8 @@ const styles = StyleSheet.create({
   container: { flexGrow: 1, padding: 20, backgroundColor: '#0b0b0f', gap: 12 },
   headerArea: { gap: 12 },
   headerSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
-  title: { fontSize: 24, fontWeight: '700', color: '#fff', flex: 1, lineHeight: 32 },
-  infoButton: { padding: 8, marginLeft: 8, alignSelf: 'flex-start' },
+  title: { fontSize: 24, fontWeight: '700', color: '#fff', lineHeight: 32 },
+  infoButton: { padding: 8, marginLeft: 8 },
   infoButtonText: { color: '#e5e7f0', fontSize: 20, fontWeight: '700' },
   infoModalContent: { backgroundColor: '#1a1b24', borderRadius: 12, padding: 16, marginHorizontal: 16, maxWidth: '90%' },
   infoModalTitle: { color: '#fff', fontSize: 18, fontWeight: '700', marginBottom: 12 },
