@@ -39,8 +39,8 @@ const MainStack = () => (
     <Stack.Screen name="Vault" component={VaultScreen} options={{ headerShown: false }} />
     <Stack.Screen name="Collection" component={CollectionScreen} options={{ headerShown: false }} />
     <Stack.Screen name="Asset" component={AssetScreen} options={{ headerShown: false }} />
-    <Stack.Screen name="Settings" component={SettingsScreen} />
-    <Stack.Screen name="Profile" component={ProfileScreen} />
+    <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
+    <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
   </Stack.Navigator>
 );
 

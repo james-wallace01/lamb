@@ -8,10 +8,10 @@ export default function LambHeader({ style }) {
   const insets = useSafeAreaInsets();
   
   const handlePress = () => {
-    const state = navigation.getState?.();
-    const canGoHome = state?.routeNames?.includes('Home');
-    if (canGoHome) {
+    try {
       navigation.navigate('Home');
+    } catch (e) {
+      console.log('Cannot navigate to Home');
     }
   };
 
