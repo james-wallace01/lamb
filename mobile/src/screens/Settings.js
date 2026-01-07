@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
+import BackButton from '../components/BackButton';
 import SubscriptionManager from '../components/SubscriptionManager';
 
 export default function Settings() {
@@ -52,28 +53,32 @@ export default function Settings() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <LambHeader showBackButton />
-      <Text style={styles.title}>Settings</Text>
-      
-      <SubscriptionManager />
-      
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Account</Text>
-        <TouchableOpacity style={styles.button} onPress={handleResetPassword}>
-          <Text style={styles.buttonText}>Reset Password</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.button, styles.deleteButton]} onPress={handleDeleteAccount}>
-          <Text style={[styles.buttonText, styles.deleteButtonText]}>Delete Account</Text>
-        </TouchableOpacity>
-      </View>
+    <View style={styles.wrapper}>
+      <BackButton />
+      <ScrollView contentContainerStyle={styles.container}>
+        <LambHeader />
+        <Text style={styles.title}>Settings</Text>
+        
+        <SubscriptionManager />
+        
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Account</Text>
+          <TouchableOpacity style={styles.button} onPress={handleResetPassword}>
+            <Text style={styles.buttonText}>Reset Password</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.button, styles.deleteButton]} onPress={handleDeleteAccount}>
+            <Text style={[styles.buttonText, styles.deleteButtonText]}>Delete Account</Text>
+          </TouchableOpacity>
+        </View>
 
-      <View style={styles.spacer} />
-    </ScrollView>
+        <View style={styles.spacer} />
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: { flex: 1, backgroundColor: '#0b0b0f' },
   container: { padding: 20, backgroundColor: '#0b0b0f', gap: 12, paddingBottom: 100 },
   title: { fontSize: 24, fontWeight: '700', color: '#fff' },
   subtitle: { color: '#c5c5d0' },

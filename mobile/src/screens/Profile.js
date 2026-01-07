@@ -3,6 +3,7 @@ import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, Image, Scro
 import * as ImagePicker from 'expo-image-picker';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
+import BackButton from '../components/BackButton';
 
 const DEFAULT_AVATAR = 'https://via.placeholder.com/112?text=Profile';
 
@@ -63,91 +64,95 @@ export default function Profile() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-      <LambHeader showBackButton />
-      <Text style={styles.title}>Profile</Text>
-      {currentUser ? (
-        <>
-          <View style={styles.avatarContainer}>
-            <TouchableOpacity onPress={handleProfilePictureChange} activeOpacity={0.8}>
-              <Image
-                source={{ uri: draft.profileImage || currentUser.profileImage || DEFAULT_AVATAR }}
-                style={styles.avatar}
+    <View style={styles.wrapper}>
+      <BackButton />
+      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+        <LambHeader />
+        <Text style={styles.title}>Profile</Text>
+        {currentUser ? (
+          <>
+            <View style={styles.avatarContainer}>
+              <TouchableOpacity onPress={handleProfilePictureChange} activeOpacity={0.8}>
+                <Image
+                  source={{ uri: draft.profileImage || currentUser.profileImage || DEFAULT_AVATAR }}
+                  style={styles.avatar}
+                />
+                <View style={styles.cameraBadge}>
+                  <Text style={styles.cameraText}>📷</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.netWorthCard}>
+              <Text style={styles.netWorthLabel}>Net Worth</Text>
+              <Text style={styles.netWorthValue}>
+                ${netWorth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </Text>
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>First Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="First name"
+                placeholderTextColor="#80869b"
+                value={draft.firstName || ''}
+                onChangeText={(v) => setDraft({ ...draft, firstName: v })}
               />
-              <View style={styles.cameraBadge}>
-                <Text style={styles.cameraText}>📷</Text>
-              </View>
+            </View>
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>Last Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Last name"
+                placeholderTextColor="#80869b"
+                value={draft.lastName || ''}
+                onChangeText={(v) => setDraft({ ...draft, lastName: v })}
+              />
+            </View>
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>Username</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Username"
+                placeholderTextColor="#80869b"
+                autoCapitalize="none"
+                value={draft.username || ''}
+                onChangeText={(v) => setDraft({ ...draft, username: v })}
+              />
+            </View>
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>Email</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Email"
+                placeholderTextColor="#80869b"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                value={draft.email || ''}
+                onChangeText={(v) => setDraft({ ...draft, email: v })}
+              />
+            </View>
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonDisabled]}
+              onPress={handleSave}
+              disabled={loading}
+            >
+              <Text style={styles.buttonText}>{loading ? 'Saving...' : 'Save'}</Text>
             </TouchableOpacity>
-          </View>
+          </>
+        ) : (
+          <Text style={styles.subtitle}>No user loaded.</Text>
+        )}
 
-          <View style={styles.netWorthCard}>
-            <Text style={styles.netWorthLabel}>Net Worth</Text>
-            <Text style={styles.netWorthValue}>
-              ${netWorth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </Text>
-          </View>
-
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>First Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="First name"
-              placeholderTextColor="#80869b"
-              value={draft.firstName || ''}
-              onChangeText={(v) => setDraft({ ...draft, firstName: v })}
-            />
-          </View>
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Last Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Last name"
-              placeholderTextColor="#80869b"
-              value={draft.lastName || ''}
-              onChangeText={(v) => setDraft({ ...draft, lastName: v })}
-            />
-          </View>
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Username</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Username"
-              placeholderTextColor="#80869b"
-              autoCapitalize="none"
-              value={draft.username || ''}
-              onChangeText={(v) => setDraft({ ...draft, username: v })}
-            />
-          </View>
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Email"
-              placeholderTextColor="#80869b"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={draft.email || ''}
-              onChangeText={(v) => setDraft({ ...draft, email: v })}
-            />
-          </View>
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleSave}
-            disabled={loading}
-          >
-            <Text style={styles.buttonText}>{loading ? 'Saving...' : 'Save'}</Text>
-          </TouchableOpacity>
-        </>
-      ) : (
-        <Text style={styles.subtitle}>No user loaded.</Text>
-      )}
-
-      <View style={styles.spacer} />
-    </ScrollView>
+        <View style={styles.spacer} />
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: { flex: 1, backgroundColor: '#0b0b0f' },
   container: { padding: 20, backgroundColor: '#0b0b0f', gap: 12, paddingBottom: 100 },
   title: { fontSize: 24, fontWeight: '700', color: '#fff', marginBottom: 16 },
   subtitle: { color: '#c5c5d0' },

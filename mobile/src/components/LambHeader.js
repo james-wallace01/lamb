@@ -3,7 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-export default function LambHeader({ style, showBackButton = false }) {
+export default function LambHeader({ style }) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   
@@ -22,7 +22,7 @@ export default function LambHeader({ style, showBackButton = false }) {
       style={[styles.container, { marginTop: Math.max(insets.top, 8) }, style]}
     >
       <View style={styles.titleWrap}>
-        <Text style={styles.title}>{showBackButton ? '<' : 'LAMB'}</Text>
+        <Text style={styles.title}>LAMB</Text>
       </View>
     </TouchableOpacity>
   );
