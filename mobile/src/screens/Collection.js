@@ -237,8 +237,9 @@ export default function Collection({ navigation, route }) {
   }
 
   const header = (
-    <View style={styles.headerArea}>
+    <>
       <LambHeader />
+      <View style={styles.headerArea}>
       <View style={styles.headerSection}>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>{collection?.name || 'Collection'}</Text>
@@ -368,7 +369,8 @@ export default function Collection({ navigation, route }) {
           </TouchableOpacity>
         </View>
       )}
-    </View>
+      </View>
+    </>
   );
 
   return (
