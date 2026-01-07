@@ -4,7 +4,6 @@ import * as ImagePicker from 'expo-image-picker';
 import { useData } from '../context/DataContext';
 import ShareModal from '../components/ShareModal';
 import LambHeader from '../components/LambHeader';
-import BackButton from '../components/BackButton';
 
 export default function Collection({ navigation, route }) {
   const { collectionId } = route.params || {};
@@ -240,7 +239,6 @@ export default function Collection({ navigation, route }) {
   const header = (
     <>
       <LambHeader />
-      <BackButton />
       <View style={styles.headerArea}>
       <View style={styles.headerSection}>
         <View style={{ flex: 1 }}>

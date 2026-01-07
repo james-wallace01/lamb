@@ -5,6 +5,12 @@ import { useData } from '../context/DataContext';
 import ShareModal from '../components/ShareModal';
 import LambHeader from '../components/LambHeader';
 import BackButton from '../components/BackButton';
+import React, { useEffect, useMemo, useState } from 'react';
+import { FlatList, StyleSheet, View, Text, TouchableOpacity, TextInput, Alert, ScrollView, Image, Modal } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { useData } from '../context/DataContext';
+import ShareModal from '../components/ShareModal';
+import LambHeader from '../components/LambHeader';
 
 export default function Collection({ navigation, route }) {
   const { collectionId } = route.params || {};
@@ -240,7 +246,6 @@ export default function Collection({ navigation, route }) {
   const header = (
     <>
       <LambHeader />
-      <BackButton />
       <View style={styles.headerArea}>
       <View style={styles.headerSection}>
         <View style={{ flex: 1 }}>

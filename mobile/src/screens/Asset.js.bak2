@@ -5,6 +5,12 @@ import { useData } from '../context/DataContext';
 import ShareModal from '../components/ShareModal';
 import LambHeader from '../components/LambHeader';
 import BackButton from '../components/BackButton';
+import React, { useEffect, useMemo, useState } from 'react';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, ScrollView, Image, Modal } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { useData } from '../context/DataContext';
+import ShareModal from '../components/ShareModal';
+import LambHeader from '../components/LambHeader';
 
 export default function Asset({ route, navigation }) {
   const { assetId } = route.params || {};
@@ -329,7 +335,6 @@ export default function Asset({ route, navigation }) {
 
         <ScrollView contentContainerStyle={styles.container}>
           <LambHeader />
-          <BackButton />
           <View style={styles.headerSection}>
             <View style={{ flex: 1 }}>
               <Text style={styles.title}>{asset.title}</Text>

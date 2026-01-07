@@ -4,7 +4,6 @@ import * as ImagePicker from 'expo-image-picker';
 import { useData } from '../context/DataContext';
 import ShareModal from '../components/ShareModal';
 import LambHeader from '../components/LambHeader';
-import BackButton from '../components/BackButton';
 
 export default function Vault({ navigation, route }) {
   const { vaultId } = route.params || {};
@@ -327,7 +326,6 @@ export default function Vault({ navigation, route }) {
             </Modal>
           <View style={styles.container}>
             <LambHeader />
-            <BackButton />
             <View style={styles.headerArea}>
               <View style={styles.headerSection}>
           <Text style={styles.title}>{vault?.name || 'Vault'}</Text>
