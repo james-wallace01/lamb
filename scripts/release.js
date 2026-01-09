@@ -24,6 +24,17 @@ function parseVersion(tag) {
   return [Number(match[1]), Number(match[2]), Number(match[3])];
 }
 
+function readCurrentVersionFile() {
+  try {
+    const raw = fs.readFileSync(VERSION_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.version !== 'string') return null;
+    return parsed.version.trim();
+  } catch (err) {
+    return null;
+  }
+}
+
 function bumpVersion([major, minor, patch], bump) {
   if (bump === 'major') return [major + 1, 0, 0];
   if (bump === 'minor') return [major, minor + 1, 0];
@@ -63,7 +74,8 @@ function main() {
   ensureCleanTree();
 
   const lastTag = safeRun('git describe --tags --abbrev=0');
-  const baseVersion = parseVersion(lastTag || 'v0.0.0');
+  const fallbackVersion = readCurrentVersionFile();
+  const baseVersion = parseVersion(lastTag || fallbackVersion || 'v0.0.0');
   const range = lastTag ? `${lastTag}..HEAD` : 'HEAD';
   const commitLog = safeRun(`git log ${range} --pretty=%s --no-merges`);
   const commits = commitLog
@@ -97,7 +109,8 @@ function main() {
   }
 
   run(`git commit -m "chore: release v${nextVersion}"`);
-  run(`git tag ${tagName}`);
+  // Use an annotated tag so CI's `git push --follow-tags` pushes it.
+  run(`git tag -a ${tagName} -m "Release ${tagName}"`);
 
   console.log(`Released ${tagName}`);
 }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, Image } from 'react-native';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
 
@@ -25,7 +25,9 @@ export default function SignIn({ navigation }) {
 
   return (
     <View style={styles.container}>
-        <LambHeader />
+      <LambHeader />
+      <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+      <Text style={styles.tagline}>Take Control</Text>
       <Text style={styles.title}>Sign In</Text>
       <Text style={styles.subtitle}>Use your LAMB username or email.</Text>
       <TextInput
@@ -51,7 +53,7 @@ export default function SignIn({ navigation }) {
         <Text style={styles.link}>Need an account? Sign up</Text>
       </TouchableOpacity>
       <View style={styles.helperBox}>
-        <Text style={styles.helperText}>Demo users: james/pass123 or alex/pass123</Text>
+        <Text style={styles.helperText}>Demo users: alex/demo123 or sam/demo123</Text>
       </View>
     </View>
   );
@@ -59,6 +61,8 @@ export default function SignIn({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 24, backgroundColor: '#0b0b0f', gap: 12, justifyContent: 'center' },
+  logo: { width: 96, height: 96, alignSelf: 'center', marginBottom: 4 },
+  tagline: { color: '#c5c5d0', textAlign: 'center', fontWeight: '700', marginBottom: 8 },
   title: { fontSize: 28, fontWeight: '800', color: '#fff' },
   subtitle: { color: '#c5c5d0', marginBottom: 8 },
   input: { backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, borderRadius: 10, padding: 12, color: '#fff' },

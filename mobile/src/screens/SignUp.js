@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, ScrollView, Image } from 'react-native';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
 
@@ -69,6 +69,8 @@ export default function SignUp({ navigation }) {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <LambHeader />
+      <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+      <Text style={styles.tagline}>Take Control</Text>
       <Text style={styles.title}>Create Account</Text>
       
       <TextInput style={styles.input} placeholder="First name" placeholderTextColor="#80869b" value={firstName} onChangeText={setFirstName} />
@@ -120,6 +122,8 @@ export default function SignUp({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flexGrow: 1, paddingVertical: 24, paddingHorizontal: 24, backgroundColor: '#0b0b0f', gap: 12, justifyContent: 'center' },
+  logo: { width: 96, height: 96, alignSelf: 'center', marginBottom: 4 },
+  tagline: { color: '#c5c5d0', textAlign: 'center', fontWeight: '700', marginBottom: 8 },
   title: { fontSize: 28, fontWeight: '800', color: '#fff' },
   input: { backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, borderRadius: 10, padding: 12, color: '#fff' },
   inputError: { borderColor: '#ef4444', borderWidth: 2 },

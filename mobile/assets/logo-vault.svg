@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Transparent background logo: white vault mark only -->
+  <g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="512" cy="512" r="330" stroke-width="52"/>
+
+    <!-- Handle hub (solid) -->
+    <circle cx="512" cy="512" r="74" fill="#fff" stroke="none"/>
+
+    <!-- 5 spokes with thicker grips near the ends (72° increments) -->
+    <g>
+      <!-- 0° (up) -->
+      <g transform="rotate(0 512 512)">
+        <path d="M512 512 L512 312" stroke-width="46"/>
+        <path d="M512 368 L512 292" stroke-width="96"/>
+      </g>
+      <!-- 72° -->
+      <g transform="rotate(72 512 512)">
+        <path d="M512 512 L512 312" stroke-width="46"/>
+        <path d="M512 368 L512 292" stroke-width="96"/>
+      </g>
+      <!-- 144° -->
+      <g transform="rotate(144 512 512)">
+        <path d="M512 512 L512 312" stroke-width="46"/>
+        <path d="M512 368 L512 292" stroke-width="96"/>
+      </g>
+      <!-- 216° -->
+      <g transform="rotate(216 512 512)">
+        <path d="M512 512 L512 312" stroke-width="46"/>
+        <path d="M512 368 L512 292" stroke-width="96"/>
+      </g>
+      <!-- 288° -->
+      <g transform="rotate(288 512 512)">
+        <path d="M512 512 L512 312" stroke-width="46"/>
+        <path d="M512 368 L512 292" stroke-width="96"/>
+      </g>
+    </g>
+  </g>
+</svg>
