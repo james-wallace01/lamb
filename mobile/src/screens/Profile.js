@@ -275,9 +275,11 @@ export default function Profile() {
 
   return (
     <View style={styles.wrapper}>
-      <BackButton />
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <LambHeader />
+        <View style={styles.headerRow}>
+          <BackButton />
+          <LambHeader />
+        </View>
         <Text style={styles.title}>Profile</Text>
         {currentUser ? (
           <>
@@ -476,6 +478,7 @@ export default function Profile() {
 const styles = StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: '#0b0b0f' },
   container: { padding: 20, backgroundColor: '#0b0b0f', gap: 12, paddingBottom: 100 },
+  headerRow: { position: 'relative', width: '100%' },
   title: { fontSize: 24, fontWeight: '700', color: '#fff', marginBottom: 16 },
   subtitle: { color: '#c5c5d0' },
   avatarContainer: { alignItems: 'center', marginBottom: 24 },

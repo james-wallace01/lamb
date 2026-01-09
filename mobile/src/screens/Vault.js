@@ -331,87 +331,94 @@ export default function Vault({ navigation, route }) {
             </View>
             </Modal>
           <View style={styles.container}>
-            <LambHeader />
-            <BackButton />
-            <View style={styles.headerArea}>
-              <View style={styles.headerSection}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.title}>{vault?.name || 'Vault'}</Text>
-          </View>
-          <TouchableOpacity style={styles.infoButton} onPress={() => setInfoVisible(true)}>
-            <Text style={styles.infoButtonText}>ℹ</Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.subtitleDim}>Access Type: {accessType}</Text>
-      </View>
-      {isOwner && (
-        <View style={styles.actionsRow}>
-          <TouchableOpacity style={[styles.primaryButton, styles.actionButton]} onPress={openEditModal}>
-            <Text style={styles.primaryButtonText}>Edit</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.shareButton, styles.actionButton]} onPress={() => openShare('vault', vaultId)}>
-            <Text style={styles.secondaryButtonText}>Share</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      <View style={styles.mediaCard}>
-        <View style={styles.mediaHeader}>
-          <Text style={styles.sectionLabel}>Images</Text>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow}>
-          {previewImages.length === 0 ? (
-            <Text style={styles.subtitle}>No images yet.</Text>
-          ) : (
-            previewImages.map((img) => {
-              const isHeroImg = heroImage === img;
-              return (
-                <TouchableOpacity key={img} style={[styles.thumbCard, isHeroImg && styles.heroThumbCard]} onPress={() => setPreviewImage(img)}>
-                    {isHeroImg && (
-                      <View style={styles.heroBadge}>
-                        <Text style={styles.heroBadgeText}>★</Text>
+            <FlatList
+              data={vaultCollections}
+              keyExtractor={(c) => c.id}
+              renderItem={renderCollection}
+              ItemSeparatorComponent={() => <View style={styles.separator} />}
+              ListHeaderComponent={
+                <View style={{ position: 'relative' }}>
+                  <BackButton />
+                  <LambHeader />
+                  <View style={styles.headerArea}>
+                    <View style={styles.headerSection}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.title}>{vault?.name || 'Vault'}</Text>
                       </View>
-                    )}
-                  <Image source={{ uri: img }} style={styles.thumb} />
-                </TouchableOpacity>
-              );
-            })
-          )}
-        </ScrollView>
-      </View>
-      <View style={styles.divider} />
-      <View style={styles.createRow}>
-        <TextInput
-          style={styles.input}
-          placeholder="New collection name"
-          placeholderTextColor="#80869b"
-          value={newName}
-          onChangeText={(text) => setNewName(limit20(text || ''))}
-        />
-        <TouchableOpacity
-          style={[styles.addButton, !canCreate && styles.buttonDisabled]}
-          onPress={() => {
-            if (!canCreate) return Alert.alert('No permission to add collections');
-            if (!newName.trim()) return;
-            addCollection({ vaultId, name: newName.trim() });
-            setNewName('');
-          }}
-        >
-          <Text style={styles.addButtonText}>Add</Text>
-        </TouchableOpacity>
-      </View>
-      {loading ? (
-        <Text style={styles.subtitle}>Loading…</Text>
-      ) : vaultCollections.length === 0 ? (
-        <Text style={styles.subtitle}>No collections yet.</Text>
-      ) : (
-        <FlatList
-          data={vaultCollections}
-          keyExtractor={(c) => c.id}
-          renderItem={renderCollection}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
-        />
-      )}
+                      <TouchableOpacity style={styles.infoButton} onPress={() => setInfoVisible(true)}>
+                        <Text style={styles.infoButtonText}>ℹ</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={styles.subtitleDim}>Access Type: {accessType}</Text>
+                  </View>
+
+                  {isOwner && (
+                    <View style={styles.actionsRow}>
+                      <TouchableOpacity style={[styles.primaryButton, styles.actionButton]} onPress={openEditModal}>
+                        <Text style={styles.primaryButtonText}>Edit</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.shareButton, styles.actionButton]} onPress={() => openShare('vault', vaultId)}>
+                        <Text style={styles.secondaryButtonText}>Share</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  <View style={styles.mediaCard}>
+                    <View style={styles.mediaHeader}>
+                      <Text style={styles.sectionLabel}>Images</Text>
+                    </View>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow}>
+                      {previewImages.length === 0 ? (
+                        <Text style={styles.subtitle}>No images yet.</Text>
+                      ) : (
+                        previewImages.map((img) => {
+                          const isHeroImg = heroImage === img;
+                          return (
+                            <TouchableOpacity key={img} style={[styles.thumbCard, isHeroImg && styles.heroThumbCard]} onPress={() => setPreviewImage(img)}>
+                              {isHeroImg && (
+                                <View style={styles.heroBadge}>
+                                  <Text style={styles.heroBadgeText}>★</Text>
+                                </View>
+                              )}
+                              <Image source={{ uri: img }} style={styles.thumb} />
+                            </TouchableOpacity>
+                          );
+                        })
+                      )}
+                    </ScrollView>
+                  </View>
+
+                  <View style={styles.divider} />
+                  <View style={styles.createRow}>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="New collection name"
+                      placeholderTextColor="#80869b"
+                      value={newName}
+                      onChangeText={(text) => setNewName(limit20(text || ''))}
+                    />
+                    <TouchableOpacity
+                      style={[styles.addButton, !canCreate && styles.buttonDisabled]}
+                      onPress={() => {
+                        if (!canCreate) return Alert.alert('No permission to add collections');
+                        if (!newName.trim()) return;
+                        addCollection({ vaultId, name: newName.trim() });
+                        setNewName('');
+                      }}
+                    >
+                      <Text style={styles.addButtonText}>Add</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {loading ? (
+                    <Text style={styles.subtitle}>Loading…</Text>
+                  ) : vaultCollections.length === 0 ? (
+                    <Text style={styles.subtitle}>No collections yet.</Text>
+                  ) : null}
+                </View>
+              }
+              ListFooterComponent={<View style={{ height: 24 }} />}
+            />
       <ShareModal
         visible={shareVisible}
         onClose={() => { setShareVisible(false); setShareTargetId(null); setShareTargetType(null); }}

@@ -283,7 +283,7 @@ export default function Asset({ route, navigation }) {
   }
 
   return (
-    <>
+    <View style={styles.wrapper}>
       <Modal visible={editVisible} transparent animationType="fade" onRequestClose={() => setEditVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
@@ -503,8 +503,10 @@ export default function Asset({ route, navigation }) {
       </Modal>
 
       <ScrollView contentContainerStyle={styles.container}>
-        <LambHeader />
-        <BackButton />
+        <View style={styles.headerRow}>
+          <BackButton />
+          <LambHeader />
+        </View>
 
         <View style={styles.headerSection}>
           <View style={{ flex: 1 }}>
@@ -688,12 +690,14 @@ export default function Asset({ route, navigation }) {
 
         <ShareModal visible={showShare} onClose={() => setShowShare(false)} targetType="asset" targetId={assetId} />
       </ScrollView>
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: { flex: 1, backgroundColor: '#0b0b0f' },
   container: { flexGrow: 1, padding: 20, backgroundColor: '#0b0b0f', gap: 12 },
+  headerRow: { position: 'relative', width: '100%' },
   headerSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   title: { fontSize: 24, fontWeight: '700', color: '#fff', flex: 1, lineHeight: 32 },
   subtitle: { color: '#c5c5d0' },
