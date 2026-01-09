@@ -5,7 +5,16 @@ import { useStripe } from '@stripe/stripe-react-native';
 import { API_URL } from '../config/stripe';
 
 export default function SubscriptionManager() {
-  const { currentUser, subscriptionTiers, updateSubscription, calculateProration, getFeaturesComparison, convertPrice, setCancelAtPeriodEnd } = useData();
+  const {
+    currentUser,
+    subscriptionTiers,
+    updateSubscription,
+    calculateProration,
+    getFeaturesComparison,
+    convertPrice,
+    setCancelAtPeriodEnd,
+    theme,
+  } = useData();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const [selectedTier, setSelectedTier] = useState(currentUser?.subscription?.tier.toUpperCase() || null);
   const [submitting, setSubmitting] = useState(false);
@@ -14,8 +23,8 @@ export default function SubscriptionManager() {
 
   if (!currentUser?.subscription) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.subtitle}>No active membership</Text>
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No active membership</Text>
       </View>
     );
   }
@@ -23,6 +32,8 @@ export default function SubscriptionManager() {
   const currentTier = subscriptionTiers[currentUser.subscription.tier.toUpperCase()];
   const tiers = Object.values(subscriptionTiers);
   const renewalDate = new Date(currentUser.subscription.renewalDate);
+  const trialEndsAt = currentUser.subscription?.trialEndsAt ? new Date(currentUser.subscription.trialEndsAt) : null;
+  const isInTrial = !!trialEndsAt && Date.now() < trialEndsAt.getTime();
 
   const initializePaymentSheet = async (tier) => {
     try {
@@ -260,24 +271,25 @@ export default function SubscriptionManager() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Current Membership</Text>
+    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}>
+      <Text style={[styles.title, { color: theme.text }]}>Current Membership</Text>
 
-      <View style={styles.currentPlanBox}>
-        <Text style={styles.currentPlanLabel}>Current Membership</Text>
+      <View style={[styles.currentPlanBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <Text style={[styles.currentPlanLabel, { color: theme.textMuted }]}>Current Membership</Text>
         <Text style={styles.currentPlanName}>{currentTier?.name || 'Unknown'}</Text>
-        <Text style={styles.currentPlanPrice}>
+        <Text style={[styles.currentPlanPrice, { color: theme.text }]}>
           {convertPrice(currentTier?.price || 0).symbol}{convertPrice(currentTier?.price || 0).amount}/{currentTier?.period || 'month'}
         </Text>
-        <Text style={styles.renewalText}>
-          {currentUser.subscription.cancelAtPeriodEnd 
+        <Text style={[styles.renewalText, { color: theme.textMuted }]}>
+          {currentUser.subscription.cancelAtPeriodEnd
             ? `Cancels on ${renewalDate.toLocaleDateString()}`
-            : `Renews on ${renewalDate.toLocaleDateString()}`
-          }
+            : isInTrial
+              ? `Free trial ends on ${trialEndsAt.toLocaleDateString()}`
+              : `Renews on ${renewalDate.toLocaleDateString()}`}
         </Text>
       </View>
 
-      <Text style={styles.sectionTitle}>Change Your Membership</Text>
+      <Text style={[styles.sectionTitle, { color: theme.text }]}>Change Your Membership</Text>
 
       <View style={styles.plansContainer}>
         {tiers.map((tier) => {
@@ -289,7 +301,8 @@ export default function SubscriptionManager() {
               key={tier.id}
               style={[
                 styles.planCard,
-                selectedTier === tier.id && styles.planCardSelected,
+                { backgroundColor: theme.surface, borderColor: theme.border },
+                selectedTier === tier.id && [styles.planCardSelected, { backgroundColor: theme.surface }],
                 isCurrent && styles.planCardCurrent,
                 isCurrent && styles.planCardDisabled
               ]}
@@ -297,11 +310,11 @@ export default function SubscriptionManager() {
               disabled={isCurrent}
               activeOpacity={isCurrent ? 1 : 0.7}
             >
-              <Text style={styles.planName}>{tier.name}</Text>
-              <Text style={styles.planDescription}>{tier.description}</Text>
+              <Text style={[styles.planName, { color: theme.text }]}>{tier.name}</Text>
+              <Text style={[styles.planDescription, { color: theme.textMuted }]}>{tier.description}</Text>
               <View style={styles.priceContainer}>
                 <Text style={styles.price}>{localPrice.symbol}{localPrice.amount}</Text>
-                <Text style={styles.period}>/{tier.period}</Text>
+                <Text style={[styles.period, { color: theme.textMuted }]}>/{tier.period}</Text>
               </View>
               {selectedTier === tier.id && !isCurrent && (
                 <View style={styles.checkmark}>
@@ -352,15 +365,15 @@ export default function SubscriptionManager() {
         onRequestClose={() => setShowConfirmModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <ScrollView contentContainerStyle={styles.modalContent}>
-            <Text style={styles.modalTitle}>Confirm Membership Change</Text>
+          <ScrollView contentContainerStyle={[styles.modalContent, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Confirm Membership Change</Text>
 
             {confirmData && (
               <>
                 {/* Features section */}
                 {confirmData.featuresLost && confirmData.featuresLost.length > 0 && (
-                  <View style={styles.featureSection}>
-                    <Text style={styles.featureSectionTitle}>Features You'll Lose</Text>
+                  <View style={[styles.featureSection, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                    <Text style={[styles.featureSectionTitle, { color: theme.text }]}>Features You'll Lose</Text>
                     {confirmData.featuresLost.map((feature, idx) => (
                       <Text key={idx} style={styles.featureLost}>
                         • {feature}
@@ -370,8 +383,8 @@ export default function SubscriptionManager() {
                 )}
 
                 {confirmData.featuresGained && confirmData.featuresGained.length > 0 && (
-                  <View style={styles.featureSection}>
-                    <Text style={styles.featureSectionTitle}>Features You'll Gain</Text>
+                  <View style={[styles.featureSection, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                    <Text style={[styles.featureSectionTitle, { color: theme.text }]}>Features You'll Gain</Text>
                     {confirmData.featuresGained.map((feature, idx) => (
                       <Text key={idx} style={styles.featureGained}>
                         ✓ {feature}
@@ -381,14 +394,14 @@ export default function SubscriptionManager() {
                 )}
 
                 {/* Pricing Details */}
-                <View style={styles.pricingSection}>
-                  <Text style={styles.pricingSectionTitle}>Billing Details</Text>
+                <View style={[styles.pricingSection, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <Text style={[styles.pricingSectionTitle, { color: theme.text }]}>Billing Details</Text>
 
                   {confirmData.isUpgrade ? (
                     <>
                       {confirmData.prorationData.chargeNow > 0 && (
                         <View style={styles.pricingRow}>
-                          <Text style={styles.pricingLabel}>You'll be charged today:</Text>
+                          <Text style={[styles.pricingLabel, { color: theme.textMuted }]}>You'll be charged today:</Text>
                           <Text style={styles.pricingAmount}>
                             {convertPrice(confirmData.prorationData.chargeNow).symbol}{convertPrice(confirmData.prorationData.chargeNow).amount}
                           </Text>
@@ -396,19 +409,19 @@ export default function SubscriptionManager() {
                       )}
                       {confirmData.prorationData.chargeNow === 0 && (
                         <View style={styles.pricingRow}>
-                          <Text style={styles.pricingLabel}>No additional charge today</Text>
+                          <Text style={[styles.pricingLabel, { color: theme.textMuted }]}>No additional charge today</Text>
                         </View>
                       )}
-                      <View style={styles.pricingDivider} />
+                      <View style={[styles.pricingDivider, { backgroundColor: theme.border }]} />
                       <View style={styles.pricingRow}>
-                        <Text style={styles.pricingLabel}>Your next bill:</Text>
+                        <Text style={[styles.pricingLabel, { color: theme.textMuted }]}>Your next bill:</Text>
                         <Text style={styles.pricingAmount}>
                           {convertPrice(confirmData.prorationData.nextBillAmount).symbol}{convertPrice(confirmData.prorationData.nextBillAmount).amount}
                         </Text>
                       </View>
                       <View style={styles.pricingRow}>
-                        <Text style={styles.pricingLabel}>Next billing date:</Text>
-                        <Text style={styles.pricingValue}>
+                        <Text style={[styles.pricingLabel, { color: theme.textMuted }]}>Next billing date:</Text>
+                        <Text style={[styles.pricingValue, { color: theme.text }]}>
                           {confirmData.prorationData.nextBillDate.toLocaleDateString()}
                         </Text>
                       </View>
@@ -419,14 +432,14 @@ export default function SubscriptionManager() {
                   ) : (
                     <>
                       <View style={styles.pricingRow}>
-                        <Text style={styles.pricingLabel}>Your next bill:</Text>
+                        <Text style={[styles.pricingLabel, { color: theme.textMuted }]}>Your next bill:</Text>
                         <Text style={styles.pricingAmount}>
                           {convertPrice(confirmData.prorationData.nextBillAmount).symbol}{convertPrice(confirmData.prorationData.nextBillAmount).amount}
                         </Text>
                       </View>
                       <View style={styles.pricingRow}>
-                        <Text style={styles.pricingLabel}>Change effective date:</Text>
-                        <Text style={styles.pricingValue}>
+                        <Text style={[styles.pricingLabel, { color: theme.textMuted }]}>Change effective date:</Text>
+                        <Text style={[styles.pricingValue, { color: theme.text }]}>
                           {confirmData.prorationData.nextBillDate.toLocaleDateString()}
                         </Text>
                       </View>
@@ -443,7 +456,7 @@ export default function SubscriptionManager() {
                     style={styles.modalCancelButton}
                     onPress={() => setShowConfirmModal(false)}
                   >
-                    <Text style={styles.modalCancelButtonText}>Cancel</Text>
+                    <Text style={[styles.modalCancelButtonText, { color: theme.textMuted }]}>Cancel</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity

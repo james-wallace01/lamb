@@ -3,6 +3,7 @@ import { getItem, setItem, removeItem } from '../storage';
 import bcrypt from 'bcryptjs';
 import * as Random from 'expo-random';
 import * as SecureStore from 'expo-secure-store';
+import { DEFAULT_DARK_MODE_ENABLED, getTheme } from '../theme';
 
 // bcryptjs needs secure randomness for salts in React Native.
 // Expo Go doesn't provide WebCrypto by default, so use expo-random.
@@ -42,11 +43,14 @@ const deletePasswordHashFromSecureStore = async (userId) => {
 
 const DATA_KEY = 'lamb-mobile-data-v5';
 const LAST_ACTIVITY_KEY = 'lamb-mobile-last-activity-v1';
+const BIOMETRIC_USER_ID_KEY = 'lamb-mobile-biometric-user-id-v1';
+const BIOMETRIC_SECURE_USER_ID_KEY = 'lamb-mobile-biometric-userid-secure-v1';
 const STORAGE_VERSION = 5;
 const DEFAULT_PROFILE_IMAGE = 'http://192.168.7.112:3000/images/default-avatar.png';
 const DEFAULT_MEDIA_IMAGE = 'http://192.168.7.112:3000/images/collection_default.jpg';
 
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+const TRIAL_DAYS = 14;
 
 const PASSWORD_MIN_LENGTH = 12;
 const PASSWORD_MAX_LENGTH = 72; // bcrypt truncates beyond 72 bytes
@@ -222,6 +226,9 @@ const hydrateUsersWithPasswordHashes = async (inputUsers) => {
     }
 
     let next = { ...user };
+    if (typeof next.prefersDarkMode !== 'boolean') {
+      next.prefersDarkMode = DEFAULT_DARK_MODE_ENABLED;
+    }
 
     const storedHash = await getPasswordHashFromSecureStore(next.id);
     if (storedHash) {
@@ -276,7 +283,7 @@ const SUBSCRIPTION_TIERS = {
   BASIC: { 
     id: 'BASIC', 
     name: 'Basic', 
-    price: 4.99, 
+    price: 2.49, 
     period: 'month', 
     description: 'Get started with LAMB',
     features: [
@@ -289,7 +296,7 @@ const SUBSCRIPTION_TIERS = {
   PREMIUM: { 
     id: 'PREMIUM', 
     name: 'Premium', 
-    price: 9.99, 
+    price: 4.99, 
     period: 'month', 
     description: 'Advanced features',
     features: [
@@ -303,7 +310,7 @@ const SUBSCRIPTION_TIERS = {
   PRO: { 
     id: 'PRO', 
     name: 'Pro', 
-    price: 19.99, 
+    price: 9.99, 
     period: 'month', 
     description: 'Full access',
     features: [
@@ -413,6 +420,7 @@ export function DataProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
+  const [biometricUserId, setBiometricUserId] = useState(null);
   const [vaults, setVaults] = useState([]);
   const [collections, setCollections] = useState([]);
   const [assets, setAssets] = useState([]);
@@ -488,6 +496,14 @@ export function DataProvider({ children }) {
       (async () => {
         await removeItem('lamb-mobile-data-v1'); // clean legacy
         await removeItem('lamb-mobile-data-v2'); // clean previous version
+
+        const storedBiometricUserId = await getItem(BIOMETRIC_USER_ID_KEY, null);
+        if (typeof storedBiometricUserId === 'string' && storedBiometricUserId) {
+          setBiometricUserId(storedBiometricUserId);
+        } else {
+          setBiometricUserId(null);
+        }
+
         const last = await getItem(LAST_ACTIVITY_KEY, null);
         if (typeof last === 'number' && Number.isFinite(last)) {
           setLastActivityAt(last);
@@ -530,6 +546,15 @@ export function DataProvider({ children }) {
       setItem(DATA_KEY, { version: STORAGE_VERSION, users: users.map(withoutPasswordForStorage), currentUser, vaults, collections, assets });
     }, [users, currentUser, vaults, collections, assets, loading]);
 
+    const setDarkModeEnabled = (enabled) => {
+      if (!currentUser) return { ok: false, message: 'Not signed in' };
+
+      const merged = { ...currentUser, prefersDarkMode: !!enabled };
+      setCurrentUser(merged);
+      setUsers((prev) => prev.map((u) => (u.id === currentUser.id ? { ...u, prefersDarkMode: !!enabled } : u)));
+      return { ok: true };
+    };
+
     const login = (identifier, password) => {
       const found = users.find((u) => u.username === identifier || u.email === identifier);
       if (!found) return { ok: false, message: 'Invalid credentials' };
@@ -556,6 +581,76 @@ export function DataProvider({ children }) {
       lastActivityWriteAtRef.current = now;
       setItem(LAST_ACTIVITY_KEY, now);
       return { ok: true };
+    };
+
+    const loginByUserId = (userId) => {
+      const found = users.find((u) => u?.id === userId);
+      if (!found) return { ok: false, message: 'Account not found' };
+
+      if (!found.subscription || !found.subscription.tier) {
+        return { ok: false, message: 'No active membership. Please purchase a membership to continue.' };
+      }
+
+      const ensured = withProfileImage(found);
+      setCurrentUser(withoutPasswordSecrets(ensured));
+      const now = Date.now();
+      setLastActivityAt(now);
+      lastActivityWriteAtRef.current = now;
+      setItem(LAST_ACTIVITY_KEY, now);
+      return { ok: true };
+    };
+
+    const enableBiometricSignInForCurrentUser = async () => {
+      if (!currentUser?.id) return { ok: false, message: 'Not signed in' };
+      try {
+        const available = await SecureStore.isAvailableAsync();
+        if (!available) return { ok: false, message: 'Secure storage is not available on this device' };
+
+        await SecureStore.setItemAsync(BIOMETRIC_SECURE_USER_ID_KEY, String(currentUser.id), {
+          keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+          requireAuthentication: true,
+          authenticationPrompt: 'Enable Face ID to sign in',
+        });
+
+        await setItem(BIOMETRIC_USER_ID_KEY, String(currentUser.id));
+        setBiometricUserId(String(currentUser.id));
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, message: error?.message || 'Face ID setup failed' };
+      }
+    };
+
+    const disableBiometricSignIn = async () => {
+      try {
+        setBiometricUserId(null);
+        await removeItem(BIOMETRIC_USER_ID_KEY);
+        try {
+          await SecureStore.deleteItemAsync(BIOMETRIC_SECURE_USER_ID_KEY);
+        } catch {
+          // ignore
+        }
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, message: error?.message || 'Could not disable Face ID' };
+      }
+    };
+
+    const biometricLogin = async () => {
+      try {
+        const available = await SecureStore.isAvailableAsync();
+        if (!available) return { ok: false, message: 'Secure storage is not available on this device' };
+
+        const userId = await SecureStore.getItemAsync(BIOMETRIC_SECURE_USER_ID_KEY, {
+          requireAuthentication: true,
+          authenticationPrompt: 'Sign in with Face ID',
+        });
+
+        if (!userId) return { ok: false, message: 'Face ID is not enabled' };
+        return loginByUserId(String(userId));
+      } catch (error) {
+        // Covers user cancel, missing biometry, etc.
+        return { ok: false, message: 'Face ID sign in failed' };
+      }
     };
 
   const logout = () => {
@@ -605,6 +700,7 @@ const register = async ({ firstName, lastName, email, username, password, subscr
       if (!subscriptionTier) return { ok: false, message: 'You must select a membership' };
       
       const now = Date.now();
+      const trialEndsAt = now + (TRIAL_DAYS * 24 * 60 * 60 * 1000);
       const passwordHash = hashPassword(password);
       const newUser = { 
         id: `u${Date.now()}`, 
@@ -612,12 +708,14 @@ const register = async ({ firstName, lastName, email, username, password, subscr
         lastName: last.value,
         email: em.value,
         username: un.value,
+        prefersDarkMode: DEFAULT_DARK_MODE_ENABLED,
         passwordHash,
         profileImage: DEFAULT_PROFILE_IMAGE,
         subscription: {
           tier: subscriptionTier,
           startDate: now,
-          renewalDate: now + (30 * 24 * 60 * 60 * 1000), // 30 days from now
+          trialEndsAt,
+          renewalDate: trialEndsAt,
           stripeSubscriptionId: stripeSubscriptionId || null,
           stripeCustomerId: stripeCustomerId || null,
           cancelAtPeriodEnd: false
@@ -725,6 +823,13 @@ const register = async ({ firstName, lastName, email, username, password, subscr
       const deleteAccount = () => {
         if (!currentUser) return { ok: false, message: 'Not signed in' };
         const userId = currentUser.id;
+
+        if (biometricUserId && biometricUserId === userId) {
+          setBiometricUserId(null);
+          removeItem(BIOMETRIC_USER_ID_KEY);
+          SecureStore.deleteItemAsync(BIOMETRIC_SECURE_USER_ID_KEY).catch(() => {});
+        }
+
         deletePasswordHashFromSecureStore(userId);
         setUsers(prev => prev.filter(u => u.id !== userId));
         setVaults(prev => prev
@@ -1113,6 +1218,14 @@ const register = async ({ firstName, lastName, email, username, password, subscr
     users,
     currentUser,
     setCurrentUser,
+    isDarkMode: (currentUser?.prefersDarkMode ?? DEFAULT_DARK_MODE_ENABLED) !== false,
+    theme: getTheme(currentUser?.prefersDarkMode ?? DEFAULT_DARK_MODE_ENABLED),
+    setDarkModeEnabled,
+    biometricUserId,
+    biometricEnabledForCurrentUser: !!(currentUser?.id && biometricUserId === currentUser.id),
+    enableBiometricSignInForCurrentUser,
+    disableBiometricSignIn,
+    biometricLogin,
     refreshData,
     recordActivity,
     enforceSessionTimeout,
@@ -1163,7 +1276,7 @@ const register = async ({ firstName, lastName, email, username, password, subscr
       getFeaturesComparison,
       convertPrice,
       getCurrencyInfo,
-  }), [loading, users, currentUser, vaults, collections, assets]);
+  }), [loading, users, currentUser, biometricUserId, vaults, collections, assets]);
 
   return (
     <DataContext.Provider value={value}>

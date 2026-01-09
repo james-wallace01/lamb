@@ -44,6 +44,7 @@ export default function Asset({ route, navigation }) {
     getRoleForAsset,
     deleteAsset,
     refreshData,
+    theme,
   } = useData();
 
   const asset = useMemo(() => assets.find((a) => a.id === assetId), [assetId, assets]);
@@ -295,128 +296,128 @@ export default function Asset({ route, navigation }) {
 
   if (!asset) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.subtitle}>Asset not found.</Text>
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Asset not found.</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.wrapper}>
+    <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
       <Modal visible={editVisible} transparent animationType="fade" onRequestClose={() => setEditVisible(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Edit Asset</Text>
+          <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Edit Asset</Text>
             <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.modalLabel}>Title</Text>
+              <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Title</Text>
               <TextInput
-                style={styles.modalInput}
+                style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                 placeholder="Title"
-                placeholderTextColor="#80869b"
+                placeholderTextColor={theme.placeholder}
                 value={editDraft.title}
                 onChangeText={(title) => setEditDraft((prev) => ({ ...prev, title: limit20(title) }))}
                 editable={canEdit}
               />
 
-              <Text style={styles.modalLabel}>Type</Text>
+              <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Type</Text>
               <TextInput
-                style={styles.modalInput}
+                style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                 placeholder="Type"
-                placeholderTextColor="#80869b"
+                placeholderTextColor={theme.placeholder}
                 value={editDraft.type}
                 onChangeText={(type) => setEditDraft((prev) => ({ ...prev, type }))}
                 editable={canEdit}
               />
 
-              <Text style={styles.modalLabel}>Category</Text>
+              <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Category</Text>
               <TextInput
-                style={styles.modalInput}
+                style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                 placeholder="Category"
-                placeholderTextColor="#80869b"
+                placeholderTextColor={theme.placeholder}
                 value={editDraft.category}
                 onChangeText={(category) => setEditDraft((prev) => ({ ...prev, category }))}
                 editable={canEdit}
               />
 
-              <Text style={styles.modalLabel}>Quantity</Text>
+              <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Quantity</Text>
               <TextInput
-                style={styles.modalInput}
+                style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                 placeholder="Quantity"
-                placeholderTextColor="#80869b"
+                placeholderTextColor={theme.placeholder}
                 keyboardType="numeric"
                 value={String(editDraft.quantity ?? 1)}
                 onChangeText={(quantity) => setEditDraft((prev) => ({ ...prev, quantity }))}
                 editable={canEdit}
               />
 
-              <Text style={styles.modalLabel}>Value</Text>
+              <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Value</Text>
               <TextInput
-                style={styles.modalInput}
+                style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                 placeholder="Value"
-                placeholderTextColor="#80869b"
+                placeholderTextColor={theme.placeholder}
                 keyboardType="numeric"
                 value={formatCurrency(editDraft.value)}
                 onChangeText={(value) => setEditDraft((prev) => ({ ...prev, value: unformatCurrency(value) }))}
                 editable={canEdit}
               />
 
-              <Text style={styles.modalLabel}>Estimate Value</Text>
+              <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Estimate Value</Text>
               <TextInput
-                style={styles.modalInput}
+                style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                 placeholder="Estimate Value"
-                placeholderTextColor="#80869b"
+                placeholderTextColor={theme.placeholder}
                 keyboardType="numeric"
                 value={formatCurrency(editDraft.estimateValue)}
                 onChangeText={(value) => setEditDraft((prev) => ({ ...prev, estimateValue: unformatCurrency(value) }))}
                 editable={canEdit}
               />
 
-              <Text style={styles.modalLabel}>RRP</Text>
+              <Text style={[styles.modalLabel, { color: theme.textMuted }]}>RRP</Text>
               <TextInput
-                style={styles.modalInput}
+                style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                 placeholder="RRP"
-                placeholderTextColor="#80869b"
+                placeholderTextColor={theme.placeholder}
                 keyboardType="numeric"
                 value={formatCurrency(editDraft.rrp)}
                 onChangeText={(value) => setEditDraft((prev) => ({ ...prev, rrp: unformatCurrency(value) }))}
                 editable={canEdit}
               />
 
-              <Text style={styles.modalLabel}>Purchase Price</Text>
+              <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Purchase Price</Text>
               <TextInput
-                style={styles.modalInput}
+                style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                 placeholder="Purchase Price"
-                placeholderTextColor="#80869b"
+                placeholderTextColor={theme.placeholder}
                 keyboardType="numeric"
                 value={formatCurrency(editDraft.purchasePrice)}
                 onChangeText={(value) => setEditDraft((prev) => ({ ...prev, purchasePrice: unformatCurrency(value) }))}
                 editable={canEdit}
               />
 
-              <Text style={styles.modalLabel}>Manager</Text>
+              <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Manager</Text>
               <TextInput
-                style={styles.modalInput}
+                style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                 placeholder="Manager"
-                placeholderTextColor="#80869b"
+                placeholderTextColor={theme.placeholder}
                 value={editDraft.manager}
                 onChangeText={(manager) => setEditDraft((prev) => ({ ...prev, manager }))}
                 editable={canEdit}
               />
 
-              <Text style={styles.modalLabel}>Description</Text>
+              <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Description</Text>
               <TextInput
-                style={[styles.modalInput, styles.modalTextarea]}
+                style={[styles.modalInput, styles.modalTextarea, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                 placeholder="Description"
-                placeholderTextColor="#80869b"
+                placeholderTextColor={theme.placeholder}
                 value={editDraft.description}
                 onChangeText={(description) => setEditDraft((prev) => ({ ...prev, description }))}
                 editable={canEdit}
                 multiline
               />
 
-              <View style={[styles.mediaCard, { marginTop: 12 }]}>
+              <View style={[styles.mediaCard, { marginTop: 12, backgroundColor: theme.surface, borderColor: theme.border }]}>
                 <View style={styles.mediaHeader}>
-                  <Text style={styles.sectionLabel}>Images</Text>
+                  <Text style={[styles.sectionLabel, { color: theme.text }]}>Images</Text>
                   <TouchableOpacity
                     style={[styles.addImageButton, !canEdit && styles.buttonDisabled]}
                     onPress={addImagesToDraft}
@@ -430,7 +431,7 @@ export default function Asset({ route, navigation }) {
 
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow}>
                   {draftPreviewImages.length === 0 ? (
-                    <Text style={styles.subtitle}>No images yet.</Text>
+                    <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No images yet.</Text>
                   ) : (
                     draftPreviewImages.map((img) => {
                       const isHeroImg = editDraft.heroImage === img;
@@ -522,10 +523,10 @@ export default function Asset({ route, navigation }) {
       </Modal>
 
       <ScrollView
-        contentContainerStyle={styles.container}
+        contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
         bounces
         alwaysBounceVertical
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" progressViewOffset={24} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.isDark ? '#fff' : '#111827'} progressViewOffset={24} />}
       >
         <View style={styles.headerRow}>
           <BackButton />
@@ -534,14 +535,14 @@ export default function Asset({ route, navigation }) {
 
         <View style={styles.headerSection}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.title}>{asset.title}</Text>
+            <Text style={[styles.title, { color: theme.text }]}>{asset.title}</Text>
           </View>
           <TouchableOpacity style={styles.infoButton} onPress={() => setInfoVisible(true)}>
             <Text style={styles.infoButtonText}>ℹ</Text>
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.roleBadge}>Access Type: {accessType}</Text>
+        <Text style={[styles.roleBadge, { color: theme.textMuted }]}>Access Type: {accessType}</Text>
 
         <View style={styles.actionsRow}>
           <TouchableOpacity
@@ -601,33 +602,40 @@ export default function Asset({ route, navigation }) {
         </View>
 
         {showMoveBox && canMove && (
-          <View style={styles.moveBox}>
-            <Text style={styles.sectionLabel}>Move Asset</Text>
+          <View style={[styles.moveBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.sectionLabel, { color: theme.text }]}>Move Asset</Text>
 
-            <Text style={styles.helper}>Select a vault:</Text>
-            <TouchableOpacity style={styles.dropdownButton} onPress={() => setVaultDropdownOpen(!vaultDropdownOpen)}>
-              <Text style={styles.dropdownButtonText}>
+            <Text style={[styles.helper, { color: theme.textMuted }]}>Select a vault:</Text>
+            <TouchableOpacity
+              style={[styles.dropdownButton, { backgroundColor: theme.inputBg, borderColor: theme.border }]}
+              onPress={() => setVaultDropdownOpen(!vaultDropdownOpen)}
+            >
+              <Text style={[styles.dropdownButtonText, { color: theme.text }]}>
                 {moveVaultId ? ownerVaults.find((v) => v.id === moveVaultId)?.name || 'Select vault...' : 'Select vault...'}
               </Text>
-              <Text style={styles.dropdownArrow}>{vaultDropdownOpen ? '▲' : '▼'}</Text>
+              <Text style={[styles.dropdownArrow, { color: theme.textMuted }]}>{vaultDropdownOpen ? '▲' : '▼'}</Text>
             </TouchableOpacity>
 
             {vaultDropdownOpen && (
-              <ScrollView style={styles.dropdownList} nestedScrollEnabled={true} showsVerticalScrollIndicator={true}>
+              <ScrollView style={[styles.dropdownList, { backgroundColor: theme.inputBg, borderColor: theme.border }]} nestedScrollEnabled={true} showsVerticalScrollIndicator={true}>
                 {ownerVaults.length === 0 ? (
-                  <Text style={styles.helper}>No owner vaults</Text>
+                  <Text style={[styles.helper, { color: theme.textMuted }]}>No owner vaults</Text>
                 ) : (
                   ownerVaults.map((v) => (
                     <TouchableOpacity
                       key={v.id}
-                      style={[styles.dropdownItem, moveVaultId === v.id && styles.dropdownItemActive]}
+                      style={[
+                        styles.dropdownItem,
+                        { borderBottomColor: theme.border },
+                        moveVaultId === v.id && styles.dropdownItemActive,
+                      ]}
                       onPress={() => {
                         setMoveVaultId(v.id);
                         setMoveCollectionId(null);
                         setVaultDropdownOpen(false);
                       }}
                     >
-                      <Text style={styles.dropdownItemText}>{v.name || v.id}</Text>
+                      <Text style={[styles.dropdownItemText, { color: theme.text }]}>{v.name || v.id}</Text>
                       {moveVaultId === v.id && <Text style={styles.checkmark}>✓</Text>}
                     </TouchableOpacity>
                   ))
@@ -635,35 +643,43 @@ export default function Asset({ route, navigation }) {
               </ScrollView>
             )}
 
-            <Text style={styles.helper}>Select a collection:</Text>
+            <Text style={[styles.helper, { color: theme.textMuted }]}>Select a collection:</Text>
             <TouchableOpacity
-              style={[styles.dropdownButton, !moveVaultId && styles.buttonDisabled]}
+              style={[
+                styles.dropdownButton,
+                { backgroundColor: theme.inputBg, borderColor: theme.border },
+                !moveVaultId && styles.buttonDisabled,
+              ]}
               onPress={() => moveVaultId && setCollectionDropdownOpen(!collectionDropdownOpen)}
               disabled={!moveVaultId}
             >
-              <Text style={styles.dropdownButtonText}>
+              <Text style={[styles.dropdownButtonText, { color: theme.text }]}>
                 {moveCollectionId
                   ? ownerCollections.find((c) => c.id === moveCollectionId)?.name || 'Select collection...'
                   : 'Select collection...'}
               </Text>
-              <Text style={styles.dropdownArrow}>{collectionDropdownOpen ? '▲' : '▼'}</Text>
+              <Text style={[styles.dropdownArrow, { color: theme.textMuted }]}>{collectionDropdownOpen ? '▲' : '▼'}</Text>
             </TouchableOpacity>
 
             {collectionDropdownOpen && (
-              <ScrollView style={styles.dropdownList} nestedScrollEnabled={true} showsVerticalScrollIndicator={true}>
+              <ScrollView style={[styles.dropdownList, { backgroundColor: theme.inputBg, borderColor: theme.border }]} nestedScrollEnabled={true} showsVerticalScrollIndicator={true}>
                 {ownerCollections.length === 0 ? (
-                  <Text style={styles.helper}>Select a vault first</Text>
+                  <Text style={[styles.helper, { color: theme.textMuted }]}>Select a vault first</Text>
                 ) : (
                   ownerCollections.map((c) => (
                     <TouchableOpacity
                       key={c.id}
-                      style={[styles.dropdownItem, moveCollectionId === c.id && styles.dropdownItemActive]}
+                      style={[
+                        styles.dropdownItem,
+                        { borderBottomColor: theme.border },
+                        moveCollectionId === c.id && styles.dropdownItemActive,
+                      ]}
                       onPress={() => {
                         setMoveCollectionId(c.id);
                         setCollectionDropdownOpen(false);
                       }}
                     >
-                      <Text style={styles.dropdownItemText}>{c.name || c.id}</Text>
+                      <Text style={[styles.dropdownItemText, { color: theme.text }]}>{c.name || c.id}</Text>
                       {moveCollectionId === c.id && <Text style={styles.checkmark}>✓</Text>}
                     </TouchableOpacity>
                   ))
@@ -683,29 +699,29 @@ export default function Asset({ route, navigation }) {
 
         <Modal visible={infoVisible} transparent animationType="fade" onRequestClose={() => setInfoVisible(false)}>
           <TouchableOpacity style={styles.modalOverlay} onPress={() => setInfoVisible(false)} activeOpacity={1}>
-            <View style={styles.infoModalContent}>
-              <View style={styles.infoModalHeader}>
-                <Text style={styles.infoModalTitle}>Information</Text>
+            <View style={[styles.infoModalContent, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}>
+              <View style={[styles.infoModalHeader, { borderBottomColor: theme.border }]}>
+                <Text style={[styles.infoModalTitle, { color: theme.text }]}>Information</Text>
                 <TouchableOpacity onPress={() => setInfoVisible(false)}>
-                  <Text style={styles.infoModalClose}>✕</Text>
+                  <Text style={[styles.infoModalClose, { color: theme.textMuted }]}>✕</Text>
                 </TouchableOpacity>
               </View>
               <View style={styles.infoModalBody}>
                 <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Created</Text>
-                  <Text style={styles.infoValue}>{asset.createdAt ? new Date(asset.createdAt).toLocaleDateString() : '-'}</Text>
+                  <Text style={[styles.infoLabel, { color: theme.textMuted }]}>Created</Text>
+                  <Text style={[styles.infoValue, { color: theme.text }]}>{asset.createdAt ? new Date(asset.createdAt).toLocaleDateString() : '-'}</Text>
                 </View>
                 <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Viewed</Text>
-                  <Text style={styles.infoValue}>{asset.viewedAt ? new Date(asset.viewedAt).toLocaleDateString() : '-'}</Text>
+                  <Text style={[styles.infoLabel, { color: theme.textMuted }]}>Viewed</Text>
+                  <Text style={[styles.infoValue, { color: theme.text }]}>{asset.viewedAt ? new Date(asset.viewedAt).toLocaleDateString() : '-'}</Text>
                 </View>
                 <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Edited</Text>
-                  <Text style={styles.infoValue}>{asset.editedAt ? new Date(asset.editedAt).toLocaleDateString() : '-'}</Text>
+                  <Text style={[styles.infoLabel, { color: theme.textMuted }]}>Edited</Text>
+                  <Text style={[styles.infoValue, { color: theme.text }]}>{asset.editedAt ? new Date(asset.editedAt).toLocaleDateString() : '-'}</Text>
                 </View>
                 <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Manager</Text>
-                  <Text style={styles.infoValue}>{owner?.username || asset.manager || 'Unknown'}</Text>
+                  <Text style={[styles.infoLabel, { color: theme.textMuted }]}>Manager</Text>
+                  <Text style={[styles.infoValue, { color: theme.text }]}>{owner?.username || asset.manager || 'Unknown'}</Text>
                 </View>
               </View>
             </View>

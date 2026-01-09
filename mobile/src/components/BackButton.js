@@ -2,10 +2,12 @@ import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useData } from '../context/DataContext';
 
 export default function BackButton({ style }) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { theme } = useData();
   
   const handlePress = () => {
     if (navigation.canGoBack()) {
@@ -19,8 +21,16 @@ export default function BackButton({ style }) {
       activeOpacity={0.7}
       style={[styles.container, { top: Math.max(insets.top, 8) }, style]}
     >
-      <View style={styles.buttonInner}>
-        <Text style={styles.arrow}>{'‹'}</Text>
+      <View
+        style={[
+          styles.buttonInner,
+          {
+            backgroundColor: theme.isDark ? 'rgba(232, 237, 255, 0.12)' : 'rgba(17, 24, 39, 0.06)',
+            borderColor: theme.isDark ? 'rgba(232, 237, 255, 0.2)' : 'rgba(17, 24, 39, 0.12)',
+          },
+        ]}
+      >
+        <Text style={[styles.arrow, { color: theme.text }]}>{'‹'}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -36,17 +46,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buttonInner: {
-    backgroundColor: 'rgba(232, 237, 255, 0.12)',
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: 'rgba(232, 237, 255, 0.2)',
   },
   arrow: {
     fontSize: 26,
     fontWeight: '700',
-    color: '#e8edff',
     lineHeight: 26,
   },
 });

@@ -6,7 +6,7 @@ import LambHeader from '../components/LambHeader';
 import { API_URL } from '../config/stripe';
 
 export default function ChooseSubscription({ navigation, route }) {
-  const { subscriptionTiers, convertPrice } = useData();
+  const { subscriptionTiers, convertPrice, theme } = useData();
   const { firstName, lastName, email, username, password } = route.params || {};
   const [selectedTier, setSelectedTier] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -15,7 +15,7 @@ export default function ChooseSubscription({ navigation, route }) {
 
   const initializePaymentSheet = async (tier) => {
     try {
-      // Create Stripe subscription
+      // Collect valid payment info first (no charge yet)
       const response = await fetch(`${API_URL}/create-subscription`, {
         method: 'POST',
         headers: {
@@ -28,13 +28,24 @@ export default function ChooseSubscription({ navigation, route }) {
         }),
       });
 
-      const { subscriptionId, clientSecret, ephemeralKey, customer } = await response.json();
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        Alert.alert('Error', err.error || 'Unable to start signup. Please try again.');
+        return null;
+      }
+
+      const { setupIntentClientSecret, setupIntentId, ephemeralKey, customer } = await response.json();
+
+      if (!setupIntentClientSecret || !customer || !ephemeralKey) {
+        Alert.alert('Error', 'Unable to reach membership service. Please try again.');
+        return null;
+      }
 
       const { error } = await initPaymentSheet({
         merchantDisplayName: 'LAMB',
         customerId: customer,
         customerEphemeralKeySecret: ephemeralKey,
-        paymentIntentClientSecret: clientSecret,
+        setupIntentClientSecret: setupIntentClientSecret,
         allowsDelayedPaymentMethods: true,
       });
 
@@ -43,9 +54,13 @@ export default function ChooseSubscription({ navigation, route }) {
         return null;
       }
 
-      return { subscriptionId, customerId: customer };
+      return { setupIntentId, customerId: customer };
     } catch (error) {
-      Alert.alert('Error', 'Unable to initialize payment. Please try again.');
+      const message = (error && error.message) ? String(error.message) : 'Network request failed';
+      Alert.alert(
+        'Network error',
+        `Unable to reach the membership service.\n\nPlease make sure the backend is running and reachable at:\n${API_URL}\n\nDetails: ${message}`
+      );
       console.error(error);
       return null;
     }
@@ -58,6 +73,10 @@ export default function ChooseSubscription({ navigation, route }) {
     }
 
     setSubmitting(true);
+
+    const tier = subscriptionTiers[selectedTier];
+    const localPrice = convertPrice(tier.price);
+    const trialEndsAt = new Date(Date.now() + (14 * 24 * 60 * 60 * 1000));
 
     // Initialize payment sheet
     const subscriptionData = await initializePaymentSheet(selectedTier);
@@ -75,28 +94,29 @@ export default function ChooseSubscription({ navigation, route }) {
       return;
     }
 
-    // Verify the payment actually went through
-    console.log('Payment sheet closed, verifying payment for membership...');
-    const confirmResponse = await fetch(`${API_URL}/confirm-subscription-payment`, {
+    // Start 14-day free trial subscription (payment method is on file)
+    const startResponse = await fetch(`${API_URL}/start-trial-subscription`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        subscriptionId: subscriptionData.subscriptionId,
+        customerId: subscriptionData.customerId,
+        subscriptionTier: selectedTier.toUpperCase(),
+        setupIntentId: subscriptionData.setupIntentId,
       }),
     });
-    
-    const confirmResult = await confirmResponse.json();
-    
-    if (!confirmResult.success) {
-      Alert.alert('Payment failed', 
-        `Payment status: ${confirmResult.status}. ${confirmResult.error || 'Please try again.'}`);
+
+    if (!startResponse.ok) {
+      const err = await startResponse.json().catch(() => ({}));
+      Alert.alert('Error', err.error || 'Unable to start free trial. Please try again.');
       setSubmitting(false);
       return;
     }
 
-    console.log('Payment successful - creating account');
+    const { subscriptionId } = await startResponse.json();
+
+    console.log('Free trial subscription started - creating account');
     const res = await register({
       firstName,
       lastName,
@@ -104,7 +124,7 @@ export default function ChooseSubscription({ navigation, route }) {
       username,
       password,
       subscriptionTier: selectedTier.toUpperCase(),
-      stripeSubscriptionId: subscriptionData.subscriptionId,
+      stripeSubscriptionId: subscriptionId,
       stripeCustomerId: subscriptionData.customerId
     });
 
@@ -115,16 +135,19 @@ export default function ChooseSubscription({ navigation, route }) {
       return;
     }
 
-    Alert.alert('Success!', 'Your account has been created and membership is active.');
+    Alert.alert(
+      'Success!',
+      `Your 14-day free trial has started. You will be charged ${localPrice.symbol}${localPrice.amount}/${tier.period} starting ${trialEndsAt.toLocaleDateString()} unless you cancel before then.`
+    );
   };
 
   const tiers = Object.values(subscriptionTiers);
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}>
       <LambHeader />
-      <Text style={styles.title}>Choose Your Membership</Text>
-      <Text style={styles.subtitle}>Select a membership to get started with LAMB</Text>
+      <Text style={[styles.title, { color: theme.text }]}>Choose Your Membership</Text>
+      <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Add payment info to start a 14-day free trial. You won’t be charged until the trial ends.</Text>
 
       <View style={styles.plansContainer}>
         {tiers.map((tier) => {
@@ -134,15 +157,16 @@ export default function ChooseSubscription({ navigation, route }) {
               key={tier.id}
               style={[
                 styles.planCard,
+                { backgroundColor: theme.surface, borderColor: theme.border },
                 selectedTier === tier.id && styles.planCardSelected
               ]}
               onPress={() => setSelectedTier(tier.id)}
             >
-              <Text style={styles.planName}>{tier.name}</Text>
-              <Text style={styles.planDescription}>{tier.description}</Text>
+              <Text style={[styles.planName, { color: theme.text }]}>{tier.name}</Text>
+              <Text style={[styles.planDescription, { color: theme.textMuted }]}>{tier.description}</Text>
               <View style={styles.priceContainer}>
                 <Text style={styles.price}>{localPrice.symbol}{localPrice.amount}</Text>
-                <Text style={styles.period}>/{tier.period}</Text>
+                <Text style={[styles.period, { color: theme.textMuted }]}>/{tier.period}</Text>
               </View>
               {selectedTier === tier.id && (
                 <View style={styles.checkmark}>
@@ -165,7 +189,7 @@ export default function ChooseSubscription({ navigation, route }) {
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Text style={styles.link}>Back</Text>
+        <Text style={[styles.link, { color: theme.link }]}>Back</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -203,7 +227,6 @@ const styles = StyleSheet.create({
   planCardSelected: {
     borderColor: '#2563eb',
     borderWidth: 2,
-    backgroundColor: '#0f1419',
   },
   planName: {
     fontSize: 18,

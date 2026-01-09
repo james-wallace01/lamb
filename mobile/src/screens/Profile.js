@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, Image, ScrollView, RefreshControl } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, Image, ScrollView, RefreshControl, Platform, Switch } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
@@ -8,10 +8,25 @@ import BackButton from '../components/BackButton';
 const DEFAULT_AVATAR = 'https://via.placeholder.com/112?text=Profile';
 
 export default function Profile() {
-  const { currentUser, updateCurrentUser, assets, validatePassword, resetPassword, deleteAccount, refreshData } = useData();
+  const {
+    currentUser,
+    updateCurrentUser,
+    assets,
+    validatePassword,
+    resetPassword,
+    deleteAccount,
+    refreshData,
+    theme,
+    isDarkMode,
+    setDarkModeEnabled,
+    biometricEnabledForCurrentUser,
+    enableBiometricSignInForCurrentUser,
+    disableBiometricSignIn,
+  } = useData();
   const [draft, setDraft] = useState(currentUser || {});
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [updatingBiometric, setUpdatingBiometric] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
@@ -275,9 +290,9 @@ export default function Profile() {
   };
 
   return (
-    <View style={styles.wrapper}>
+    <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
       <ScrollView
-        contentContainerStyle={styles.container}
+        contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
         showsVerticalScrollIndicator={false}
         bounces
         alwaysBounceVertical
@@ -308,7 +323,7 @@ export default function Profile() {
           <BackButton />
           <LambHeader />
         </View>
-        <Text style={styles.title}>Profile</Text>
+        <Text style={[styles.title, { color: theme.text }]}>Profile</Text>
         {currentUser ? (
           <>
             <View style={styles.avatarContainer}>
@@ -323,50 +338,50 @@ export default function Profile() {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.netWorthCard}>
-              <Text style={styles.netWorthLabel}>Net Worth</Text>
-              <Text style={styles.netWorthValue}>
+            <View style={[styles.netWorthCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.netWorthLabel, { color: theme.textMuted }]}>Net Worth</Text>
+              <Text style={[styles.netWorthValue, { color: theme.text }]}>
                 ${netWorth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </Text>
             </View>
 
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>First Name</Text>
+              <Text style={[styles.label, { color: theme.textMuted }]}>First Name</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                 placeholder="First name"
-                placeholderTextColor="#80869b"
+                placeholderTextColor={theme.placeholder}
                 value={draft.firstName || ''}
                 onChangeText={(v) => setDraft({ ...draft, firstName: v })}
               />
             </View>
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Last Name</Text>
+              <Text style={[styles.label, { color: theme.textMuted }]}>Last Name</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                 placeholder="Last name"
-                placeholderTextColor="#80869b"
+                placeholderTextColor={theme.placeholder}
                 value={draft.lastName || ''}
                 onChangeText={(v) => setDraft({ ...draft, lastName: v })}
               />
             </View>
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Username</Text>
+              <Text style={[styles.label, { color: theme.textMuted }]}>Username</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                 placeholder="Username"
-                placeholderTextColor="#80869b"
+                placeholderTextColor={theme.placeholder}
                 autoCapitalize="none"
                 value={draft.username || ''}
                 onChangeText={(v) => setDraft({ ...draft, username: v })}
               />
             </View>
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Email</Text>
+              <Text style={[styles.label, { color: theme.textMuted }]}>Email</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                 placeholder="Email"
-                placeholderTextColor="#80869b"
+                placeholderTextColor={theme.placeholder}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 value={draft.email || ''}
@@ -381,8 +396,55 @@ export default function Profile() {
               <Text style={styles.buttonText}>{loading ? 'Saving...' : 'Save'}</Text>
             </TouchableOpacity>
 
-            <View style={styles.card}>
-              <Text style={styles.sectionTitle}>Account</Text>
+            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Account</Text>
+
+              <View style={styles.toggleRow}>
+                <View style={styles.toggleTextCol}>
+                  <Text style={[styles.toggleTitle, { color: theme.text }]}>Dark Mode</Text>
+                  <Text style={[styles.toggleSubtitle, { color: theme.textMuted }]}>Default is on. Turn off for a light theme.</Text>
+                </View>
+                <Switch
+                  value={!!isDarkMode}
+                  onValueChange={(next) => {
+                    const res = setDarkModeEnabled?.(next);
+                    if (!res?.ok) Alert.alert('Dark Mode', res?.message || 'Could not update theme');
+                  }}
+                />
+              </View>
+
+              {Platform.OS === 'ios' && (
+                <View style={styles.toggleRow}>
+                  <View style={styles.toggleTextCol}>
+                    <Text style={[styles.toggleTitle, { color: theme.text }]}>Face ID Sign In</Text>
+                    <Text style={[styles.toggleSubtitle, { color: theme.textMuted }]}>Use Face ID to sign in on this device.</Text>
+                  </View>
+                  <Switch
+                    value={!!biometricEnabledForCurrentUser}
+                    onValueChange={async (next) => {
+                      if (updatingBiometric) return;
+                      setUpdatingBiometric(true);
+                      try {
+                        if (next) {
+                          const res = await enableBiometricSignInForCurrentUser?.();
+                          if (!res?.ok) {
+                            Alert.alert('Face ID', res?.message || 'Could not enable Face ID');
+                          }
+                        } else {
+                          const res = await disableBiometricSignIn?.();
+                          if (!res?.ok) {
+                            Alert.alert('Face ID', res?.message || 'Could not disable Face ID');
+                          }
+                        }
+                      } finally {
+                        setUpdatingBiometric(false);
+                      }
+                    }}
+                    disabled={updatingBiometric}
+                  />
+                </View>
+              )}
+
               {!showResetPassword && (
                 <TouchableOpacity
                   style={[styles.button, resettingPassword && styles.buttonDisabled]}
@@ -533,6 +595,10 @@ const styles = StyleSheet.create({
   buttonText: { color: '#fff', fontWeight: '700' },
   card: { padding: 14, borderRadius: 10, backgroundColor: '#11121a', borderWidth: 1, borderColor: '#1f2738', gap: 10, marginTop: 18 },
   sectionTitle: { color: '#e5e7f0', fontWeight: '700', fontSize: 16 },
+  toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 },
+  toggleTextCol: { flex: 1, paddingRight: 12 },
+  toggleTitle: { color: '#e5e7f0', fontWeight: '700', fontSize: 14 },
+  toggleSubtitle: { color: '#9aa1b5', fontSize: 12, marginTop: 2, lineHeight: 16 },
   deleteButton: { backgroundColor: '#3b0f0f', borderColor: '#ef4444', borderWidth: 1 },
   deleteButtonText: { color: '#fecaca' },
   spacer: { height: 40 },

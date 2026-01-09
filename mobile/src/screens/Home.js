@@ -5,7 +5,7 @@ import ShareModal from '../components/ShareModal';
 import LambHeader from '../components/LambHeader';
 
 export default function Home({ navigation }) {
-  const { loading, vaults, currentUser, addVault, logout, refreshData } = useData();
+  const { loading, vaults, currentUser, addVault, logout, refreshData, theme } = useData();
   const [newVaultName, setNewVaultName] = useState('');
   const [shareVaultId, setShareVaultId] = useState(null);
   const scrollRef = useRef(null);
@@ -33,34 +33,41 @@ export default function Home({ navigation }) {
   const sharedVaults = useMemo(() => vaults.filter((v) => v.ownerId !== currentUser?.id && (v.sharedWith || []).some(sw => sw.userId === currentUser?.id)), [vaults, currentUser]);
 
   const renderVault = (item) => (
-    <TouchableOpacity style={[styles.card, styles.vaultStripe]} onPress={() => navigation.navigate('Vault', { vaultId: item.id })}>
+    <TouchableOpacity
+      style={[
+        styles.card,
+        styles.vaultStripe,
+        { backgroundColor: theme.surface, borderColor: theme.border },
+      ]}
+      onPress={() => navigation.navigate('Vault', { vaultId: item.id })}
+    >
       <View style={styles.cardRow}>
         <View>
           <View style={styles.titleRow}>
-            <Text style={styles.cardTitle}>{item.name}</Text>
+            <Text style={[styles.cardTitle, { color: theme.text }]}>{item.name}</Text>
             <View style={[styles.sharedDot, (item.sharedWith || []).length > 0 ? styles.sharedDotOn : styles.sharedDotOff]} />
           </View>
-          <Text style={styles.cardSubtitle}>Vault • {new Date(item.createdAt).toLocaleDateString()}</Text>
+          <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>Vault • {new Date(item.createdAt).toLocaleDateString()}</Text>
         </View>
         <View style={styles.cardActions}>
-          <Text style={styles.chevron}>›</Text>
+          <Text style={[styles.chevron, { color: theme.textMuted }]}>›</Text>
         </View>
       </View>
     </TouchableOpacity>
   );
 
   return (
-    <View style={styles.wrapper}>
+    <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
       <ScrollView
         ref={scrollRef}
-        contentContainerStyle={styles.container}
+        contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
         bounces
         alwaysBounceVertical
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" progressViewOffset={24} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.isDark ? '#fff' : '#111827'} progressViewOffset={24} />}
       >
         <LambHeader />
         <View style={styles.headerRow}>
-          <Text style={styles.title}>Home</Text>
+          <Text style={[styles.title, { color: theme.text }]}>Home</Text>
           <View style={styles.headerActions}>
             <TouchableOpacity onPress={() => navigation.navigate('Profile')} activeOpacity={0.8}>
               {currentUser?.profileImage ? (
@@ -71,44 +78,44 @@ export default function Home({ navigation }) {
                 </View>
               )}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.secondaryButton} onPress={logout}>
-              <Text style={styles.secondaryText}>Sign out</Text>
+            <TouchableOpacity style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface }]} onPress={logout}>
+              <Text style={[styles.secondaryText, { color: theme.textSecondary }]}>Sign out</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.quickRow}>
-          <TouchableOpacity style={styles.quickCard} onPress={() => scrollRef.current?.scrollTo({ y: mySectionY, animated: true })}>
-            <Text style={styles.quickTitle}>My Vaults</Text>
-            <Text style={styles.quickMeta}>{myVaults.length} total</Text>
+          <TouchableOpacity style={[styles.quickCard, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => scrollRef.current?.scrollTo({ y: mySectionY, animated: true })}>
+            <Text style={[styles.quickTitle, { color: theme.text }]}>My Vaults</Text>
+            <Text style={[styles.quickMeta, { color: theme.textMuted }]}>{myVaults.length} total</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.quickCard} onPress={() => scrollRef.current?.scrollTo({ y: sharedSectionY, animated: true })}>
-            <Text style={styles.quickTitle}>Shared Vaults</Text>
-            <Text style={styles.quickMeta}>{sharedVaults.length} total</Text>
+          <TouchableOpacity style={[styles.quickCard, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => scrollRef.current?.scrollTo({ y: sharedSectionY, animated: true })}>
+            <Text style={[styles.quickTitle, { color: theme.text }]}>Shared Vaults</Text>
+            <Text style={[styles.quickMeta, { color: theme.textMuted }]}>{sharedVaults.length} total</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.quickCard} onPress={() => navigation.navigate('Membership')}>
-            <Text style={styles.quickTitle}>Membership</Text>
-            <Text style={styles.quickMeta}>Membership</Text>
+          <TouchableOpacity style={[styles.quickCard, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => navigation.navigate('Membership')}>
+            <Text style={[styles.quickTitle, { color: theme.text }]}>Membership</Text>
+            <Text style={[styles.quickMeta, { color: theme.textMuted }]}>Membership</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.quickCard} onPress={() => navigation.navigate('Profile')}>
-            <Text style={styles.quickTitle}>Profile</Text>
-            <Text style={styles.quickMeta}>Account</Text>
+          <TouchableOpacity style={[styles.quickCard, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => navigation.navigate('Profile')}>
+            <Text style={[styles.quickTitle, { color: theme.text }]}>Profile</Text>
+            <Text style={[styles.quickMeta, { color: theme.textMuted }]}>Account</Text>
           </TouchableOpacity>
         </View>
 
         {loading ? (
-          <Text style={styles.subtitle}>Loading…</Text>
+          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Loading…</Text>
         ) : (
           <>
             <View onLayout={(e) => setMySectionY(e.nativeEvent.layout.y)}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>My Vaults</Text>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>My Vaults</Text>
               </View>
               <View style={styles.createRow}>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                   placeholder="New vault name"
-                  placeholderTextColor="#80869b"
+                  placeholderTextColor={theme.placeholder}
                   value={newVaultName}
                   onChangeText={setNewVaultName}
                 />
@@ -124,7 +131,7 @@ export default function Home({ navigation }) {
                 </TouchableOpacity>
               </View>
               {myVaults.length === 0 ? (
-                <Text style={styles.subtitle}>No vaults yet.</Text>
+                <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No vaults yet.</Text>
               ) : (
                 myVaults.map((v) => (
                   <View key={v.id} style={styles.sectionItem}>
@@ -136,10 +143,10 @@ export default function Home({ navigation }) {
 
             <View onLayout={(e) => setSharedSectionY(e.nativeEvent.layout.y)}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Shared Vaults</Text>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Shared Vaults</Text>
               </View>
               {sharedVaults.length === 0 ? (
-                <Text style={styles.subtitle}>No shared vaults.</Text>
+                <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No shared vaults.</Text>
               ) : (
                 sharedVaults.map((v) => (
                   <View key={v.id} style={styles.sectionItem}>

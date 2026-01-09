@@ -35,6 +35,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
   const {
     users,
     currentUser,
+    theme,
     shareVault,
     shareCollection,
     shareAsset,
@@ -116,87 +117,115 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.backdrop}>
-        <View style={styles.modal}>
-          <Text style={styles.title}>Share {targetType}</Text>
-            <Text style={styles.label}>User</Text>
+        <View style={[styles.modal, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Text style={[styles.title, { color: theme.text }]}>Share {targetType}</Text>
+            <Text style={[styles.label, { color: theme.textMuted }]}>User</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
               placeholder="Username or email"
-              placeholderTextColor="#80869b"
+              placeholderTextColor={theme.placeholder}
               value={query}
               onChangeText={setQuery}
             />
             {suggestions.length > 0 && (
-              <View style={styles.suggestions}>
+              <View style={[styles.suggestions, { borderColor: theme.border, backgroundColor: theme.inputBg }]}>
                 {suggestions.map((u, idx) => (
                   <TouchableOpacity
                     key={u.id || u.username || u.email || String(idx)}
-                    style={[styles.suggestionRow, idx === suggestions.length - 1 && styles.suggestionRowLast]}
+                    style={[
+                      styles.suggestionRow,
+                      { borderBottomColor: theme.border },
+                      idx === suggestions.length - 1 && styles.suggestionRowLast,
+                    ]}
                     onPress={() => handleShare(u.id)}
                   >
                     <View>
-                      <Text style={styles.suggestionName}>{u.username || u.email || 'User'}</Text>
-                      <Text style={styles.suggestionMeta}>{u.email || `${u.firstName || ''} ${u.lastName || ''}`}</Text>
+                      <Text style={[styles.suggestionName, { color: theme.text }]}>{u.username || u.email || 'User'}</Text>
+                      <Text style={[styles.suggestionMeta, { color: theme.textMuted }]}>{u.email || `${u.firstName || ''} ${u.lastName || ''}`}</Text>
                     </View>
                     <Text style={styles.addText}>Add</Text>
                   </TouchableOpacity>
                 ))}
               </View>
             )}
-            <View style={styles.divider} />
-            <Text style={styles.label}>Access Type</Text>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+            <Text style={[styles.label, { color: theme.textMuted }]}>Access Type</Text>
             <View style={styles.roleRow}>
               {ROLE_OPTIONS.map((r) => (
-                <TouchableOpacity key={r.value} style={[styles.roleChip, role === r.value && styles.roleChipActive]} onPress={() => setRole(r.value)}>
-                  <Text style={styles.roleText}>{r.label}</Text>
+                <TouchableOpacity
+                  key={r.value}
+                  style={[
+                    styles.roleChip,
+                    { borderColor: theme.border, backgroundColor: theme.inputBg },
+                    role === r.value && { borderColor: '#2563eb', backgroundColor: theme.surface },
+                  ]}
+                  onPress={() => setRole(r.value)}
+                >
+                  <Text style={[styles.roleText, { color: theme.text }]}>{r.label}</Text>
                 </TouchableOpacity>
               ))}
             </View>
             {ROLE_HELP[role] && (
-              <Text style={styles.roleHelp}>{ROLE_HELP[role]}</Text>
+              <Text style={[styles.roleHelp, { color: theme.textSecondary }]}>{ROLE_HELP[role]}</Text>
             )}
 
-            <View style={styles.divider} />
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
             {(targetType === 'vault' || targetType === 'collection') && (
               <>
-                <Text style={styles.label}>Permissions</Text>
+                <Text style={[styles.label, { color: theme.textMuted }]}>Permissions</Text>
                 <View style={styles.roleRow}>
                   {targetType === 'vault' && (
                     <>
                       <View style={styles.createLabelWrap}>
-                        <Text style={styles.createLabelText}>Create Collections</Text>
+                        <Text style={[styles.createLabelText, { color: theme.textMuted }]}>Create Collections</Text>
                       </View>
                       <TouchableOpacity
-                        style={[styles.roleChipSmall, !canCreateCollections && styles.roleChipActive]}
+                        style={[
+                          styles.roleChipSmall,
+                          { borderColor: theme.border, backgroundColor: theme.inputBg },
+                          !canCreateCollections && { borderColor: '#2563eb', backgroundColor: theme.surface },
+                        ]}
                         onPress={() => setCanCreateCollections(false)}
                       >
-                        <Text style={styles.roleText}>Disabled</Text>
+                        <Text style={[styles.roleText, { color: theme.text }]}>Disabled</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={[styles.roleChipSmall, canCreateCollections && styles.roleChipActive]}
+                        style={[
+                          styles.roleChipSmall,
+                          { borderColor: theme.border, backgroundColor: theme.inputBg },
+                          canCreateCollections && { borderColor: '#2563eb', backgroundColor: theme.surface },
+                        ]}
                         onPress={() => setCanCreateCollections(true)}
                       >
-                        <Text style={styles.roleText}>Enabled</Text>
+                        <Text style={[styles.roleText, { color: theme.text }]}>Enabled</Text>
                       </TouchableOpacity>
                     </>
                   )}
                   {targetType === 'collection' && (
                     <>
                       <View style={styles.createLabelWrap}>
-                        <Text style={styles.createLabelText}>Create Assets</Text>
+                        <Text style={[styles.createLabelText, { color: theme.textMuted }]}>Create Assets</Text>
                       </View>
                       <TouchableOpacity
-                        style={[styles.roleChipSmall, !canCreateAssets && styles.roleChipActive]}
+                        style={[
+                          styles.roleChipSmall,
+                          { borderColor: theme.border, backgroundColor: theme.inputBg },
+                          !canCreateAssets && { borderColor: '#2563eb', backgroundColor: theme.surface },
+                        ]}
                         onPress={() => setCanCreateAssets(false)}
                       >
-                        <Text style={styles.roleText}>Disabled</Text>
+                        <Text style={[styles.roleText, { color: theme.text }]}>Disabled</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={[styles.roleChipSmall, canCreateAssets && styles.roleChipActive]}
+                        style={[
+                          styles.roleChipSmall,
+                          { borderColor: theme.border, backgroundColor: theme.inputBg },
+                          canCreateAssets && { borderColor: '#2563eb', backgroundColor: theme.surface },
+                        ]}
                         onPress={() => setCanCreateAssets(true)}
                       >
-                        <Text style={styles.roleText}>Enabled</Text>
+                        <Text style={[styles.roleText, { color: theme.text }]}>Enabled</Text>
                       </TouchableOpacity>
                     </>
                   )}
@@ -204,89 +233,112 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
               </>
             )}
               {existingShares.length > 0 && (
-                <View style={styles.sharedBox}>
-                  <Text style={styles.sharedLabel}>Currently shared</Text>
+                <View style={[styles.sharedBox, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+                  <Text style={[styles.sharedLabel, { color: theme.text }]}>Currently shared</Text>
                 <ScrollView style={styles.sharedList} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                   {existingShares.map((s, idx) => (
                     <View key={s.userId}>
-                      <View style={styles.sharedRow}>
+                      <View style={[styles.sharedRow, { backgroundColor: theme.inputBg }]}>
                         <View style={styles.sharedInfo}>
-                          <Text style={styles.sharedName}>{s.user?.username || s.userId}</Text>
-                          <Text style={styles.sharedMeta}>{s.user?.email || ''}</Text>
+                          <Text style={[styles.sharedName, { color: theme.text }]}>{s.user?.username || s.userId}</Text>
+                          <Text style={[styles.sharedMeta, { color: theme.textMuted }]}>{s.user?.email || ''}</Text>
                         </View>
                         <View style={styles.sharedActions}>
                           <View style={styles.roleRow}>
                             {ROLE_OPTIONS.map((r) => (
                               <TouchableOpacity
                                 key={r.value}
-                                style={[styles.roleChipSmall, normalizeRole(s.role) === r.value && styles.roleChipActive]}
+                                style={[
+                                  styles.roleChipSmall,
+                                  { borderColor: theme.border, backgroundColor: theme.inputBg },
+                                  normalizeRole(s.role) === r.value && { borderColor: '#2563eb', backgroundColor: theme.surface },
+                                ]}
                                 onPress={() => handleUpdate(
                                   s.userId,
                                   r.value,
                                   targetType === 'vault' ? s.canCreateCollections : targetType === 'collection' ? s.canCreateAssets : undefined
                                 )}
                               >
-                                <Text style={styles.roleText}>{r.label}</Text>
+                                <Text style={[styles.roleText, { color: theme.text }]}>{r.label}</Text>
                               </TouchableOpacity>
                             ))}
                           </View>
                           {ROLE_HELP[normalizeRole(s.role)] && (
-                            <Text style={styles.roleHelp}>{ROLE_HELP[normalizeRole(s.role)]}</Text>
+                            <Text style={[styles.roleHelp, { color: theme.textSecondary }]}>{ROLE_HELP[normalizeRole(s.role)]}</Text>
                           )}
 
-                          <View style={styles.miniDivider} />
+                          <View style={[styles.miniDivider, { backgroundColor: theme.border }]} />
 
                           {(targetType === 'vault' || targetType === 'collection') && (
                             <>
-                              <Text style={styles.label}>Permissions</Text>
+                              <Text style={[styles.label, { color: theme.textMuted }]}>Permissions</Text>
                               <View style={styles.roleRow}>
                                 {targetType === 'vault' && (
                                   <>
                                     <View style={styles.createLabelWrap}>
-                                      <Text style={styles.createLabelText}>Create Collections</Text>
+                                      <Text style={[styles.createLabelText, { color: theme.textMuted }]}>Create Collections</Text>
                                     </View>
                                     <TouchableOpacity
-                                      style={[styles.roleChipSmall, !s.canCreateCollections && styles.roleChipActive]}
+                                      style={[
+                                        styles.roleChipSmall,
+                                        { borderColor: theme.border, backgroundColor: theme.inputBg },
+                                        !s.canCreateCollections && { borderColor: '#2563eb', backgroundColor: theme.surface },
+                                      ]}
                                       onPress={() => handleUpdate(s.userId, s.role, false)}
                                     >
-                                      <Text style={styles.roleText}>Disabled</Text>
+                                      <Text style={[styles.roleText, { color: theme.text }]}>Disabled</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity
-                                      style={[styles.roleChipSmall, !!s.canCreateCollections && styles.roleChipActive]}
+                                      style={[
+                                        styles.roleChipSmall,
+                                        { borderColor: theme.border, backgroundColor: theme.inputBg },
+                                        !!s.canCreateCollections && { borderColor: '#2563eb', backgroundColor: theme.surface },
+                                      ]}
                                       onPress={() => handleUpdate(s.userId, s.role, true)}
                                     >
-                                      <Text style={styles.roleText}>Enabled</Text>
+                                      <Text style={[styles.roleText, { color: theme.text }]}>Enabled</Text>
                                     </TouchableOpacity>
                                   </>
                                 )}
                                 {targetType === 'collection' && (
                                   <>
                                     <View style={styles.createLabelWrap}>
-                                      <Text style={styles.createLabelText}>Create Assets</Text>
+                                      <Text style={[styles.createLabelText, { color: theme.textMuted }]}>Create Assets</Text>
                                     </View>
                                     <TouchableOpacity
-                                      style={[styles.roleChipSmall, !s.canCreateAssets && styles.roleChipActive]}
+                                      style={[
+                                        styles.roleChipSmall,
+                                        { borderColor: theme.border, backgroundColor: theme.inputBg },
+                                        !s.canCreateAssets && { borderColor: '#2563eb', backgroundColor: theme.surface },
+                                      ]}
                                       onPress={() => handleUpdate(s.userId, s.role, false)}
                                     >
-                                      <Text style={styles.roleText}>Disabled</Text>
+                                      <Text style={[styles.roleText, { color: theme.text }]}>Disabled</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity
-                                      style={[styles.roleChipSmall, !!s.canCreateAssets && styles.roleChipActive]}
+                                      style={[
+                                        styles.roleChipSmall,
+                                        { borderColor: theme.border, backgroundColor: theme.inputBg },
+                                        !!s.canCreateAssets && { borderColor: '#2563eb', backgroundColor: theme.surface },
+                                      ]}
                                       onPress={() => handleUpdate(s.userId, s.role, true)}
                                     >
-                                      <Text style={styles.roleText}>Enabled</Text>
+                                      <Text style={[styles.roleText, { color: theme.text }]}>Enabled</Text>
                                     </TouchableOpacity>
                                   </>
                                 )}
                               </View>
                             </>
                           )}
-                          <TouchableOpacity style={styles.removeBtn} onPress={() => handleRemove(s.userId)}>
-                            <Text style={styles.removeText}>Remove</Text>
+                          <TouchableOpacity
+                            style={[styles.removeBtn, { backgroundColor: theme.surface, borderColor: '#dc2626' }]}
+                            onPress={() => handleRemove(s.userId)}
+                          >
+                            <Text style={[styles.removeText, { color: '#dc2626' }]}>Remove</Text>
                           </TouchableOpacity>
                         </View>
                       </View>
-                      {idx < existingShares.length - 1 && <View style={styles.sharedDivider} />}
+                      {idx < existingShares.length - 1 && <View style={[styles.sharedDivider, { backgroundColor: theme.border }]} />}
                     </View>
                   ))}
                 </ScrollView>
@@ -294,7 +346,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
             )}
           <View style={styles.actions}>
             <TouchableOpacity style={styles.secondary} onPress={onClose}>
-              <Text style={styles.secondaryText}>Close</Text>
+              <Text style={[styles.secondaryText, { color: theme.text }]}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>

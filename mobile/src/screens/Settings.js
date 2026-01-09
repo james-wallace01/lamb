@@ -6,7 +6,7 @@ import SubscriptionManager from '../components/SubscriptionManager';
 import { useData } from '../context/DataContext';
 
 export default function Membership() {
-  const { refreshData } = useData();
+  const { refreshData, theme } = useData();
   const [refreshing, setRefreshing] = useState(false);
 
   const handleRefresh = async () => {
@@ -26,18 +26,18 @@ export default function Membership() {
   };
 
   return (
-    <View style={styles.wrapper}>
+    <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
       <ScrollView
-        contentContainerStyle={styles.container}
+        contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
         bounces
         alwaysBounceVertical
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" progressViewOffset={24} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.isDark ? '#fff' : '#111827'} progressViewOffset={24} />}
       >
         <View style={styles.headerRow}>
           <BackButton />
           <LambHeader />
         </View>
-        <Text style={styles.title}>Membership</Text>
+        <Text style={[styles.title, { color: theme.text }]}>Membership</Text>
         
         <SubscriptionManager />
 

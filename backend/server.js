@@ -15,9 +15,9 @@ const PORT = process.env.PORT || 3001;
 
 // Price amounts in cents
 const PRICE_MAP = {
-  BASIC: 499,
-  PREMIUM: 999,
-  PRO: 1999
+  BASIC: 249,
+  PREMIUM: 499,
+  PRO: 999
 };
 
 // Cache for Stripe Price IDs
@@ -86,30 +86,62 @@ app.post('/create-subscription', async (req, res) => {
       { apiVersion: '2024-11-20.acacia' }
     );
 
-    const subscription = await stripe.subscriptions.create({
+    // Collect a valid payment method up-front (no charge yet)
+    const setupIntent = await stripe.setupIntents.create({
       customer: customer.id,
-      items: [{ price: stripePriceIds[subscriptionTier] }],
-      payment_behavior: 'default_incomplete',
-      payment_settings: { 
-        save_default_payment_method: 'on_subscription',
-        payment_method_types: ['card']
-      },
-      expand: ['latest_invoice.payment_intent'],
+      payment_method_types: ['card'],
+      usage: 'off_session',
       metadata: { tier: subscriptionTier }
     });
 
-    if (!subscription.latest_invoice?.payment_intent?.client_secret) {
-      throw new Error('Failed to create subscription with payment intent');
+    if (!setupIntent.client_secret) {
+      throw new Error('Failed to create setup intent');
     }
 
     res.json({
-      subscriptionId: subscription.id,
-      clientSecret: subscription.latest_invoice.payment_intent.client_secret,
+      setupIntentClientSecret: setupIntent.client_secret,
+      setupIntentId: setupIntent.id,
       ephemeralKey: ephemeralKey.secret,
       customer: customer.id,
     });
   } catch (error) {
     console.error('Error creating subscription:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/start-trial-subscription', async (req, res) => {
+  try {
+    const { customerId, subscriptionTier, setupIntentId } = req.body;
+    if (!customerId || !subscriptionTier || !setupIntentId) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const setupIntent = await stripe.setupIntents.retrieve(setupIntentId);
+    const paymentMethodId = setupIntent.payment_method;
+    if (!paymentMethodId) {
+      return res.status(400).json({ error: 'No payment method found' });
+    }
+
+    // Set default payment method for future invoices
+    await stripe.customers.update(customerId, {
+      invoice_settings: { default_payment_method: paymentMethodId },
+    });
+
+    const subscription = await stripe.subscriptions.create({
+      customer: customerId,
+      items: [{ price: stripePriceIds[subscriptionTier] }],
+      trial_period_days: 14,
+      payment_settings: {
+        save_default_payment_method: 'on_subscription',
+        payment_method_types: ['card'],
+      },
+      metadata: { tier: subscriptionTier }
+    });
+
+    res.json({ subscriptionId: subscription.id });
+  } catch (error) {
+    console.error('Error starting trial subscription:', error);
     res.status(500).json({ error: error.message });
   }
 });

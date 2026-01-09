@@ -78,7 +78,7 @@ Any 3-digit CVC
 Creates a payment intent for subscription purchase
 ```json
 {
-  "amount": 499,
+  "amount": 249,
   "currency": "usd",
   "email": "user@example.com",
   "subscriptionTier": "basic"

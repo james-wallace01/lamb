@@ -8,7 +8,7 @@ import BackButton from '../components/BackButton';
 
 export default function Vault({ navigation, route }) {
   const { vaultId } = route.params || {};
-  const { loading, vaults, collections, addCollection, currentUser, getRoleForVault, canCreateCollectionsInVault, users, deleteVault, updateVault, refreshData } = useData();
+  const { loading, vaults, collections, addCollection, currentUser, getRoleForVault, canCreateCollectionsInVault, users, deleteVault, updateVault, refreshData, theme } = useData();
   const [newName, setNewName] = useState('');
   const [shareVisible, setShareVisible] = useState(false);
   const [shareTargetType, setShareTargetType] = useState(null);
@@ -217,14 +217,21 @@ export default function Vault({ navigation, route }) {
   };
 
   const renderCollection = ({ item }) => (
-    <TouchableOpacity style={[styles.card, styles.collectionStripe]} onPress={() => navigation.navigate('Collection', { collectionId: item.id })}>
+    <TouchableOpacity
+      style={[
+        styles.card,
+        styles.collectionStripe,
+        { backgroundColor: theme.surface, borderColor: theme.border },
+      ]}
+      onPress={() => navigation.navigate('Collection', { collectionId: item.id })}
+    >
       <View style={styles.cardRow}>
         <View>
           <View style={styles.titleRow}>
-            <Text style={styles.cardTitle}>{item.name}</Text>
+            <Text style={[styles.cardTitle, { color: theme.text }]}>{item.name}</Text>
             <View style={[styles.sharedDot, (item.sharedWith || []).length > 0 ? styles.sharedDotOn : styles.sharedDotOff]} />
           </View>
-          <Text style={styles.cardSubtitle}>Collection • {new Date(item.createdAt).toLocaleDateString()}</Text>
+          <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>Collection • {new Date(item.createdAt).toLocaleDateString()}</Text>
         </View>
         <View style={styles.cardActions}>
           {isOwner && (
@@ -238,7 +245,7 @@ export default function Vault({ navigation, route }) {
               <Text style={styles.sharePillText}>Share</Text>
             </TouchableOpacity>
           )}
-          <Text style={styles.chevron}>›</Text>
+          <Text style={[styles.chevron, { color: theme.textMuted }]}>›</Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -248,47 +255,47 @@ export default function Vault({ navigation, route }) {
     <>
       <Modal visible={editVisible} transparent animationType="fade" onRequestClose={() => setEditVisible(false)}>
             <View style={styles.modalOverlay}>
-              <View style={styles.modalCard}>
-                <Text style={styles.modalTitle}>Edit Vault</Text>
+              <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Text style={[styles.modalTitle, { color: theme.text }]}>Edit Vault</Text>
                 <ScrollView showsVerticalScrollIndicator={false}>
-                  <Text style={styles.modalLabel}>Title</Text>
+                  <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Title</Text>
                   <TextInput
-                    style={styles.modalInput}
+                    style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                     placeholder="Vault title"
-                    placeholderTextColor="#80869b"
+                    placeholderTextColor={theme.placeholder}
                     value={editDraft.name}
                     onChangeText={(name) => setEditDraft((prev) => ({ ...prev, name: limit20(name || '') }))}
                   />
 
-                  <Text style={styles.modalLabel}>Manager</Text>
+                  <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Manager</Text>
                   <TextInput
-                    style={styles.modalInput}
+                    style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                     placeholder="Manager"
-                    placeholderTextColor="#80869b"
+                    placeholderTextColor={theme.placeholder}
                     value={editDraft.manager}
                     onChangeText={(manager) => setEditDraft((prev) => ({ ...prev, manager }))}
                   />
 
-                  <Text style={styles.modalLabel}>Description</Text>
+                  <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Description</Text>
                   <TextInput
-                    style={[styles.modalInput, styles.modalTextarea]}
+                    style={[styles.modalInput, styles.modalTextarea, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                     placeholder="Description"
-                    placeholderTextColor="#80869b"
+                    placeholderTextColor={theme.placeholder}
                     value={editDraft.description}
                     onChangeText={(description) => setEditDraft((prev) => ({ ...prev, description }))}
                     multiline
                   />
 
-                    <View style={[styles.mediaCard, { marginTop: 12 }]}>
+                    <View style={[styles.mediaCard, { marginTop: 12, backgroundColor: theme.surface, borderColor: theme.border }]}>
                       <View style={styles.mediaHeader}>
-                        <Text style={styles.sectionLabel}>Images</Text>
+                        <Text style={[styles.sectionLabel, { color: theme.text }]}>Images</Text>
                         <TouchableOpacity style={styles.addImageButton} onPress={addImagesToDraft}>
                           <Text style={styles.addImageButtonText}>{(editDraft.images || []).length ? 'Add more' : 'Add images'}</Text>
                         </TouchableOpacity>
                       </View>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow}>
                         {draftPreviewImages.length === 0 ? (
-                          <Text style={styles.subtitle}>No images yet.</Text>
+                          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No images yet.</Text>
                         ) : (
                           draftPreviewImages.map((img) => {
                             const isHeroImg = editDraft.heroImage === img;
@@ -347,14 +354,14 @@ export default function Vault({ navigation, route }) {
               </View>
             </View>
             </Modal>
-          <View style={styles.container}>
+          <View style={[styles.container, { backgroundColor: theme.background }]}>
             <FlatList
               data={vaultCollections}
               keyExtractor={(c) => c.id}
               renderItem={renderCollection}
               bounces
               alwaysBounceVertical
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" progressViewOffset={24} />}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.isDark ? '#fff' : '#111827'} progressViewOffset={24} />}
               ItemSeparatorComponent={() => <View style={styles.separator} />}
               ListHeaderComponent={
                 <View style={{ position: 'relative' }}>
@@ -363,13 +370,13 @@ export default function Vault({ navigation, route }) {
                   <View style={styles.headerArea}>
                     <View style={styles.headerSection}>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.title}>{vault?.name || 'Vault'}</Text>
+                        <Text style={[styles.title, { color: theme.text }]}>{vault?.name || 'Vault'}</Text>
                       </View>
                       <TouchableOpacity style={styles.infoButton} onPress={() => setInfoVisible(true)}>
                         <Text style={styles.infoButtonText}>ℹ</Text>
                       </TouchableOpacity>
                     </View>
-                    <Text style={styles.subtitleDim}>Access Type: {accessType}</Text>
+                    <Text style={[styles.subtitleDim, { color: theme.textMuted }]}>Access Type: {accessType}</Text>
                   </View>
 
                   {isOwner && (
@@ -383,13 +390,15 @@ export default function Vault({ navigation, route }) {
                     </View>
                   )}
 
-                  <View style={styles.mediaCard}>
+                  <View style={[styles.mediaCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                     <View style={styles.mediaHeader}>
-                      <Text style={styles.sectionLabel}>Images</Text>
+                      <Text style={[styles.sectionLabel, { color: theme.text }]}>
+                        Images
+                      </Text>
                     </View>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow}>
                       {previewImages.length === 0 ? (
-                        <Text style={styles.subtitle}>No images yet.</Text>
+                        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No images yet.</Text>
                       ) : (
                         previewImages.map((img) => {
                           const isHeroImg = heroImage === img;
@@ -411,9 +420,9 @@ export default function Vault({ navigation, route }) {
                   <View style={styles.divider} />
                   <View style={styles.createRow}>
                     <TextInput
-                      style={styles.input}
+                      style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                       placeholder="New collection name"
-                      placeholderTextColor="#80869b"
+                      placeholderTextColor={theme.placeholder}
                       value={newName}
                       onChangeText={(text) => setNewName(limit20(text || ''))}
                     />
@@ -447,23 +456,23 @@ export default function Vault({ navigation, route }) {
       />
       <Modal visible={infoVisible} transparent animationType="fade" onRequestClose={() => setInfoVisible(false)}>
         <TouchableOpacity style={styles.modalOverlay} onPress={() => setInfoVisible(false)} activeOpacity={1}>
-          <View style={styles.infoModalContent}>
-            <Text style={styles.infoModalTitle}>Information</Text>
+          <View style={[styles.infoModalContent, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}>
+            <Text style={[styles.infoModalTitle, { color: theme.text }]}>Information</Text>
             <View style={styles.infoModalMetadata}>
-              <Text style={styles.infoModalRow}>
-                <Text style={styles.infoModalLabel}>Created:</Text>{' '}
+              <Text style={[styles.infoModalRow, { color: theme.textSecondary }]}>
+                <Text style={[styles.infoModalLabel, { color: theme.textMuted }]}>Created:</Text>{' '}
                 {new Date(vault.createdAt).toLocaleDateString()}
               </Text>
-              <Text style={styles.infoModalRow}>
-                <Text style={styles.infoModalLabel}>Viewed:</Text>{' '}
+              <Text style={[styles.infoModalRow, { color: theme.textSecondary }]}>
+                <Text style={[styles.infoModalLabel, { color: theme.textMuted }]}>Viewed:</Text>{' '}
                 {new Date(vault.viewedAt).toLocaleDateString()}
               </Text>
-              <Text style={styles.infoModalRow}>
-                <Text style={styles.infoModalLabel}>Edited:</Text>{' '}
+              <Text style={[styles.infoModalRow, { color: theme.textSecondary }]}>
+                <Text style={[styles.infoModalLabel, { color: theme.textMuted }]}>Edited:</Text>{' '}
                 {new Date(vault.editedAt).toLocaleDateString()}
               </Text>
-              <Text style={styles.infoModalRow}>
-                <Text style={styles.infoModalLabel}>Manager:</Text>{' '}
+              <Text style={[styles.infoModalRow, { color: theme.textSecondary }]}>
+                <Text style={[styles.infoModalLabel, { color: theme.textMuted }]}>Manager:</Text>{' '}
                 <Text style={styles.visuallyHidden}>{users.find(u => u.id === vault.ownerId)?.username || 'Unknown'}</Text>
               </Text>
             </View>

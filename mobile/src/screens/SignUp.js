@@ -4,7 +4,7 @@ import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
 
 export default function SignUp({ navigation }) {
-  const { register, loading, users } = useData();
+  const { register, loading, users, theme } = useData();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -77,8 +77,8 @@ export default function SignUp({ navigation }) {
       return;
     }
 
-    // Navigate to membership selection
-    navigation.navigate('ChooseSubscription', {
+    // Show free trial info before plan selection
+    navigation.navigate('FreeTrial', {
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       email: email.trim(),
@@ -88,21 +88,21 @@ export default function SignUp({ navigation }) {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}>
       <LambHeader />
       <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
-      <Text style={styles.tagline}>Take Control</Text>
-      <Text style={styles.title}>Create Account</Text>
+      <Text style={[styles.tagline, { color: theme.textSecondary }]}>Take Control</Text>
+      <Text style={[styles.title, { color: theme.text }]}>Create Account</Text>
       
-      <TextInput style={styles.input} placeholder="First name" placeholderTextColor="#80869b" value={firstName} onChangeText={setFirstName} />
+      <TextInput style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]} placeholder="First name" placeholderTextColor={theme.placeholder} value={firstName} onChangeText={setFirstName} />
       
-      <TextInput style={styles.input} placeholder="Last name" placeholderTextColor="#80869b" value={lastName} onChangeText={setLastName} />
+      <TextInput style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]} placeholder="Last name" placeholderTextColor={theme.placeholder} value={lastName} onChangeText={setLastName} />
       
       <View>
         <TextInput 
-          style={[styles.input, emailInvalid || emailTaken ? styles.inputError : null]}
+          style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }, emailInvalid || emailTaken ? styles.inputError : null]}
           placeholder="Email" 
-          placeholderTextColor="#80869b" 
+          placeholderTextColor={theme.placeholder} 
           value={email} 
           autoCapitalize="none" 
           keyboardType="email-address" 
@@ -114,9 +114,9 @@ export default function SignUp({ navigation }) {
       
       <View>
         <TextInput 
-          style={[styles.input, usernameTaken ? styles.inputError : null]}
+          style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }, usernameTaken ? styles.inputError : null]}
           placeholder="Username" 
-          placeholderTextColor="#80869b" 
+          placeholderTextColor={theme.placeholder} 
           value={username} 
           autoCapitalize="none" 
           onChangeText={setUsername} 
@@ -126,9 +126,9 @@ export default function SignUp({ navigation }) {
       
       <View>
         <TextInput
-          style={[styles.input, passwordInvalid ? styles.inputError : null]}
+          style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }, passwordInvalid ? styles.inputError : null]}
           placeholder="Password"
-          placeholderTextColor="#80869b"
+          placeholderTextColor={theme.placeholder}
           secureTextEntry
           autoCapitalize="none"
           autoComplete="password-new"
@@ -152,7 +152,7 @@ export default function SignUp({ navigation }) {
       </TouchableOpacity>
       
       <TouchableOpacity onPress={() => navigation.navigate('SignIn')}>
-        <Text style={styles.link}>Have an account? Sign in</Text>
+        <Text style={[styles.link, { color: theme.link }]}>Have an account? Sign in</Text>
       </TouchableOpacity>
     </ScrollView>
   );

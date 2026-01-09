@@ -8,7 +8,7 @@ import BackButton from '../components/BackButton';
 
 export default function Collection({ navigation, route }) {
   const { collectionId } = route.params || {};
-  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData } = useData();
+  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData, theme } = useData();
   const [newTitle, setNewTitle] = useState('');
   const [shareVisible, setShareVisible] = useState(false);
   const [shareTargetType, setShareTargetType] = useState(null);
@@ -224,14 +224,21 @@ export default function Collection({ navigation, route }) {
   }, [collection?.vaultId]);
 
   const renderAsset = ({ item }) => (
-    <TouchableOpacity style={[styles.card, styles.assetStripe]} onPress={() => navigation.navigate('Asset', { assetId: item.id })}>
+    <TouchableOpacity
+      style={[
+        styles.card,
+        styles.assetStripe,
+        { backgroundColor: theme.surface, borderColor: theme.border },
+      ]}
+      onPress={() => navigation.navigate('Asset', { assetId: item.id })}
+    >
       <View style={styles.cardRow}>
         <View>
           <View style={styles.titleRow}>
-            <Text style={styles.cardTitle}>{item.title}</Text>
+            <Text style={[styles.cardTitle, { color: theme.text }]}>{item.title}</Text>
             <View style={[styles.sharedDot, (item.sharedWith || []).length > 0 ? styles.sharedDotOn : styles.sharedDotOff]} />
           </View>
-          <Text style={styles.cardSubtitle}>{item.type || 'Asset'} • {new Date(item.createdAt).toLocaleDateString()}</Text>
+          <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>{item.type || 'Asset'} • {new Date(item.createdAt).toLocaleDateString()}</Text>
         </View>
         <View style={styles.cardActions}>
           {isOwner && (
@@ -245,7 +252,7 @@ export default function Collection({ navigation, route }) {
               <Text style={styles.sharePillText}>Share</Text>
             </TouchableOpacity>
           )}
-          <Text style={styles.chevron}>›</Text>
+          <Text style={[styles.chevron, { color: theme.textMuted }]}>›</Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -253,8 +260,8 @@ export default function Collection({ navigation, route }) {
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.subtitle}>Loading…</Text>
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Loading…</Text>
       </View>
     );
   }
@@ -268,13 +275,13 @@ export default function Collection({ navigation, route }) {
       <View style={styles.headerArea}>
       <View style={styles.headerSection}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>{collection?.name || 'Collection'}</Text>
+          <Text style={[styles.title, { color: theme.text }]}>{collection?.name || 'Collection'}</Text>
         </View>
         <TouchableOpacity style={styles.infoButton} onPress={() => setInfoVisible(true)}>
           <Text style={styles.infoButtonText}>ℹ</Text>
         </TouchableOpacity>
       </View>
-      <Text style={styles.subtitleDim}>Access Type: {accessType}</Text>
+      <Text style={[styles.subtitleDim, { color: theme.textMuted }]}>Access Type: {accessType}</Text>
       {isOwner && (
         <View style={styles.actionsRow}>
           <TouchableOpacity style={[styles.primaryButton, styles.actionButton]} onPress={openEditModal}>
@@ -293,13 +300,13 @@ export default function Collection({ navigation, route }) {
           )}
         </View>
       )}
-      <View style={styles.mediaCard}>
+      <View style={[styles.mediaCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
         <View style={styles.mediaHeader}>
-          <Text style={styles.sectionLabel}>Images</Text>
+          <Text style={[styles.sectionLabel, { color: theme.text }]}>Images</Text>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow}>
           {previewImages.length === 0 ? (
-            <Text style={styles.subtitle}>No images yet.</Text>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No images yet.</Text>
           ) : (
             previewImages.map((img) => {
               const isHeroImg = heroImage === img;
@@ -320,9 +327,9 @@ export default function Collection({ navigation, route }) {
       <View style={styles.divider} />
       <View style={styles.createRow}>
         <TextInput
-          style={styles.input}
+          style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
           placeholder="New asset title"
-          placeholderTextColor="#80869b"
+          placeholderTextColor={theme.placeholder}
           value={newTitle}
           onChangeText={(text) => setNewTitle(limit20(text))}
         />
@@ -340,21 +347,21 @@ export default function Collection({ navigation, route }) {
         </TouchableOpacity>
       </View>
       {showMoveBox && canMove && (
-        <View style={styles.moveBox}>
-          <Text style={styles.sectionLabel}>Move Collection</Text>
-          <Text style={styles.helper}>Select a destination vault:</Text>
+        <View style={[styles.moveBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Text style={[styles.sectionLabel, { color: theme.text }]}>Move Collection</Text>
+          <Text style={[styles.helper, { color: theme.textMuted }]}>Select a destination vault:</Text>
           <TouchableOpacity
-            style={styles.dropdownButton}
+            style={[styles.dropdownButton, { backgroundColor: theme.inputBg, borderColor: theme.border }]}
             onPress={() => setDropdownOpen(!dropdownOpen)}
           >
-            <Text style={styles.dropdownButtonText}>
+            <Text style={[styles.dropdownButtonText, { color: theme.text }]}>
               {moveVaultId ? ownerVaults.find(v => v.id === moveVaultId)?.name || 'Select vault...' : 'Select vault...'}
             </Text>
-            <Text style={styles.dropdownArrow}>{dropdownOpen ? '▲' : '▼'}</Text>
+            <Text style={[styles.dropdownArrow, { color: theme.textMuted }]}>{dropdownOpen ? '▲' : '▼'}</Text>
           </TouchableOpacity>
           {dropdownOpen && (
             <ScrollView
-              style={styles.dropdownList}
+              style={[styles.dropdownList, { backgroundColor: theme.inputBg, borderColor: theme.border }]}
               nestedScrollEnabled={true}
               bounces={true}
               alwaysBounceVertical={true}
@@ -362,18 +369,22 @@ export default function Collection({ navigation, route }) {
               scrollEventThrottle={16}
             >
               {ownerVaults.length === 0 ? (
-                <Text style={styles.helper}>No owner vaults</Text>
+                <Text style={[styles.helper, { color: theme.textMuted }]}>No owner vaults</Text>
               ) : (
                 ownerVaults.map(v => (
                   <TouchableOpacity
                     key={v.id}
-                    style={[styles.dropdownItem, moveVaultId === v.id && styles.dropdownItemActive]}
+                    style={[
+                      styles.dropdownItem,
+                      { borderBottomColor: theme.border },
+                      moveVaultId === v.id && styles.dropdownItemActive,
+                    ]}
                     onPress={() => {
                       setMoveVaultId(v.id);
                       setDropdownOpen(false);
                     }}
                   >
-                    <Text style={styles.dropdownItemText}>{v.name || v.id}</Text>
+                    <Text style={[styles.dropdownItemText, { color: theme.text }]}>{v.name || v.id}</Text>
                     {moveVaultId === v.id && <Text style={styles.checkmark}>✓</Text>}
                   </TouchableOpacity>
                 ))
@@ -400,50 +411,50 @@ export default function Collection({ navigation, route }) {
   );
 
   return (
-    <View style={styles.wrapper}>
+    <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
       <Modal visible={editVisible} transparent animationType="fade" onRequestClose={() => setEditVisible(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Edit Collection</Text>
+          <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Edit Collection</Text>
             <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.modalLabel}>Title</Text>
+              <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Title</Text>
               <TextInput
-                style={styles.modalInput}
+                style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                 placeholder="Collection title"
-                placeholderTextColor="#80869b"
+                placeholderTextColor={theme.placeholder}
                   value={editDraft.name}
                   onChangeText={(name) => setEditDraft((prev) => ({ ...prev, name: limit20(name) }))}
               />
 
-              <Text style={styles.modalLabel}>Manager</Text>
+              <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Manager</Text>
               <TextInput
-                style={styles.modalInput}
+                style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                 placeholder="Manager"
-                placeholderTextColor="#80869b"
+                placeholderTextColor={theme.placeholder}
                 value={editDraft.manager}
                 onChangeText={(manager) => setEditDraft((prev) => ({ ...prev, manager }))}
               />
 
-              <Text style={styles.modalLabel}>Description</Text>
+              <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Description</Text>
               <TextInput
-                style={[styles.modalInput, styles.modalTextarea]}
+                style={[styles.modalInput, styles.modalTextarea, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                 placeholder="Description"
-                placeholderTextColor="#80869b"
+                placeholderTextColor={theme.placeholder}
                 value={editDraft.description}
                 onChangeText={(description) => setEditDraft((prev) => ({ ...prev, description }))}
                 multiline
               />
 
-                <View style={[styles.mediaCard, { marginTop: 12 }]}>
+                <View style={[styles.mediaCard, { marginTop: 12, backgroundColor: theme.surface, borderColor: theme.border }]}>
                   <View style={styles.mediaHeader}>
-                    <Text style={styles.sectionLabel}>Images</Text>
+                    <Text style={[styles.sectionLabel, { color: theme.text }]}>Images</Text>
                   <TouchableOpacity style={styles.addImageButton} onPress={addImagesToDraft}>
                     <Text style={styles.addImageButtonText}>{(editDraft.images || []).length ? 'Add more' : 'Add images'}</Text>
                     </TouchableOpacity>
                   </View>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow}>
                     {draftPreviewImages.length === 0 ? (
-                      <Text style={styles.subtitle}>No images yet.</Text>
+                      <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No images yet.</Text>
                     ) : (
                       draftPreviewImages.map((img) => {
                         const isHeroImg = editDraft.heroImage === img;
@@ -504,16 +515,16 @@ export default function Collection({ navigation, route }) {
       </Modal>
       
       <ScrollView
-        contentContainerStyle={styles.container}
+        contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
         bounces
         alwaysBounceVertical
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" progressViewOffset={24} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.isDark ? '#fff' : '#111827'} progressViewOffset={24} />}
       >
         {header}
         {/* Images section, actions, etc. remain unchanged */}
         {/* Render assets */}
         {collectionAssets.length === 0 ? (
-          <Text style={styles.subtitle}>No assets yet.</Text>
+          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No assets yet.</Text>
         ) : (
           collectionAssets.map((asset, idx) => (
             <View key={asset.id}>
@@ -537,23 +548,23 @@ export default function Collection({ navigation, route }) {
           onRequestClose={() => setInfoVisible(false)}
         >
             <TouchableOpacity style={styles.modalOverlay} onPress={() => setInfoVisible(false)} activeOpacity={1}>
-              <View style={styles.infoModalContent}>
-                <Text style={styles.infoModalTitle}>Information</Text>
+              <View style={[styles.infoModalContent, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}>
+                <Text style={[styles.infoModalTitle, { color: theme.text }]}>Information</Text>
                 <View style={styles.infoModalMetadata}>
-                  <Text style={styles.infoModalRow}>
-                    <Text style={styles.infoModalLabel}>Created:</Text>{' '}
+                  <Text style={[styles.infoModalRow, { color: theme.textSecondary }]}>
+                    <Text style={[styles.infoModalLabel, { color: theme.textMuted }]}>Created:</Text>{' '}
                     {new Date(collection.createdAt).toLocaleDateString()}
                   </Text>
-                  <Text style={styles.infoModalRow}>
-                    <Text style={styles.infoModalLabel}>Viewed:</Text>{' '}
+                  <Text style={[styles.infoModalRow, { color: theme.textSecondary }]}>
+                    <Text style={[styles.infoModalLabel, { color: theme.textMuted }]}>Viewed:</Text>{' '}
                     {new Date(collection.viewedAt).toLocaleDateString()}
                   </Text>
-                  <Text style={styles.infoModalRow}>
-                    <Text style={styles.infoModalLabel}>Edited:</Text>{' '}
+                  <Text style={[styles.infoModalRow, { color: theme.textSecondary }]}>
+                    <Text style={[styles.infoModalLabel, { color: theme.textMuted }]}>Edited:</Text>{' '}
                     {new Date(collection.editedAt).toLocaleDateString()}
                   </Text>
-                  <Text style={styles.infoModalRow}>
-                    <Text style={styles.infoModalLabel}>Manager:</Text>{' '}
+                  <Text style={[styles.infoModalRow, { color: theme.textSecondary }]}>
+                    <Text style={[styles.infoModalLabel, { color: theme.textMuted }]}>Manager:</Text>{' '}
                     <Text style={styles.visuallyHidden}>{users.find((u) => u.id === collection.ownerId)?.username || 'Unknown'}</Text>
                   </Text>
                 </View>
