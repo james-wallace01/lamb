@@ -2,8 +2,21 @@ import React from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import versionInfo from '../../../public/version.json';
+import appConfig from '../../app.json';
 
 const version = versionInfo?.version || '';
+const iosBuildNumber = appConfig?.expo?.ios?.buildNumber || '';
+const androidVersionCode = appConfig?.expo?.android?.versionCode;
+
+const build = Platform.OS === 'ios'
+  ? (iosBuildNumber ? `build ${iosBuildNumber}` : '')
+  : Platform.OS === 'android'
+    ? (androidVersionCode ? `build ${androidVersionCode}` : '')
+    : '';
+
+const versionText = version
+  ? `v${version}${build ? ` (${build})` : ''}`
+  : 'Version unavailable';
 
 export default function VersionFooter() {
   const insets = useSafeAreaInsets();
@@ -11,7 +24,7 @@ export default function VersionFooter() {
   return (
     <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 8) }]} pointerEvents="none">
       <Text style={styles.text}>LAMB</Text>
-      <Text style={styles.text}>{version ? `v${version}` : 'Version unavailable'}</Text>
+      <Text style={styles.text}>{versionText}</Text>
     </View>
   );
 }

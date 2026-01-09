@@ -5,6 +5,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const VERSION_FILE = path.join(__dirname, '..', 'public', 'version.json');
+const MOBILE_APP_JSON = path.join(__dirname, '..', 'mobile', 'app.json');
 
 function run(cmd) {
   return execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'inherit'] }).trim();
@@ -33,6 +34,50 @@ function readCurrentVersionFile() {
   } catch (err) {
     return null;
   }
+}
+
+function writeMobileExpoVersion(nextVersion) {
+  try {
+    const raw = fs.readFileSync(MOBILE_APP_JSON, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return false;
+    if (!parsed.expo || typeof parsed.expo !== 'object') return false;
+
+    let changed = false;
+    if (parsed.expo.version !== nextVersion) {
+      parsed.expo.version = nextVersion;
+      changed = true;
+    }
+
+    // Bump platform build identifiers so the footer can show both semver and build.
+    // iOS buildNumber must be a string; Android versionCode must be an integer.
+    parsed.expo.ios = parsed.expo.ios && typeof parsed.expo.ios === 'object' ? parsed.expo.ios : {};
+    parsed.expo.android = parsed.expo.android && typeof parsed.expo.android === 'object' ? parsed.expo.android : {};
+
+    const currentIos = parsed.expo.ios.buildNumber;
+    const nextIos = String((Number(currentIos) || 0) + 1);
+    if (parsed.expo.ios.buildNumber !== nextIos) {
+      parsed.expo.ios.buildNumber = nextIos;
+      changed = true;
+    }
+
+    const currentAndroid = parsed.expo.android.versionCode;
+    const nextAndroid = (Number(currentAndroid) || 0) + 1;
+    if (parsed.expo.android.versionCode !== nextAndroid) {
+      parsed.expo.android.versionCode = nextAndroid;
+      changed = true;
+    }
+
+    if (!changed) return false;
+    fs.writeFileSync(MOBILE_APP_JSON, `${JSON.stringify(parsed, null, 2)}\n`);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+function isValidSemver(v) {
+  return /^\d+\.\d+\.\d+$/.test(v || '');
 }
 
 function bumpVersion([major, minor, patch], bump) {
@@ -73,9 +118,22 @@ function ensureCleanTree() {
 function main() {
   ensureCleanTree();
 
-  const lastTag = safeRun('git describe --tags --abbrev=0');
-  const fallbackVersion = readCurrentVersionFile();
-  const baseVersion = parseVersion(lastTag || fallbackVersion || 'v0.0.0');
+  let lastTag = safeRun('git describe --tags --abbrev=0');
+  const currentVersion = readCurrentVersionFile();
+
+  // Bootstrap: if there are no tags yet, create an annotated tag that matches the current
+  // version.json (so future bumps are computed from an actual git semver tag).
+  if (!lastTag && isValidSemver(currentVersion)) {
+    const bootstrapTag = `v${currentVersion}`;
+    const exists = safeRun(`git tag --list ${bootstrapTag}`);
+    if (!exists) {
+      const versionCommit = safeRun(`git log -n 1 --format=%H -- ${VERSION_FILE}`) || 'HEAD';
+      run(`git tag -a ${bootstrapTag} ${versionCommit} -m "Release ${bootstrapTag}"`);
+    }
+    lastTag = bootstrapTag;
+  }
+
+  const baseVersion = parseVersion(lastTag || currentVersion || 'v0.0.0');
   const range = lastTag ? `${lastTag}..HEAD` : 'HEAD';
   const commitLog = safeRun(`git log ${range} --pretty=%s --no-merges`);
   const commits = commitLog
@@ -100,7 +158,9 @@ function main() {
 
   const versionPayload = { version: nextVersion };
   fs.writeFileSync(VERSION_FILE, `${JSON.stringify(versionPayload, null, 2)}\n`);
+  const mobileChanged = writeMobileExpoVersion(nextVersion);
   run(`git add ${VERSION_FILE}`);
+  if (mobileChanged) run(`git add ${MOBILE_APP_JSON}`);
 
   const stagedStatus = safeRun('git diff --cached --name-only');
   if (!stagedStatus.includes('public/version.json')) {
