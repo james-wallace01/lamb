@@ -359,6 +359,8 @@ export default function Vault({ navigation, route }) {
               data={vaultCollections}
               keyExtractor={(c) => c.id}
               renderItem={renderCollection}
+              contentContainerStyle={styles.listContent}
+              ListHeaderComponentStyle={styles.listHeader}
               bounces
               alwaysBounceVertical
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.isDark ? '#fff' : '#111827'} progressViewOffset={24} />}
@@ -387,6 +389,7 @@ export default function Vault({ navigation, route }) {
                       <TouchableOpacity style={[styles.shareButton, styles.actionButton]} onPress={() => openShare('vault', vaultId)}>
                         <Text style={styles.secondaryButtonText}>Share</Text>
                       </TouchableOpacity>
+                      <View style={[styles.actionButton, { opacity: 0 }]} pointerEvents="none" />
                     </View>
                   )}
 
@@ -444,6 +447,8 @@ export default function Vault({ navigation, route }) {
                   ) : vaultCollections.length === 0 ? (
                     <Text style={styles.subtitle}>No collections yet.</Text>
                   ) : null}
+
+                  {vaultCollections.length > 0 ? <View style={styles.separator} /> : null}
                 </View>
               }
               ListFooterComponent={<View style={{ height: 24 }} />}
@@ -497,6 +502,8 @@ export default function Vault({ navigation, route }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20, backgroundColor: '#0b0b0f', gap: 12 },
+  listContent: { paddingBottom: 24 },
+  listHeader: { paddingBottom: 0 },
   headerArea: { gap: 12 },
   headerSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   title: { fontSize: 24, fontWeight: '700', color: '#fff', lineHeight: 32, flexShrink: 1 },
@@ -533,7 +540,7 @@ const styles = StyleSheet.create({
   sharedDotOff: { backgroundColor: '#475569', borderColor: '#475569' },
   chevron: { color: '#9aa1b5', fontSize: 20, fontWeight: '700' },
   actionsRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  actionButton: { flexGrow: 1, flexBasis: '24%', minWidth: '22%' },
+  actionButton: { flexGrow: 1, flexBasis: '24%', minWidth: '22%', minHeight: 44, justifyContent: 'center' },
   sharePill: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 20, backgroundColor: '#22c55e', borderWidth: 2, borderColor: '#16a34a' },
   sharePillText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   primaryButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#2563eb' },
