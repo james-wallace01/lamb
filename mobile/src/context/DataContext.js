@@ -49,6 +49,11 @@ const PASSWORD_MIN_LENGTH = 12;
 const PASSWORD_MAX_LENGTH = 72; // bcrypt truncates beyond 72 bytes
 const BCRYPT_ROUNDS = 10;
 
+const NAME_MAX_LENGTH = 50;
+const USERNAME_MIN_LENGTH = 3;
+const USERNAME_MAX_LENGTH = 20;
+const EMAIL_MAX_LENGTH = 254;
+
 const COMMON_PASSWORDS = new Set([
   'password',
   'password1',
@@ -103,6 +108,47 @@ const validatePasswordStrength = (password, { username, email } = {}) => {
   }
 
   return { ok: true };
+};
+
+const hasDisallowedControlChars = (value) => {
+  const raw = (value || '').toString();
+  // ASCII control chars + DEL + common zero-width/invisible chars
+  return /[\u0000-\u001F\u007F\u200B-\u200D\uFEFF]/.test(raw);
+};
+
+const normalizeName = (value) => (value || '').toString().trim().replace(/\s+/g, ' ');
+const validateName = (value, label) => {
+  const v = normalizeName(value);
+  if (!v) return { ok: false, message: `${label} is required` };
+  if (v.length > NAME_MAX_LENGTH) return { ok: false, message: `${label} must be ${NAME_MAX_LENGTH} characters or fewer` };
+  if (hasDisallowedControlChars(v)) return { ok: false, message: `${label} contains invalid characters` };
+  return { ok: true, value: v };
+};
+
+const normalizeUsername = (value) => (value || '').toString().trim().toLowerCase();
+const validateUsername = (value) => {
+  const v = normalizeUsername(value);
+  if (!v) return { ok: false, message: 'Username is required' };
+  if (v.length < USERNAME_MIN_LENGTH) return { ok: false, message: `Username must be at least ${USERNAME_MIN_LENGTH} characters` };
+  if (v.length > USERNAME_MAX_LENGTH) return { ok: false, message: `Username must be ${USERNAME_MAX_LENGTH} characters or fewer` };
+  if (hasDisallowedControlChars(v)) return { ok: false, message: 'Username contains invalid characters' };
+  if (/\s/.test(v)) return { ok: false, message: 'Username cannot contain spaces' };
+  if (!/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(v)) {
+    return { ok: false, message: 'Username can only use letters, numbers, dot, underscore, and hyphen' };
+  }
+  return { ok: true, value: v };
+};
+
+const normalizeEmail = (value) => (value || '').toString().trim().toLowerCase();
+const validateEmail = (value) => {
+  const v = normalizeEmail(value);
+  if (!v) return { ok: false, message: 'Email is required' };
+  if (v.length > EMAIL_MAX_LENGTH) return { ok: false, message: 'Email is too long' };
+  if (hasDisallowedControlChars(v)) return { ok: false, message: 'Email contains invalid characters' };
+  if (/\s/.test(v)) return { ok: false, message: 'Email cannot contain spaces' };
+  // Practical (not fully RFC) validation; matches common Apple/UX expectations.
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return { ok: false, message: 'Please enter a valid email address' };
+  return { ok: true, value: v };
 };
 
 const hashPassword = (password) => bcrypt.hashSync(password, BCRYPT_ROUNDS);
@@ -452,10 +498,22 @@ export function DataProvider({ children }) {
   };
 
 const register = async ({ firstName, lastName, email, username, password, subscriptionTier, stripeSubscriptionId, stripeCustomerId }) => {
-      const exists = users.find(u => u.username === username || u.email === email);
-      if (exists) return { ok: false, message: 'User already exists' };
+  const first = validateName(firstName, 'First name');
+  if (!first.ok) return { ok: false, message: first.message };
+  const last = validateName(lastName, 'Last name');
+  if (!last.ok) return { ok: false, message: last.message };
+  const em = validateEmail(email);
+  if (!em.ok) return { ok: false, message: em.message };
+  const un = validateUsername(username);
+  if (!un.ok) return { ok: false, message: un.message };
 
-      const pw = validatePasswordStrength(password, { username, email });
+  const exists = users.find(u =>
+    (u?.username && normalizeUsername(u.username) === un.value) ||
+    (u?.email && normalizeEmail(u.email) === em.value)
+  );
+  if (exists) return { ok: false, message: 'User already exists' };
+
+  const pw = validatePasswordStrength(password, { username: un.value, email: em.value });
       if (!pw.ok) return { ok: false, message: pw.message };
       
       // Subscription is required
@@ -465,10 +523,10 @@ const register = async ({ firstName, lastName, email, username, password, subscr
       const passwordHash = hashPassword(password);
       const newUser = { 
         id: `u${Date.now()}`, 
-        firstName, 
-        lastName, 
-        email, 
-        username, 
+        firstName: first.value,
+        lastName: last.value,
+        email: em.value,
+        username: un.value,
         passwordHash,
         profileImage: DEFAULT_PROFILE_IMAGE,
         subscription: {
@@ -496,14 +554,44 @@ const register = async ({ firstName, lastName, email, username, password, subscr
 
     const updateCurrentUser = (patch) => {
       if (!currentUser) return { ok: false, message: 'Not signed in' };
-      const { username, email } = patch;
-      if (username && users.some(u => u.username === username && u.id !== currentUser.id)) {
+
+      const nextPatch = { ...patch };
+
+      if (Object.prototype.hasOwnProperty.call(nextPatch, 'firstName')) {
+        const first = validateName(nextPatch.firstName, 'First name');
+        if (!first.ok) return { ok: false, message: first.message };
+        nextPatch.firstName = first.value;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(nextPatch, 'lastName')) {
+        const last = validateName(nextPatch.lastName, 'Last name');
+        if (!last.ok) return { ok: false, message: last.message };
+        nextPatch.lastName = last.value;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(nextPatch, 'email')) {
+        const em = validateEmail(nextPatch.email);
+        if (!em.ok) return { ok: false, message: em.message };
+        nextPatch.email = em.value;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(nextPatch, 'username')) {
+        const un = validateUsername(nextPatch.username);
+        if (!un.ok) return { ok: false, message: un.message };
+        nextPatch.username = un.value;
+      }
+
+      const nextUsername = Object.prototype.hasOwnProperty.call(nextPatch, 'username') ? nextPatch.username : null;
+      const nextEmail = Object.prototype.hasOwnProperty.call(nextPatch, 'email') ? nextPatch.email : null;
+
+      if (nextUsername && users.some(u => u.id !== currentUser.id && u?.username && normalizeUsername(u.username) === normalizeUsername(nextUsername))) {
         return { ok: false, message: 'Username already taken' };
       }
-      if (email && users.some(u => u.email === email && u.id !== currentUser.id)) {
+      if (nextEmail && users.some(u => u.id !== currentUser.id && u?.email && normalizeEmail(u.email) === normalizeEmail(nextEmail))) {
         return { ok: false, message: 'Email already taken' };
       }
-        const merged = withProfileImage({ ...currentUser, ...patch });
+
+        const merged = withProfileImage({ ...currentUser, ...nextPatch });
       setCurrentUser(merged);
       setUsers(prev => prev.map(u => u.id === currentUser.id ? merged : u));
       return { ok: true };
