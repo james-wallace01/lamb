@@ -7,8 +7,31 @@ import LambHeader from '../components/LambHeader';
 import BackButton from '../components/BackButton';
 
 export default function Asset({ route, navigation }) {
+    // Clone asset handler
+    const handleCloneAsset = () => {
+      if (!asset) return;
+      const { id, ...rest } = asset;
+      const newAsset = {
+        ...rest,
+        title: rest.title ? rest.title + ' (Copy)' : 'Untitled (Copy)',
+      };
+      if (typeof addAsset === 'function') {
+        addAsset({
+          vaultId: asset.vaultId,
+          collectionId: asset.collectionId,
+          title: newAsset.title,
+          type: newAsset.type,
+          category: newAsset.category,
+          images: newAsset.images,
+          heroImage: newAsset.heroImage,
+        });
+        Alert.alert('Cloned', 'Asset has been cloned.');
+      } else {
+        Alert.alert('Clone not supported');
+      }
+    };
   const { assetId } = route.params || {};
-  const { loading, assets, users, currentUser, updateAsset, moveAsset, vaults, collections, getRoleForAsset, deleteAsset } = useData();
+  const { loading, assets, users, currentUser, updateAsset, moveAsset, addAsset, vaults, collections, getRoleForAsset, deleteAsset } = useData();
   const asset = useMemo(() => assets.find((a) => a.id === assetId), [assetId, assets]);
   const owner = useMemo(() => users.find((u) => u.id === asset?.ownerId), [users, asset]);
   const [moveVaultId, setMoveVaultId] = useState(asset?.vaultId || null);
@@ -376,6 +399,11 @@ export default function Asset({ route, navigation }) {
               <Text style={styles.secondaryButtonText}>Move</Text>
             </TouchableOpacity>
           )}
+                        {canEdit && (
+                          <TouchableOpacity style={[styles.cloneButton, styles.actionButton]} onPress={handleCloneAsset}>
+                            <Text style={styles.cloneButtonText}>Clone</Text>
+                          </TouchableOpacity>
+                        )}
         </View>
 
         <View style={styles.mediaCard}>
@@ -604,8 +632,12 @@ const styles = StyleSheet.create({
   addImageButton: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, backgroundColor: '#16a34a' },
   addImageButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   shareButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#16a34a' },
-  secondaryButtonText: { color: '#fff', fontWeight: '700', textAlign: 'center' },  moveButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#eab308' },  dangerButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#dc2626' },
+  secondaryButtonText: { color: '#fff', fontWeight: '700', textAlign: 'center' },
+  moveButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#eab308' },
+  dangerButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#dc2626' },
   dangerButtonText: { color: '#fff', fontWeight: '700', textAlign: 'center' },
+    cloneButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#a21caf' },
+    cloneButtonText: { color: '#fff', fontWeight: '700', textAlign: 'center' },
   buttonDisabled: { backgroundColor: '#1f2738' },
   input: { backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, borderRadius: 10, padding: 12, color: '#fff' },
   button: { paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#eab308' },
@@ -632,4 +664,8 @@ const styles = StyleSheet.create({
   modalInput: { backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, borderRadius: 10, padding: 12, color: '#fff' },
   modalTextarea: { minHeight: 90, textAlignVertical: 'top' },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 16 },
+  cloneButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#a21caf' },
+  cloneButtonText: { color: '#fff', fontWeight: '700', textAlign: 'center' },
+  cloneButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#a21caf' },
+  cloneButtonText: { color: '#fff', fontWeight: '700', textAlign: 'center' },
 });
