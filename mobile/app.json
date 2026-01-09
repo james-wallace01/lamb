@@ -34,7 +34,8 @@
           "merchantIdentifier": "merchant.com.lamb",
           "enableGooglePay": false
         }
-      ]
+      ],
+      "expo-secure-store"
     ]
   }
 }

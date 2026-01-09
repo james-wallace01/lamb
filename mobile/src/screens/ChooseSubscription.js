@@ -53,7 +53,7 @@ export default function ChooseSubscription({ navigation, route }) {
 
   const handleContinue = async () => {
     if (!selectedTier) {
-      Alert.alert('Select Plan', 'Please choose a subscription plan to continue');
+      Alert.alert('Select Membership', 'Please choose a membership to continue');
       return;
     }
 
@@ -76,7 +76,7 @@ export default function ChooseSubscription({ navigation, route }) {
     }
 
     // Verify the payment actually went through
-    console.log('Payment sheet closed, verifying payment for subscription...');
+    console.log('Payment sheet closed, verifying payment for membership...');
     const confirmResponse = await fetch(`${API_URL}/confirm-subscription-payment`, {
       method: 'POST',
       headers: {
@@ -97,7 +97,7 @@ export default function ChooseSubscription({ navigation, route }) {
     }
 
     console.log('Payment successful - creating account');
-    const res = register({
+    const res = await register({
       firstName,
       lastName,
       email,
@@ -115,7 +115,7 @@ export default function ChooseSubscription({ navigation, route }) {
       return;
     }
 
-    Alert.alert('Success!', 'Your account has been created and subscription is active.');
+    Alert.alert('Success!', 'Your account has been created and membership is active.');
   };
 
   const tiers = Object.values(subscriptionTiers);
@@ -123,8 +123,8 @@ export default function ChooseSubscription({ navigation, route }) {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <LambHeader />
-      <Text style={styles.title}>Choose Your Plan</Text>
-      <Text style={styles.subtitle}>Select a subscription to get started with LAMB</Text>
+      <Text style={styles.title}>Choose Your Membership</Text>
+      <Text style={styles.subtitle}>Select a membership to get started with LAMB</Text>
 
       <View style={styles.plansContainer}>
         {tiers.map((tier) => {

@@ -11,6 +11,22 @@ export default function SignUp({ navigation }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
+  const passwordInvalid = useMemo(() => {
+    if (!password) return false;
+    if (password.length < 12) return true;
+    if (password.length > 72) return true;
+    if (/\s/.test(password)) return true;
+    if (!/[A-Za-z]/.test(password)) return true;
+    if (!/\d/.test(password)) return true;
+    if (!/[^A-Za-z0-9]/.test(password)) return true;
+    const lower = password.toLowerCase();
+    const uname = (username || '').trim().toLowerCase();
+    if (uname && lower.includes(uname)) return true;
+    const emailLocal = (email || '').trim().toLowerCase().split('@')[0];
+    if (emailLocal && emailLocal.length >= 3 && lower.includes(emailLocal)) return true;
+    return false;
+  }, [password, username, email]);
+
   // Email validation regex
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -33,7 +49,7 @@ export default function SignUp({ navigation }) {
   );
 
   // Check if form is valid
-  const isFormValid = firstName && lastName && email && username && password && !usernameTaken && !emailTaken && !emailInvalid;
+  const isFormValid = firstName && lastName && email && username && password && !usernameTaken && !emailTaken && !emailInvalid && !passwordInvalid;
 
   const handleSubmit = () => {
     if (!firstName || !lastName || !email || !username || !password) {
@@ -56,7 +72,12 @@ export default function SignUp({ navigation }) {
       return;
     }
 
-    // Navigate to subscription selection
+    if (passwordInvalid) {
+      Alert.alert('Weak password', 'Use 12+ characters with a letter, number, and symbol. Avoid your username/email.');
+      return;
+    }
+
+    // Navigate to membership selection
     navigation.navigate('ChooseSubscription', {
       firstName: firstName.trim(),
       lastName: lastName.trim(),
@@ -103,7 +124,24 @@ export default function SignUp({ navigation }) {
         {usernameTaken && <Text style={styles.errorText}>Username is already in use</Text>}
       </View>
       
-      <TextInput style={styles.input} placeholder="Password" placeholderTextColor="#80869b" secureTextEntry value={password} onChangeText={setPassword} />
+      <View>
+        <TextInput
+          style={[styles.input, passwordInvalid ? styles.inputError : null]}
+          placeholder="Password"
+          placeholderTextColor="#80869b"
+          secureTextEntry
+          autoCapitalize="none"
+          autoComplete="password-new"
+          textContentType="newPassword"
+          // Apple iOS password rules hint (enforcement happens in DataContext.register)
+          passwordRules="minlength: 12; required: lower; required: upper; required: digit; required: special;"
+          value={password}
+          onChangeText={setPassword}
+        />
+        {passwordInvalid && (
+          <Text style={styles.errorText}>12+ chars with letter, number, symbol; no spaces; avoid username/email</Text>
+        )}
+      </View>
       
       <TouchableOpacity 
         style={[styles.button, (!isFormValid || loading) && styles.buttonDisabled]} 

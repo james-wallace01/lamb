@@ -35,6 +35,8 @@ export default function SignIn({ navigation }) {
         placeholder="Username or email"
         placeholderTextColor="#80869b"
         autoCapitalize="none"
+        autoComplete="username"
+        textContentType="username"
         value={identifier}
         onChangeText={setIdentifier}
       />
@@ -43,6 +45,9 @@ export default function SignIn({ navigation }) {
         placeholder="Password"
         placeholderTextColor="#80869b"
         secureTextEntry
+        autoCapitalize="none"
+        autoComplete="password"
+        textContentType="password"
         value={password}
         onChangeText={setPassword}
       />
@@ -53,7 +58,7 @@ export default function SignIn({ navigation }) {
         <Text style={styles.link}>Need an account? Sign up</Text>
       </TouchableOpacity>
       <View style={styles.helperBox}>
-        <Text style={styles.helperText}>Demo users: alex/demo123 or sam/demo123</Text>
+        <Text style={styles.helperText}>Demo users: alex/LambDemo#2026! or sam/LambDemo#2026!</Text>
       </View>
     </View>
   );

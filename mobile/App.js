@@ -12,7 +12,7 @@ import HomeScreen from './src/screens/Home';
 import VaultScreen from './src/screens/Vault';
 import CollectionScreen from './src/screens/Collection';
 import AssetScreen from './src/screens/Asset';
-import SettingsScreen from './src/screens/Settings';
+import MembershipScreen from './src/screens/Settings';
 import ProfileScreen from './src/screens/Profile';
 import SignInScreen from './src/screens/SignIn';
 import SignUpScreen from './src/screens/SignUp';
@@ -39,7 +39,7 @@ const MainStack = () => (
     <Stack.Screen name="Vault" component={VaultScreen} options={{ headerShown: false }} />
     <Stack.Screen name="Collection" component={CollectionScreen} options={{ headerShown: false }} />
     <Stack.Screen name="Asset" component={AssetScreen} options={{ headerShown: false }} />
-    <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
+    <Stack.Screen name="Membership" component={MembershipScreen} options={{ headerShown: false }} />
     <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
   </Stack.Navigator>
 );

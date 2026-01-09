@@ -8,7 +8,7 @@ import BackButton from '../components/BackButton';
 const DEFAULT_AVATAR = 'https://via.placeholder.com/112?text=Profile';
 
 export default function Profile() {
-  const { currentUser, updateCurrentUser, assets } = useData();
+  const { currentUser, updateCurrentUser, assets, resetPassword, deleteAccount } = useData();
   const [draft, setDraft] = useState(currentUser || {});
   const [loading, setLoading] = useState(false);
 
@@ -61,6 +61,55 @@ export default function Profile() {
       setDraft({ ...draft, profileImage: base64Image });
       Alert.alert('Image selected. Press Save to update your profile picture.');
     }
+  };
+
+  const handleResetPassword = () => {
+    Alert.alert(
+      'Reset password',
+      'This will generate a new strong password and show it once. You can sign in with it and update later.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: () => {
+            (async () => {
+              const res = await resetPassword();
+              if (!res.ok) {
+                Alert.alert('Could not reset', res.message || 'Please try again');
+                return;
+              }
+              Alert.alert(
+                'Password reset',
+                `Your new password is:\n\n${res.password}\n\nPlease store it safely. You may be prompted to sign in again.`
+              );
+            })();
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete account',
+      'This removes your account and data from this device. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            const res = deleteAccount();
+            if (!res.ok) {
+              Alert.alert('Could not delete', res.message || 'Please try again');
+              return;
+            }
+            Alert.alert('Account deleted', 'Your account was removed from this device.');
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -140,6 +189,16 @@ export default function Profile() {
             >
               <Text style={styles.buttonText}>{loading ? 'Saving...' : 'Save'}</Text>
             </TouchableOpacity>
+
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>Account</Text>
+              <TouchableOpacity style={styles.button} onPress={handleResetPassword}>
+                <Text style={styles.buttonText}>Reset Password</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.button, styles.deleteButton]} onPress={handleDeleteAccount}>
+                <Text style={[styles.buttonText, styles.deleteButtonText]}>Delete Account</Text>
+              </TouchableOpacity>
+            </View>
           </>
         ) : (
           <Text style={styles.subtitle}>No user loaded.</Text>
@@ -169,5 +228,9 @@ const styles = StyleSheet.create({
   button: { paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#2563eb', alignItems: 'center', marginTop: 8 },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontWeight: '700' },
+  card: { padding: 14, borderRadius: 10, backgroundColor: '#11121a', borderWidth: 1, borderColor: '#1f2738', gap: 10, marginTop: 18 },
+  sectionTitle: { color: '#e5e7f0', fontWeight: '700', fontSize: 16 },
+  deleteButton: { backgroundColor: '#3b0f0f', borderColor: '#ef4444', borderWidth: 1 },
+  deleteButtonText: { color: '#fecaca' },
   spacer: { height: 40 },
 });

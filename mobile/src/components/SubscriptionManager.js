@@ -15,7 +15,7 @@ export default function SubscriptionManager() {
   if (!currentUser?.subscription) {
     return (
       <View style={styles.container}>
-        <Text style={styles.subtitle}>No active subscription</Text>
+        <Text style={styles.subtitle}>No active membership</Text>
       </View>
     );
   }
@@ -66,7 +66,7 @@ export default function SubscriptionManager() {
     console.log('handleChangePlan called', { selectedTier, currentTier: currentUser.subscription.tier });
     
     if (!selectedTier || selectedTier === currentUser.subscription.tier.toUpperCase()) {
-      Alert.alert('Select Plan', 'Please choose a different plan');
+      Alert.alert('Select Membership', 'Please choose a different membership');
       return;
     }
 
@@ -191,7 +191,7 @@ export default function SubscriptionManager() {
         if (res.ok) {
           console.log('Subscription updated successfully');
           setSelectedTier(confirmData.selectedTier);
-          Alert.alert('Success', `Your plan has been upgraded to ${confirmData.newTierName}!`);
+          Alert.alert('Success', `Your membership has been upgraded to ${confirmData.newTierName}!`);
         } else {
           console.log('Subscription update failed:', res.message);
           Alert.alert('Error', res.message);
@@ -226,31 +226,31 @@ export default function SubscriptionManager() {
 
         Alert.alert(
           'Success', 
-          `Your plan will change to ${confirmData.newTierName} on ${confirmData.prorationData.nextBillDate.toLocaleDateString()}.`
+          `Your membership will change to ${confirmData.newTierName} on ${confirmData.prorationData.nextBillDate.toLocaleDateString()}.`
         );
       }
     } catch (error) {
       console.error('Error changing subscription:', error);
-      Alert.alert('Error', 'Unable to change subscription. Please try again.');
+      Alert.alert('Error', 'Unable to change membership. Please try again.');
       setSubmitting(false);
     }
   };
 
   const handleCancelSubscription = () => {
     Alert.alert(
-      'Cancel Subscription',
-      'Are you sure you want to cancel? Your plan will remain active until the end of the current billing period.',
+      'Cancel Membership',
+      'Are you sure you want to cancel? Your membership will remain active until the end of the current billing period.',
       [
-        { text: 'Keep Plan', style: 'cancel' },
+        { text: 'Keep Membership', style: 'cancel' },
         {
-          text: 'Cancel Subscription',
+          text: 'Cancel Membership',
           style: 'destructive',
           onPress: () => {
             setCancelAtPeriodEnd(true);
             setSelectedTier(null);
             Alert.alert(
-              'Subscription Cancelled',
-              `Your ${currentTier.name} plan will remain active until ${renewalDate.toLocaleDateString()}.`
+              'Membership Cancelled',
+              `Your ${currentTier.name} membership will remain active until ${renewalDate.toLocaleDateString()}.`
             );
             // In a real app, you would call a backend endpoint to cancel the Stripe subscription
           }
@@ -261,10 +261,10 @@ export default function SubscriptionManager() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Current Plan</Text>
+      <Text style={styles.title}>Current Membership</Text>
 
       <View style={styles.currentPlanBox}>
-        <Text style={styles.currentPlanLabel}>Current Plan</Text>
+        <Text style={styles.currentPlanLabel}>Current Membership</Text>
         <Text style={styles.currentPlanName}>{currentTier?.name || 'Unknown'}</Text>
         <Text style={styles.currentPlanPrice}>
           {convertPrice(currentTier?.price || 0).symbol}{convertPrice(currentTier?.price || 0).amount}/{currentTier?.period || 'month'}
@@ -277,7 +277,7 @@ export default function SubscriptionManager() {
         </Text>
       </View>
 
-      <Text style={styles.sectionTitle}>Change Your Plan</Text>
+      <Text style={styles.sectionTitle}>Change Your Membership</Text>
 
       <View style={styles.plansContainer}>
         {tiers.map((tier) => {
@@ -310,7 +310,7 @@ export default function SubscriptionManager() {
               )}
               {isCurrent && (
                 <View style={styles.currentBadge}>
-                  <Text style={styles.currentBadgeText}>Current Plan</Text>
+                  <Text style={styles.currentBadgeText}>Current Membership</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -340,7 +340,7 @@ export default function SubscriptionManager() {
           style={styles.cancelButton}
           onPress={handleCancelSubscription}
         >
-          <Text style={styles.cancelButtonText}>Cancel Subscription</Text>
+          <Text style={styles.cancelButtonText}>Cancel Membership</Text>
         </TouchableOpacity>
       )}
 
@@ -353,7 +353,7 @@ export default function SubscriptionManager() {
       >
         <View style={styles.modalOverlay}>
           <ScrollView contentContainerStyle={styles.modalContent}>
-            <Text style={styles.modalTitle}>Confirm Plan Change</Text>
+            <Text style={styles.modalTitle}>Confirm Membership Change</Text>
 
             {confirmData && (
               <>

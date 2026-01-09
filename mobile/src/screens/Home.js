@@ -61,9 +61,9 @@ export default function Home({ navigation }) {
             <Text style={styles.quickTitle}>Shared Vaults</Text>
             <Text style={styles.quickMeta}>{sharedVaults.length} total</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.quickCard} onPress={() => navigation.navigate('Settings')}>
-            <Text style={styles.quickTitle}>Settings</Text>
-            <Text style={styles.quickMeta}>Preferences</Text>
+          <TouchableOpacity style={styles.quickCard} onPress={() => navigation.navigate('Membership')}>
+            <Text style={styles.quickTitle}>Membership</Text>
+            <Text style={styles.quickMeta}>Membership</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.quickCard} onPress={() => navigation.navigate('Profile')}>
             <Text style={styles.quickTitle}>Profile</Text>

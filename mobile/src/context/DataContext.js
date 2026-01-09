@@ -1,10 +1,216 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { getItem, setItem, removeItem } from '../storage';
+import bcrypt from 'bcryptjs';
+import * as Random from 'expo-random';
+import * as SecureStore from 'expo-secure-store';
+
+// bcryptjs needs secure randomness for salts in React Native.
+// Expo Go doesn't provide WebCrypto by default, so use expo-random.
+bcrypt.setRandomFallback((length) => Array.from(Random.getRandomBytes(length)));
+
+const PASSWORD_HASH_KEY_PREFIX = 'lamb_pwHash_v1_';
+const passwordHashKey = (userId) => `${PASSWORD_HASH_KEY_PREFIX}${userId}`;
+
+const setPasswordHashInSecureStore = async (userId, passwordHash) => {
+  if (!userId || !passwordHash) return;
+  try {
+    await SecureStore.setItemAsync(passwordHashKey(userId), String(passwordHash), {
+      keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    });
+  } catch (err) {
+    // If SecureStore isn't available (rare), we still keep the hash in memory.
+  }
+};
+
+const getPasswordHashFromSecureStore = async (userId) => {
+  if (!userId) return null;
+  try {
+    return await SecureStore.getItemAsync(passwordHashKey(userId));
+  } catch (err) {
+    return null;
+  }
+};
+
+const deletePasswordHashFromSecureStore = async (userId) => {
+  if (!userId) return;
+  try {
+    await SecureStore.deleteItemAsync(passwordHashKey(userId));
+  } catch (err) {
+    // ignore
+  }
+};
 
 const DATA_KEY = 'lamb-mobile-data-v5';
 const STORAGE_VERSION = 5;
 const DEFAULT_PROFILE_IMAGE = 'http://192.168.7.112:3000/images/default-avatar.png';
 const DEFAULT_MEDIA_IMAGE = 'http://192.168.7.112:3000/images/collection_default.jpg';
+
+const PASSWORD_MIN_LENGTH = 12;
+const PASSWORD_MAX_LENGTH = 72; // bcrypt truncates beyond 72 bytes
+const BCRYPT_ROUNDS = 10;
+
+const COMMON_PASSWORDS = new Set([
+  'password',
+  'password1',
+  'password123',
+  'qwerty',
+  'qwerty123',
+  '123456',
+  '12345678',
+  '123456789',
+  '111111',
+  'letmein',
+  'admin',
+  'welcome',
+  'iloveyou',
+  'changeme',
+]);
+
+const validatePasswordStrength = (password, { username, email } = {}) => {
+  const raw = (password || '').toString();
+  if (!raw) return { ok: false, message: 'Password is required' };
+
+  if (raw.length < PASSWORD_MIN_LENGTH) {
+    return { ok: false, message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters` };
+  }
+  if (raw.length > PASSWORD_MAX_LENGTH) {
+    return { ok: false, message: `Password must be ${PASSWORD_MAX_LENGTH} characters or fewer` };
+  }
+  if (/\s/.test(raw)) {
+    return { ok: false, message: 'Password cannot contain spaces' };
+  }
+
+  const lower = raw.toLowerCase();
+  if (COMMON_PASSWORDS.has(lower)) {
+    return { ok: false, message: 'Password is too common' };
+  }
+
+  const hasLetter = /[A-Za-z]/.test(raw);
+  const hasNumber = /\d/.test(raw);
+  const hasSymbol = /[^A-Za-z0-9]/.test(raw);
+  if (!hasLetter || !hasNumber || !hasSymbol) {
+    return { ok: false, message: 'Password must include a letter, a number, and a symbol' };
+  }
+
+  const uname = (username || '').toString().trim().toLowerCase();
+  if (uname && lower.includes(uname)) {
+    return { ok: false, message: 'Password must not contain your username' };
+  }
+
+  const emailLocal = (email || '').toString().trim().toLowerCase().split('@')[0];
+  if (emailLocal && emailLocal.length >= 3 && lower.includes(emailLocal)) {
+    return { ok: false, message: 'Password must not contain your email' };
+  }
+
+  return { ok: true };
+};
+
+const hashPassword = (password) => bcrypt.hashSync(password, BCRYPT_ROUNDS);
+
+const verifyPasswordAndMaybeUpgrade = (user, password) => {
+  if (!user) return { ok: false };
+
+  if (user.passwordHash) {
+    try {
+      return { ok: bcrypt.compareSync(password, user.passwordHash) };
+    } catch {
+      return { ok: false };
+    }
+  }
+
+  // Legacy support: previously stored plaintext passwords in AsyncStorage.
+  if (typeof user.password === 'string' && user.password === password) {
+    const upgraded = { ...user, passwordHash: hashPassword(password) };
+    delete upgraded.password;
+    return { ok: true, upgradedUser: upgraded };
+  }
+
+  return { ok: false };
+};
+
+const generateStrongPassword = (length = 16) => {
+  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  const digits = '23456789';
+  const symbols = '!@#$%^&*()-_=+[]{};:,.?';
+  const all = `${letters}${digits}${symbols}`;
+
+  const pick = (set) => set[Math.floor(Math.random() * set.length)];
+  const chars = [pick(letters), pick(digits), pick(symbols)];
+  while (chars.length < length) chars.push(pick(all));
+
+  // Fisher–Yates shuffle
+  for (let i = chars.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join('');
+};
+
+const withoutPasswordSecrets = (user) => {
+  if (!user) return user;
+  const next = { ...user };
+  delete next.password;
+  delete next.passwordHash;
+  return next;
+};
+
+const withoutPasswordForStorage = (user) => {
+  if (!user) return user;
+  const next = { ...user };
+  delete next.password;
+  delete next.passwordHash;
+  return next;
+};
+
+const hydrateUsersWithPasswordHashes = async (inputUsers) => {
+  const list = Array.isArray(inputUsers) ? inputUsers : [];
+  const out = [];
+
+  for (const user of list) {
+    if (!user?.id) {
+      out.push(user);
+      continue;
+    }
+
+    let next = { ...user };
+
+    const storedHash = await getPasswordHashFromSecureStore(next.id);
+    if (storedHash) {
+      next.passwordHash = storedHash;
+      delete next.password;
+      out.push(next);
+      continue;
+    }
+
+    // Migrate legacy secrets from AsyncStorage -> SecureStore.
+    if (next.passwordHash) {
+      await setPasswordHashInSecureStore(next.id, next.passwordHash);
+      delete next.password;
+      out.push(next);
+      continue;
+    }
+
+    if (typeof next.password === 'string' && next.password) {
+      const migratedHash = hashPassword(next.password);
+      next.passwordHash = migratedHash;
+      delete next.password;
+      await setPasswordHashInSecureStore(next.id, migratedHash);
+      out.push(next);
+      continue;
+    }
+
+    // Ensure demo users always have a hash.
+    const demo = DEMO_USERS.find((d) => d.id === next.id);
+    if (demo?.passwordHash) {
+      next.passwordHash = demo.passwordHash;
+      await setPasswordHashInSecureStore(next.id, demo.passwordHash);
+    }
+
+    out.push(next);
+  }
+
+  return out;
+};
 
 const normalizeRole = (role) => {
   if (!role) return null;
@@ -78,7 +284,7 @@ const migrateData = (data) => {
   migrated.collections = (data.collections || []).map(c => withMedia(c.name === 'Watches' ? { ...c, name: 'Example Collection' } : c));
   migrated.assets = (data.assets || []).map(a => withMedia(a.title === 'Speedmaster' ? { ...a, title: 'Example Asset' } : a));
   migrated.users = (data.users || []).map(u => withProfileImage(u));
-  migrated.currentUser = withProfileImage(data.currentUser);
+  migrated.currentUser = withoutPasswordSecrets(withProfileImage(data.currentUser));
   return migrated;
 };
 
@@ -89,7 +295,7 @@ const DEMO_USERS = [
     lastName: 'Morgan',
     email: 'alex@example.com',
     username: 'alex',
-    password: 'demo123',
+    passwordHash: hashPassword('LambDemo#2026!'),
     profileImage: DEFAULT_PROFILE_IMAGE,
     subscription: {
       tier: 'BASIC',
@@ -106,7 +312,7 @@ const DEMO_USERS = [
     lastName: 'Taylor',
     email: 'sam@example.com',
     username: 'sam',
-    password: 'demo123',
+    passwordHash: hashPassword('LambDemo#2026!'),
     profileImage: DEFAULT_PROFILE_IMAGE,
     subscription: {
       tier: 'PREMIUM',
@@ -130,8 +336,18 @@ const ensureDemoUsers = (existingUsers) => {
     );
 
   const additions = DEMO_USERS.filter((u) => !hasUser(u));
-  if (additions.length === 0) return base;
-  return [...base, ...additions.map(withProfileImage)];
+  const merged = base.map((u) => {
+    const demo = DEMO_USERS.find((d) => d.id === u?.id);
+    if (!demo) return u;
+
+    // Ensure demo users are hardened even if older data exists locally.
+    const next = { ...u, ...demo };
+    delete next.password;
+    return next;
+  });
+
+  if (additions.length === 0) return merged;
+  return [...merged, ...additions.map(withProfileImage)];
 };
 
 const seedUsers = [];
@@ -160,22 +376,24 @@ export function DataProvider({ children }) {
         if (stored && stored.version === STORAGE_VERSION) {
           const migrated = migrateData(stored);
           const nextUsers = ensureDemoUsers(migrated.users || []);
-          setUsers(nextUsers);
+          const hydratedUsers = await hydrateUsersWithPasswordHashes(nextUsers);
+          setUsers(hydratedUsers);
           setCurrentUser(migrated.currentUser || null);
           setVaults(migrated.vaults || []);
           setCollections(migrated.collections || []);
           setAssets(migrated.assets || []);
-          await setItem(DATA_KEY, { ...migrated, users: nextUsers, version: STORAGE_VERSION });
+          await setItem(DATA_KEY, { ...migrated, users: hydratedUsers.map(withoutPasswordForStorage), version: STORAGE_VERSION });
         } else {
           const seedData = { users: seedUsers, vaults: seedVaults, collections: seedCollections, assets: seedAssets, currentUser: null };
           const migratedSeed = migrateData(seedData);
           const nextUsers = ensureDemoUsers(migratedSeed.users);
-          setUsers(nextUsers);
+          const hydratedUsers = await hydrateUsersWithPasswordHashes(nextUsers);
+          setUsers(hydratedUsers);
           setCurrentUser(migratedSeed.currentUser);
           setVaults(migratedSeed.vaults);
           setCollections(migratedSeed.collections);
           setAssets(migratedSeed.assets);
-          await setItem(DATA_KEY, { version: STORAGE_VERSION, users: nextUsers, currentUser: migratedSeed.currentUser, vaults: migratedSeed.vaults, collections: migratedSeed.collections, assets: migratedSeed.assets });
+          await setItem(DATA_KEY, { version: STORAGE_VERSION, users: hydratedUsers.map(withoutPasswordForStorage), currentUser: migratedSeed.currentUser, vaults: migratedSeed.vaults, collections: migratedSeed.collections, assets: migratedSeed.assets });
         }
         setLoading(false);
       })();
@@ -183,20 +401,30 @@ export function DataProvider({ children }) {
 
     useEffect(() => {
       if (loading) return;
-      setItem(DATA_KEY, { version: STORAGE_VERSION, users, currentUser, vaults, collections, assets });
+      setItem(DATA_KEY, { version: STORAGE_VERSION, users: users.map(withoutPasswordForStorage), currentUser, vaults, collections, assets });
     }, [users, currentUser, vaults, collections, assets, loading]);
 
     const login = (identifier, password) => {
-      const found = users.find(u => (u.username === identifier || u.email === identifier) && u.password === password);
+      const found = users.find((u) => u.username === identifier || u.email === identifier);
       if (!found) return { ok: false, message: 'Invalid credentials' };
+
+      const { ok, upgradedUser } = verifyPasswordAndMaybeUpgrade(found, password);
+      if (!ok) return { ok: false, message: 'Invalid credentials' };
       
       // Check if user has an active subscription
       if (!found.subscription || !found.subscription.tier) {
-        return { ok: false, message: 'No active subscription. Please purchase a subscription to continue.' };
+        return { ok: false, message: 'No active membership. Please purchase a membership to continue.' };
       }
       
-      const ensured = withProfileImage(found);
-      setCurrentUser(ensured);
+      const ensuredUser = upgradedUser || found;
+      const ensured = withProfileImage(ensuredUser);
+      if (upgradedUser) {
+        setUsers((prev) => prev.map((u) => (u.id === upgradedUser.id ? upgradedUser : u)));
+        if (upgradedUser.passwordHash) {
+          setPasswordHashInSecureStore(upgradedUser.id, upgradedUser.passwordHash);
+        }
+      }
+      setCurrentUser(withoutPasswordSecrets(ensured));
       return { ok: true };
     };
 
@@ -207,6 +435,8 @@ export function DataProvider({ children }) {
   // Reset all data - useful for testing
   const resetAllData = async () => {
     try {
+      const ids = (users || []).map((u) => u?.id).filter(Boolean);
+      await Promise.all(ids.map((id) => deletePasswordHashFromSecureStore(id)));
       setCurrentUser(null);
       setUsers([]);
       setVaults([]);
@@ -221,21 +451,25 @@ export function DataProvider({ children }) {
     }
   };
 
-const register = ({ firstName, lastName, email, username, password, subscriptionTier, stripeSubscriptionId, stripeCustomerId }) => {
+const register = async ({ firstName, lastName, email, username, password, subscriptionTier, stripeSubscriptionId, stripeCustomerId }) => {
       const exists = users.find(u => u.username === username || u.email === email);
       if (exists) return { ok: false, message: 'User already exists' };
+
+      const pw = validatePasswordStrength(password, { username, email });
+      if (!pw.ok) return { ok: false, message: pw.message };
       
       // Subscription is required
-      if (!subscriptionTier) return { ok: false, message: 'You must select a subscription plan' };
+      if (!subscriptionTier) return { ok: false, message: 'You must select a membership' };
       
       const now = Date.now();
+      const passwordHash = hashPassword(password);
       const newUser = { 
         id: `u${Date.now()}`, 
         firstName, 
         lastName, 
         email, 
         username, 
-        password, 
+        passwordHash,
         profileImage: DEFAULT_PROFILE_IMAGE,
         subscription: {
           tier: subscriptionTier,
@@ -251,11 +485,12 @@ const register = ({ firstName, lastName, email, username, password, subscription
       const newCollection = { id: `c${Date.now() + 1}`, vaultId: newVault.id, name: 'Example Collection', ownerId: newUser.id, sharedWith: [], createdAt: now, viewedAt: now, editedAt: now, heroImage: DEFAULT_MEDIA_IMAGE, images: [] };
       const newAsset = { id: `a${Date.now() + 2}`, vaultId: newVault.id, collectionId: newCollection.id, title: 'Example Asset', type: 'Asset', category: 'Example', ownerId: newUser.id, manager: newUser.username, createdAt: now, viewedAt: now, editedAt: now, quantity: 1, heroImage: DEFAULT_MEDIA_IMAGE, images: [] };
       
-      setUsers(prev => [...prev, newUser]);
+          setUsers(prev => [...prev, newUser]);
       setVaults(prev => [newVault, ...prev]);
       setCollections(prev => [newCollection, ...prev]);
       setAssets(prev => [newAsset, ...prev]);
-      setCurrentUser(newUser);
+          setCurrentUser(withoutPasswordSecrets(newUser));
+            await setPasswordHashInSecureStore(newUser.id, passwordHash);
       return { ok: true };
   };
 
@@ -274,17 +509,27 @@ const register = ({ firstName, lastName, email, username, password, subscription
       return { ok: true };
     };
 
-      const resetPassword = (newPassword = 'changeme') => {
+      const resetPassword = async (newPassword) => {
         if (!currentUser) return { ok: false, message: 'Not signed in' };
-        const updated = { ...currentUser, password: newPassword };
-        setCurrentUser(updated);
-        setUsers(prev => prev.map(u => u.id === currentUser.id ? updated : u));
-        return { ok: true, password: newPassword };
+
+        const nextPassword = newPassword || generateStrongPassword(16);
+        const pw = validatePasswordStrength(nextPassword, { username: currentUser?.username, email: currentUser?.email });
+        if (!pw.ok) return { ok: false, message: pw.message };
+
+        const baseRecord = users.find((u) => u.id === currentUser.id) || currentUser || {};
+        const nextHash = hashPassword(nextPassword);
+        const updatedUserRecord = { ...baseRecord, passwordHash: nextHash };
+        delete updatedUserRecord.password;
+        setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUserRecord : u));
+        setCurrentUser(withoutPasswordSecrets({ ...currentUser }));
+        await setPasswordHashInSecureStore(currentUser.id, nextHash);
+        return { ok: true, password: nextPassword };
       };
 
       const deleteAccount = () => {
         if (!currentUser) return { ok: false, message: 'Not signed in' };
         const userId = currentUser.id;
+        deletePasswordHashFromSecureStore(userId);
         setUsers(prev => prev.filter(u => u.id !== userId));
         setVaults(prev => prev
           .filter(v => v.ownerId !== userId)
@@ -537,11 +782,11 @@ const register = ({ firstName, lastName, email, username, password, subscription
 
   const updateSubscription = (subscriptionTier, stripeSubscriptionId) => {
     if (!currentUser) return { ok: false, message: 'Not signed in' };
-    if (!subscriptionTier) return { ok: false, message: 'Invalid subscription tier' };
+    if (!subscriptionTier) return { ok: false, message: 'Invalid membership tier' };
     
     const tierUpper = subscriptionTier.toUpperCase();
     if (!SUBSCRIPTION_TIERS[tierUpper]) {
-      return { ok: false, message: 'Invalid subscription tier' };
+      return { ok: false, message: 'Invalid membership tier' };
     }
     
     const now = Date.now();
@@ -562,7 +807,7 @@ const register = ({ firstName, lastName, email, username, password, subscription
     return { ok: true };
   };
 
-  // Set subscription cancellation flag
+  // Set membership cancellation flag
   const setCancelAtPeriodEnd = (cancelAtPeriodEnd) => {
     if (!currentUser) return { ok: false, message: 'Not signed in' };
     
@@ -579,7 +824,7 @@ const register = ({ firstName, lastName, email, username, password, subscription
     return { ok: true };
   };
 
-  // Calculate proration for plan changes
+  // Calculate proration for membership changes
   const calculateProration = (fromTier, toTier) => {
     const now = Date.now();
     const renewalDate = new Date(currentUser?.subscription?.renewalDate || now);
@@ -593,16 +838,16 @@ const register = ({ firstName, lastName, email, username, password, subscription
     const currentDailyRate = currentPlan.price / totalDaysInMonth;
     const newDailyRate = newPlan.price / totalDaysInMonth;
     
-    // Calculate remaining value of current plan
+    // Calculate remaining value of current membership
     const remainingValue = currentDailyRate * daysRemaining;
     
-    // Calculate cost of new plan for remaining period
+    // Calculate cost of new membership for remaining period
     const costForRemaining = newDailyRate * daysRemaining;
     
     // Difference owed (positive = upgrade charge, negative = credit but no refund per user spec)
     const differenceOwed = Math.max(0, costForRemaining - remainingValue);
     
-    // Next bill amount (full price of new plan)
+    // Next bill amount (full price of new membership)
     const nextBillAmount = newPlan.price;
     
     // Next bill date (renewal date)
