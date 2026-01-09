@@ -8,9 +8,20 @@ import BackButton from '../components/BackButton';
 const DEFAULT_AVATAR = 'https://via.placeholder.com/112?text=Profile';
 
 export default function Profile() {
-  const { currentUser, updateCurrentUser, assets, resetPassword, deleteAccount } = useData();
+  const { currentUser, updateCurrentUser, assets, validatePassword, resetPassword, deleteAccount } = useData();
   const [draft, setDraft] = useState(currentUser || {});
   const [loading, setLoading] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [currentPasswordError, setCurrentPasswordError] = useState('');
+  const [confirmPasswordError, setConfirmPasswordError] = useState('');
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
 
   const netWorth = useMemo(() => {
     if (!currentUser) return 0;
@@ -21,6 +32,20 @@ export default function Profile() {
   useEffect(() => {
     setDraft(currentUser || {});
   }, [currentUser]);
+
+  useEffect(() => {
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmNewPassword('');
+    setPasswordError('');
+    setCurrentPasswordError('');
+    setConfirmPasswordError('');
+    setResettingPassword(false);
+    setShowResetPassword(false);
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmNewPassword(false);
+  }, [currentUser?.id]);
 
   const handleSave = () => {
     if (!currentUser) return;
@@ -63,10 +88,68 @@ export default function Profile() {
     }
   };
 
-  const handleResetPassword = () => {
+  const handlePasswordChange = (text) => {
+    setNewPassword(text);
+    setPasswordError('');
+    setConfirmPasswordError('');
+    if (!text) {
+      setPasswordError('');
+      return;
+    }
+    const res = validatePassword(text);
+    setPasswordError(res.ok ? '' : (res.message || 'Password does not meet requirements'));
+  };
+
+  const handleConfirmPasswordChange = (text) => {
+    setConfirmNewPassword(text);
+    setConfirmPasswordError('');
+    if (!text) return;
+    if (newPassword && text !== newPassword) {
+      setConfirmPasswordError('Passwords do not match');
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (resettingPassword) return;
+
+    if (!showResetPassword) {
+      setShowResetPassword(true);
+      return;
+    }
+
+    setCurrentPasswordError('');
+    setPasswordError('');
+    setConfirmPasswordError('');
+
+    if (!currentPassword || !String(currentPassword).trim()) {
+      setCurrentPasswordError('Please enter your current password');
+      return;
+    }
+
+    if (!newPassword || !String(newPassword).trim()) {
+      setPasswordError('Please enter a new password');
+      return;
+    }
+
+    if (!confirmNewPassword || !String(confirmNewPassword).trim()) {
+      setConfirmPasswordError('Please confirm your new password');
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setConfirmPasswordError('Passwords do not match');
+      return;
+    }
+
+    const validation = validatePassword(newPassword);
+    if (!validation.ok) {
+      setPasswordError(validation.message || 'Password does not meet requirements');
+      return;
+    }
+
     Alert.alert(
       'Reset password',
-      'This will generate a new strong password and show it once. You can sign in with it and update later.',
+      'Set your password to the value you entered?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -74,20 +157,98 @@ export default function Profile() {
           style: 'destructive',
           onPress: () => {
             (async () => {
-              const res = await resetPassword();
-              if (!res.ok) {
-                Alert.alert('Could not reset', res.message || 'Please try again');
-                return;
+              try {
+                setResettingPassword(true);
+                const res = await resetPassword({ currentPassword, newPassword });
+                if (!res.ok) {
+                  if (res.message === 'Current password is incorrect') {
+                    setCurrentPasswordError(res.message);
+                  } else {
+                    setPasswordError(res.message || 'Please try again');
+                  }
+                  return;
+                }
+                setCurrentPassword('');
+                setNewPassword('');
+                setConfirmNewPassword('');
+                setPasswordError('');
+                setCurrentPasswordError('');
+                setConfirmPasswordError('');
+                setShowResetPassword(false);
+                Alert.alert('Password updated', 'Your password was updated successfully.');
+              } finally {
+                setResettingPassword(false);
               }
-              Alert.alert(
-                'Password reset',
-                `Your new password is:\n\n${res.password}\n\nPlease store it safely. You may be prompted to sign in again.`
-              );
             })();
           },
         },
       ]
     );
+  };
+
+  const handleCancelResetPassword = () => {
+    if (resettingPassword) return;
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmNewPassword('');
+    setPasswordError('');
+    setCurrentPasswordError('');
+    setConfirmPasswordError('');
+    setShowResetPassword(false);
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmNewPassword(false);
+  };
+
+  const handlePerformResetPassword = async () => {
+    if (resettingPassword) return;
+
+    setCurrentPasswordError('');
+    setPasswordError('');
+    setConfirmPasswordError('');
+
+    if (!currentPassword || !String(currentPassword).trim()) {
+      setCurrentPasswordError('Please enter your current password');
+      return;
+    }
+
+    if (!newPassword || !String(newPassword).trim()) {
+      setPasswordError('Please enter a new password');
+      return;
+    }
+
+    if (!confirmNewPassword || !String(confirmNewPassword).trim()) {
+      setConfirmPasswordError('Please confirm your new password');
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setConfirmPasswordError('Passwords do not match');
+      return;
+    }
+
+    const validation = validatePassword(newPassword);
+    if (!validation.ok) {
+      setPasswordError(validation.message || 'Password does not meet requirements');
+      return;
+    }
+
+    try {
+      setResettingPassword(true);
+      const res = await resetPassword({ currentPassword, newPassword });
+      if (!res.ok) {
+        if (res.message === 'Current password is incorrect') {
+          setCurrentPasswordError(res.message);
+        } else {
+          setPasswordError(res.message || 'Please try again');
+        }
+        return;
+      }
+      handleCancelResetPassword();
+      Alert.alert('Password updated', 'Your password was updated successfully.');
+    } finally {
+      setResettingPassword(false);
+    }
   };
 
   const handleDeleteAccount = () => {
@@ -192,9 +353,111 @@ export default function Profile() {
 
             <View style={styles.card}>
               <Text style={styles.sectionTitle}>Account</Text>
-              <TouchableOpacity style={styles.button} onPress={handleResetPassword}>
-                <Text style={styles.buttonText}>Reset Password</Text>
-              </TouchableOpacity>
+              {!showResetPassword && (
+                <TouchableOpacity
+                  style={[styles.button, resettingPassword && styles.buttonDisabled]}
+                  onPress={handleResetPassword}
+                  disabled={resettingPassword}
+                >
+                  <Text style={styles.buttonText}>Reset Password</Text>
+                </TouchableOpacity>
+              )}
+              {showResetPassword && (
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.label}>Current Password</Text>
+                  <View style={styles.passwordRow}>
+                    <TextInput
+                      style={[styles.input, styles.passwordInput]}
+                      placeholder="Enter current password"
+                      placeholderTextColor="#80869b"
+                      value={currentPassword}
+                      onChangeText={(v) => {
+                        setCurrentPassword(v);
+                        setCurrentPasswordError('');
+                      }}
+                      secureTextEntry={!showCurrentPassword}
+                      autoCapitalize="none"
+                      textContentType="password"
+                      autoComplete="current-password"
+                    />
+                    <TouchableOpacity
+                      style={styles.eyeButton}
+                      onPress={() => setShowCurrentPassword((p) => !p)}
+                      accessibilityRole="button"
+                      accessibilityLabel={showCurrentPassword ? 'Hide current password' : 'Show current password'}
+                    >
+                      <Text style={styles.eyeText}>👁</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {!!currentPasswordError && <Text style={styles.helperError}>{currentPasswordError}</Text>}
+
+                  <Text style={styles.label}>New Password</Text>
+                  <View style={styles.passwordRow}>
+                    <TextInput
+                      style={[styles.input, styles.passwordInput]}
+                      placeholder="Enter a new password"
+                      placeholderTextColor="#80869b"
+                      value={newPassword}
+                      onChangeText={handlePasswordChange}
+                      secureTextEntry={!showNewPassword}
+                      autoCapitalize="none"
+                      textContentType="newPassword"
+                      autoComplete="new-password"
+                      passwordRules="minlength: 12; required: lower; required: upper; required: digit; required: special;"
+                    />
+                    <TouchableOpacity
+                      style={styles.eyeButton}
+                      onPress={() => setShowNewPassword((p) => !p)}
+                      accessibilityRole="button"
+                      accessibilityLabel={showNewPassword ? 'Hide new password' : 'Show new password'}
+                    >
+                      <Text style={styles.eyeText}>👁</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {!!passwordError && <Text style={styles.helperError}>{passwordError}</Text>}
+
+                  <Text style={styles.label}>Confirm New Password</Text>
+                  <View style={styles.passwordRow}>
+                    <TextInput
+                      style={[styles.input, styles.passwordInput]}
+                      placeholder="Confirm new password"
+                      placeholderTextColor="#80869b"
+                      value={confirmNewPassword}
+                      onChangeText={handleConfirmPasswordChange}
+                      secureTextEntry={!showConfirmNewPassword}
+                      autoCapitalize="none"
+                      textContentType="newPassword"
+                      autoComplete="new-password"
+                    />
+                    <TouchableOpacity
+                      style={styles.eyeButton}
+                      onPress={() => setShowConfirmNewPassword((p) => !p)}
+                      accessibilityRole="button"
+                      accessibilityLabel={showConfirmNewPassword ? 'Hide confirm password' : 'Show confirm password'}
+                    >
+                      <Text style={styles.eyeText}>👁</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {!!confirmPasswordError && <Text style={styles.helperError}>{confirmPasswordError}</Text>}
+
+                  <View style={styles.actionRow}>
+                    <TouchableOpacity
+                      style={[styles.secondaryButton, resettingPassword && styles.buttonDisabled]}
+                      onPress={handleCancelResetPassword}
+                      disabled={resettingPassword}
+                    >
+                      <Text style={styles.secondaryButtonText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.button, styles.actionButton, resettingPassword && styles.buttonDisabled]}
+                      onPress={handlePerformResetPassword}
+                      disabled={resettingPassword}
+                    >
+                      <Text style={styles.buttonText}>{resettingPassword ? 'Resetting...' : 'Reset'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
               <TouchableOpacity style={[styles.button, styles.deleteButton]} onPress={handleDeleteAccount}>
                 <Text style={[styles.buttonText, styles.deleteButtonText]}>Delete Account</Text>
               </TouchableOpacity>
@@ -225,6 +488,15 @@ const styles = StyleSheet.create({
   fieldGroup: { marginBottom: 12 },
   label: { color: '#9aa1b5', marginBottom: 4, fontWeight: '600', fontSize: 13 },
   input: { backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, borderRadius: 10, padding: 12, color: '#fff' },
+  helperError: { marginTop: 6, color: '#fecaca', fontSize: 12, lineHeight: 16 },
+  passwordRow: { flexDirection: 'row', alignItems: 'center' },
+  passwordInput: { flex: 1 },
+  eyeButton: { marginLeft: 10, paddingHorizontal: 10, paddingVertical: 10, borderRadius: 10, backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1 },
+  eyeText: { color: '#9aa1b5', fontSize: 16, fontWeight: '700' },
+  actionRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  actionButton: { flex: 1 },
+  secondaryButton: { flex: 1, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, alignItems: 'center', marginTop: 8 },
+  secondaryButtonText: { color: '#e5e7f0', fontWeight: '700' },
   button: { paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#2563eb', alignItems: 'center', marginTop: 8 },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontWeight: '700' },

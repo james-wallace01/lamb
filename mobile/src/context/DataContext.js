@@ -509,21 +509,44 @@ const register = async ({ firstName, lastName, email, username, password, subscr
       return { ok: true };
     };
 
-      const resetPassword = async (newPassword) => {
+      const resetPassword = async ({ currentPassword, newPassword }) => {
         if (!currentUser) return { ok: false, message: 'Not signed in' };
 
-        const nextPassword = newPassword || generateStrongPassword(16);
-        const pw = validatePasswordStrength(nextPassword, { username: currentUser?.username, email: currentUser?.email });
-        if (!pw.ok) return { ok: false, message: pw.message };
+        if (!currentPassword || !String(currentPassword).trim()) {
+          return { ok: false, message: 'Please enter your current password' };
+        }
+
+        if (!newPassword || !String(newPassword).trim()) {
+          return { ok: false, message: 'Please enter a new password' };
+        }
 
         const baseRecord = users.find((u) => u.id === currentUser.id) || currentUser || {};
-        const nextHash = hashPassword(nextPassword);
+
+        const verify = verifyPasswordAndMaybeUpgrade(baseRecord, currentPassword);
+        if (!verify.ok) return { ok: false, message: 'Current password is incorrect' };
+
+        if (verify.upgradedUser) {
+          setUsers((prev) => prev.map((u) => (u.id === verify.upgradedUser.id ? verify.upgradedUser : u)));
+          if (verify.upgradedUser.passwordHash) {
+            await setPasswordHashInSecureStore(verify.upgradedUser.id, verify.upgradedUser.passwordHash);
+          }
+        }
+
+        const pw = validatePasswordStrength(newPassword, { username: currentUser?.username, email: currentUser?.email });
+        if (!pw.ok) return { ok: false, message: pw.message };
+
+        const nextHash = hashPassword(newPassword);
         const updatedUserRecord = { ...baseRecord, passwordHash: nextHash };
         delete updatedUserRecord.password;
         setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUserRecord : u));
         setCurrentUser(withoutPasswordSecrets({ ...currentUser }));
         await setPasswordHashInSecureStore(currentUser.id, nextHash);
-        return { ok: true, password: nextPassword };
+        return { ok: true };
+      };
+
+      const validatePassword = (password) => {
+        if (!currentUser) return { ok: false, message: 'Not signed in' };
+        return validatePasswordStrength(password, { username: currentUser?.username, email: currentUser?.email });
       };
 
       const deleteAccount = () => {
@@ -931,6 +954,7 @@ const register = async ({ firstName, lastName, email, username, password, subscr
     updateCurrentUser,
     updateSubscription,
     setCancelAtPeriodEnd,
+    validatePassword,
     resetPassword,
     deleteAccount,
     addVault,
