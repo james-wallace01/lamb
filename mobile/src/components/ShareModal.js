@@ -1,11 +1,34 @@
 import React, { useMemo, useState } from 'react';
-import { Modal, View, Text, TouchableOpacity, StyleSheet, TextInput, FlatList, ScrollView } from 'react-native';
+import { Modal, View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView } from 'react-native';
 import { useData } from '../context/DataContext';
 
+const ROLE_OPTIONS = [
+  { value: 'reviewer', label: 'Reviewer' },
+  { value: 'editor', label: 'Editor' },
+  { value: 'manager', label: 'Manager' },
+  { value: 'owner', label: 'Owner' },
+];
+
 const ROLE_HELP = {
-  Reviewer: 'View access.',
-  Editor: 'View and Edit access.',
-  Manager: 'View, Edit and Move access.',
+  reviewer: 'View access.',
+  editor: 'View and Edit access.',
+  manager: 'View, Edit, Move and Clone access.',
+  owner: 'View, Edit, Move, Clone and Delete access.',
+};
+
+const normalizeRole = (role) => {
+  if (!role) return null;
+  const raw = role.toString().trim().toLowerCase();
+  if (raw === 'viewer' || raw === 'reviewer') return 'reviewer';
+  if (raw === 'editor') return 'editor';
+  if (raw === 'manager') return 'manager';
+  if (raw === 'owner') return 'owner';
+  return raw;
+};
+
+const roleLabel = (role) => {
+  const normalized = normalizeRole(role);
+  return ROLE_OPTIONS.find((r) => r.value === normalized)?.label || 'Reviewer';
 };
 
 export default function ShareModal({ visible, onClose, targetType, targetId }) {
@@ -26,7 +49,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
     assets,
   } = useData();
   const [query, setQuery] = useState('');
-  const [role, setRole] = useState('Reviewer');
+  const [role, setRole] = useState('reviewer');
   const [canCreateCollections, setCanCreateCollections] = useState(false);
   const [canCreateAssets, setCanCreateAssets] = useState(false);
 
@@ -68,18 +91,20 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
   }, [targetType, targetId, vaults, collections, assets, users]);
 
   const handleShare = (userId) => {
-    if (targetType === 'vault') shareVault({ vaultId: targetId, userId, role, canCreateCollections });
-    if (targetType === 'collection') shareCollection({ collectionId: targetId, userId, role, canCreateAssets });
-    if (targetType === 'asset') shareAsset({ assetId: targetId, userId, role });
+    const normalizedRole = normalizeRole(role) || 'reviewer';
+    if (targetType === 'vault') shareVault({ vaultId: targetId, userId, role: normalizedRole, canCreateCollections });
+    if (targetType === 'collection') shareCollection({ collectionId: targetId, userId, role: normalizedRole, canCreateAssets });
+    if (targetType === 'asset') shareAsset({ assetId: targetId, userId, role: normalizedRole });
     setQuery('');
     setCanCreateCollections(false);
     setCanCreateAssets(false);
   };
 
   const handleUpdate = (userId, nextRole, nextFlag) => {
-    if (targetType === 'vault') updateVaultShare({ vaultId: targetId, userId, role: nextRole, canCreateCollections: nextFlag });
-    if (targetType === 'collection') updateCollectionShare({ collectionId: targetId, userId, role: nextRole, canCreateAssets: nextFlag });
-    if (targetType === 'asset') updateAssetShare({ assetId: targetId, userId, role: nextRole });
+    const normalizedRole = normalizeRole(nextRole) || 'reviewer';
+    if (targetType === 'vault') updateVaultShare({ vaultId: targetId, userId, role: normalizedRole, canCreateCollections: nextFlag });
+    if (targetType === 'collection') updateCollectionShare({ collectionId: targetId, userId, role: normalizedRole, canCreateAssets: nextFlag });
+    if (targetType === 'asset') updateAssetShare({ assetId: targetId, userId, role: normalizedRole });
   };
 
   const handleRemove = (userId) => {
@@ -102,49 +127,86 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
               onChangeText={setQuery}
             />
             {suggestions.length > 0 && (
-              <FlatList
-                data={suggestions}
-                keyExtractor={(u) => u.id}
-                style={styles.suggestions}
-                renderItem={({ item }) => (
-                  <TouchableOpacity style={styles.suggestionRow} onPress={() => handleShare(item.id)}>
+              <View style={styles.suggestions}>
+                {suggestions.map((u, idx) => (
+                  <TouchableOpacity
+                    key={u.id || u.username || u.email || String(idx)}
+                    style={[styles.suggestionRow, idx === suggestions.length - 1 && styles.suggestionRowLast]}
+                    onPress={() => handleShare(u.id)}
+                  >
                     <View>
-                      <Text style={styles.suggestionName}>{item.username}</Text>
-                      <Text style={styles.suggestionMeta}>{item.email || `${item.firstName || ''} ${item.lastName || ''}`}</Text>
+                      <Text style={styles.suggestionName}>{u.username || u.email || 'User'}</Text>
+                      <Text style={styles.suggestionMeta}>{u.email || `${u.firstName || ''} ${u.lastName || ''}`}</Text>
                     </View>
                     <Text style={styles.addText}>Add</Text>
                   </TouchableOpacity>
-                )}
-              />
+                ))}
+              </View>
             )}
             <View style={styles.divider} />
             <Text style={styles.label}>Access Type</Text>
             <View style={styles.roleRow}>
-              {['Reviewer', 'Editor', 'Manager'].map((r) => (
-                <TouchableOpacity key={r} style={[styles.roleChip, role === r && styles.roleChipActive]} onPress={() => setRole(r)}>
-                  <Text style={styles.roleText}>{r}</Text>
+              {ROLE_OPTIONS.map((r) => (
+                <TouchableOpacity key={r.value} style={[styles.roleChip, role === r.value && styles.roleChipActive]} onPress={() => setRole(r.value)}>
+                  <Text style={styles.roleText}>{r.label}</Text>
                 </TouchableOpacity>
               ))}
             </View>
             {ROLE_HELP[role] && (
               <Text style={styles.roleHelp}>{ROLE_HELP[role]}</Text>
             )}
-              {targetType === 'vault' && (
-                <TouchableOpacity style={[styles.toggle, canCreateCollections && styles.toggleActive]} onPress={() => setCanCreateCollections((prev) => !prev)}>
-                  <Text style={styles.toggleText}>Allow creating collections</Text>
-                  <Text style={styles.toggleBadge}>{canCreateCollections ? 'On' : 'Off'}</Text>
-                </TouchableOpacity>
-              )}
-              {targetType === 'collection' && (
-                <TouchableOpacity style={[styles.toggle, canCreateAssets && styles.toggleActive]} onPress={() => setCanCreateAssets((prev) => !prev)}>
-                  <Text style={styles.toggleText}>Allow creating assets</Text>
-                  <Text style={styles.toggleBadge}>{canCreateAssets ? 'On' : 'Off'}</Text>
-                </TouchableOpacity>
-              )}
+
+            <View style={styles.divider} />
+
+            {(targetType === 'vault' || targetType === 'collection') && (
+              <>
+                <Text style={styles.label}>Permissions</Text>
+                <View style={styles.roleRow}>
+                  {targetType === 'vault' && (
+                    <>
+                      <View style={styles.createLabelWrap}>
+                        <Text style={styles.createLabelText}>Create Collections</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={[styles.roleChipSmall, !canCreateCollections && styles.roleChipActive]}
+                        onPress={() => setCanCreateCollections(false)}
+                      >
+                        <Text style={styles.roleText}>Disabled</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.roleChipSmall, canCreateCollections && styles.roleChipActive]}
+                        onPress={() => setCanCreateCollections(true)}
+                      >
+                        <Text style={styles.roleText}>Enabled</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                  {targetType === 'collection' && (
+                    <>
+                      <View style={styles.createLabelWrap}>
+                        <Text style={styles.createLabelText}>Create Assets</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={[styles.roleChipSmall, !canCreateAssets && styles.roleChipActive]}
+                        onPress={() => setCanCreateAssets(false)}
+                      >
+                        <Text style={styles.roleText}>Disabled</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.roleChipSmall, canCreateAssets && styles.roleChipActive]}
+                        onPress={() => setCanCreateAssets(true)}
+                      >
+                        <Text style={styles.roleText}>Enabled</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
+              </>
+            )}
               {existingShares.length > 0 && (
                 <View style={styles.sharedBox}>
                   <Text style={styles.sharedLabel}>Currently shared</Text>
-                <ScrollView style={styles.sharedList} showsVerticalScrollIndicator={false}>
+                <ScrollView style={styles.sharedList} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                   {existingShares.map((s, idx) => (
                     <View key={s.userId}>
                       <View style={styles.sharedRow}>
@@ -154,26 +216,70 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                         </View>
                         <View style={styles.sharedActions}>
                           <View style={styles.roleRow}>
-                            {['Reviewer', 'Editor', 'Manager'].map((r) => (
-                              <TouchableOpacity key={r} style={[styles.roleChipSmall, s.role === r && styles.roleChipActive]} onPress={() => handleUpdate(s.userId, r, targetType === 'vault' ? s.canCreateCollections : targetType === 'collection' ? s.canCreateAssets : undefined)}>
-                                <Text style={styles.roleText}>{r}</Text>
+                            {ROLE_OPTIONS.map((r) => (
+                              <TouchableOpacity
+                                key={r.value}
+                                style={[styles.roleChipSmall, normalizeRole(s.role) === r.value && styles.roleChipActive]}
+                                onPress={() => handleUpdate(
+                                  s.userId,
+                                  r.value,
+                                  targetType === 'vault' ? s.canCreateCollections : targetType === 'collection' ? s.canCreateAssets : undefined
+                                )}
+                              >
+                                <Text style={styles.roleText}>{r.label}</Text>
                               </TouchableOpacity>
                             ))}
                           </View>
-                          {ROLE_HELP[s.role] && (
-                            <Text style={styles.roleHelp}>{ROLE_HELP[s.role]}</Text>
+                          {ROLE_HELP[normalizeRole(s.role)] && (
+                            <Text style={styles.roleHelp}>{ROLE_HELP[normalizeRole(s.role)]}</Text>
                           )}
-                          {targetType === 'vault' && (
-                            <TouchableOpacity style={[styles.toggle, s.canCreateCollections && styles.toggleActive]} onPress={() => handleUpdate(s.userId, s.role, !s.canCreateCollections)}>
-                              <Text style={styles.toggleText}>Can create collections</Text>
-                              <Text style={styles.toggleBadge}>{s.canCreateCollections ? 'On' : 'Off'}</Text>
-                            </TouchableOpacity>
-                          )}
-                          {targetType === 'collection' && (
-                            <TouchableOpacity style={[styles.toggle, s.canCreateAssets && styles.toggleActive]} onPress={() => handleUpdate(s.userId, s.role, !s.canCreateAssets)}>
-                              <Text style={styles.toggleText}>Can create assets</Text>
-                              <Text style={styles.toggleBadge}>{s.canCreateAssets ? 'On' : 'Off'}</Text>
-                            </TouchableOpacity>
+
+                          <View style={styles.miniDivider} />
+
+                          {(targetType === 'vault' || targetType === 'collection') && (
+                            <>
+                              <Text style={styles.label}>Permissions</Text>
+                              <View style={styles.roleRow}>
+                                {targetType === 'vault' && (
+                                  <>
+                                    <View style={styles.createLabelWrap}>
+                                      <Text style={styles.createLabelText}>Create Collections</Text>
+                                    </View>
+                                    <TouchableOpacity
+                                      style={[styles.roleChipSmall, !s.canCreateCollections && styles.roleChipActive]}
+                                      onPress={() => handleUpdate(s.userId, s.role, false)}
+                                    >
+                                      <Text style={styles.roleText}>Disabled</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                      style={[styles.roleChipSmall, !!s.canCreateCollections && styles.roleChipActive]}
+                                      onPress={() => handleUpdate(s.userId, s.role, true)}
+                                    >
+                                      <Text style={styles.roleText}>Enabled</Text>
+                                    </TouchableOpacity>
+                                  </>
+                                )}
+                                {targetType === 'collection' && (
+                                  <>
+                                    <View style={styles.createLabelWrap}>
+                                      <Text style={styles.createLabelText}>Create Assets</Text>
+                                    </View>
+                                    <TouchableOpacity
+                                      style={[styles.roleChipSmall, !s.canCreateAssets && styles.roleChipActive]}
+                                      onPress={() => handleUpdate(s.userId, s.role, false)}
+                                    >
+                                      <Text style={styles.roleText}>Disabled</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                      style={[styles.roleChipSmall, !!s.canCreateAssets && styles.roleChipActive]}
+                                      onPress={() => handleUpdate(s.userId, s.role, true)}
+                                    >
+                                      <Text style={styles.roleText}>Enabled</Text>
+                                    </TouchableOpacity>
+                                  </>
+                                )}
+                              </View>
+                            </>
                           )}
                           <TouchableOpacity style={styles.removeBtn} onPress={() => handleRemove(s.userId)}>
                             <Text style={styles.removeText}>Remove</Text>
@@ -201,10 +307,11 @@ const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 16 },
   modal: { backgroundColor: '#0f111a', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#1f2738', maxHeight: '80%' },
   title: { color: '#fff', fontSize: 18, fontWeight: '800', marginBottom: 12 },
-  label: { color: '#9aa1b5', marginTop: 8, marginBottom: 4 },
+  label: { color: '#9aa1b5', fontWeight: '800', marginTop: 8, marginBottom: 4 },
   input: { backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, borderRadius: 10, padding: 12, color: '#fff' },
-  suggestions: { marginTop: 8, maxHeight: 180, borderWidth: 1, borderColor: '#1f2738', borderRadius: 10 },
+  suggestions: { marginTop: 8, maxHeight: 180, borderWidth: 1, borderColor: '#1f2738', borderRadius: 10, backgroundColor: '#11121a', overflow: 'hidden' },
   suggestionRow: { padding: 12, borderBottomWidth: 1, borderBottomColor: '#1f2738', flexDirection: 'row', justifyContent: 'space-between' },
+  suggestionRowLast: { borderBottomWidth: 0 },
   suggestionName: { color: '#fff', fontWeight: '700' },
   suggestionMeta: { color: '#9aa1b5', fontSize: 12 },
   addText: { color: '#9ab6ff', fontWeight: '700' },
@@ -213,6 +320,8 @@ const styles = StyleSheet.create({
   roleChipActive: { borderColor: '#2563eb', backgroundColor: '#172447' },
   roleChipSmall: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 10, borderWidth: 1, borderColor: '#1f2738', backgroundColor: '#11121a' },
   roleText: { color: '#e5e7f0', fontWeight: '700' },
+  createLabelWrap: { justifyContent: 'center', paddingRight: 2 },
+  createLabelText: { color: '#9aa1b5', fontWeight: '700' },
   roleHelp: { color: '#cbd2e8', marginTop: 6, lineHeight: 18 },
   actions: { marginTop: 12, flexDirection: 'row', justifyContent: 'flex-end' },
   secondary: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 10, borderWidth: 1, borderColor: '#26344a' },
@@ -222,6 +331,7 @@ const styles = StyleSheet.create({
   toggleText: { color: '#e5e7f0', fontWeight: '600' },
   toggleBadge: { color: '#9aa1b5', fontWeight: '700' },
   divider: { height: 1, backgroundColor: '#1f2738', marginVertical: 12 },
+  miniDivider: { height: 1, backgroundColor: '#1f2738', marginVertical: 10 },
   sharedBox: { marginTop: 12, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#1f2738', backgroundColor: '#0f111a' },
   sharedLabel: { color: '#e5e7f0', fontWeight: '800', marginBottom: 8 },
   sharedList: { maxHeight: 250 },

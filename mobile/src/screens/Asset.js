@@ -78,6 +78,11 @@ export default function Asset({ route, navigation }) {
 
   const limit20 = (value = '') => value.slice(0, 20);
   const role = getRoleForAsset(assetId, currentUser?.id);
+  const accessType = asset?.ownerId === currentUser?.id
+    ? 'Owner'
+    : role
+      ? `${role.charAt(0).toUpperCase()}${role.slice(1)}`
+      : 'Shared';
   const canEdit = role === 'owner' || role === 'editor' || role === 'manager';
   const canMove = role === 'owner' || role === 'manager';
   const canShare = role === 'owner' || role === 'manager';
@@ -510,7 +515,7 @@ export default function Asset({ route, navigation }) {
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.roleBadge}>Role: {role || 'viewer'}</Text>
+        <Text style={styles.roleBadge}>Access Type: {accessType}</Text>
 
         <View style={styles.actionsRow}>
           <TouchableOpacity

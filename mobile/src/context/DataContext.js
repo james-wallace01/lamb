@@ -6,6 +6,16 @@ const STORAGE_VERSION = 5;
 const DEFAULT_PROFILE_IMAGE = 'http://192.168.7.112:3000/images/default-avatar.png';
 const DEFAULT_MEDIA_IMAGE = 'http://192.168.7.112:3000/images/collection_default.jpg';
 
+const normalizeRole = (role) => {
+  if (!role) return null;
+  const raw = role.toString().trim().toLowerCase();
+  if (raw === 'viewer' || raw === 'reviewer') return 'reviewer';
+  if (raw === 'editor') return 'editor';
+  if (raw === 'manager') return 'manager';
+  if (raw === 'owner') return 'owner';
+  return raw;
+};
+
 // Subscription tiers with features
 const SUBSCRIPTION_TIERS = {
   BASIC: { 
@@ -72,6 +82,58 @@ const migrateData = (data) => {
   return migrated;
 };
 
+const DEMO_USERS = [
+  {
+    id: 'u_demo_alex',
+    firstName: 'Alex',
+    lastName: 'Morgan',
+    email: 'alex@example.com',
+    username: 'alex',
+    password: 'demo123',
+    profileImage: DEFAULT_PROFILE_IMAGE,
+    subscription: {
+      tier: 'BASIC',
+      startDate: 0,
+      renewalDate: 4102444800000,
+      stripeSubscriptionId: null,
+      stripeCustomerId: null,
+      cancelAtPeriodEnd: false,
+    },
+  },
+  {
+    id: 'u_demo_sam',
+    firstName: 'Sam',
+    lastName: 'Taylor',
+    email: 'sam@example.com',
+    username: 'sam',
+    password: 'demo123',
+    profileImage: DEFAULT_PROFILE_IMAGE,
+    subscription: {
+      tier: 'PREMIUM',
+      startDate: 0,
+      renewalDate: 4102444800000,
+      stripeSubscriptionId: null,
+      stripeCustomerId: null,
+      cancelAtPeriodEnd: false,
+    },
+  },
+];
+
+const ensureDemoUsers = (existingUsers) => {
+  const base = Array.isArray(existingUsers) ? existingUsers : [];
+  const hasUser = (candidate) =>
+    base.some(
+      (u) =>
+        u?.id === candidate.id ||
+        (u?.username && candidate.username && u.username.toLowerCase() === candidate.username.toLowerCase()) ||
+        (u?.email && candidate.email && u.email.toLowerCase() === candidate.email.toLowerCase())
+    );
+
+  const additions = DEMO_USERS.filter((u) => !hasUser(u));
+  if (additions.length === 0) return base;
+  return [...base, ...additions.map(withProfileImage)];
+};
+
 const seedUsers = [];
 
 const seedVaults = [];
@@ -97,21 +159,23 @@ export function DataProvider({ children }) {
         const stored = await getItem(DATA_KEY, null);
         if (stored && stored.version === STORAGE_VERSION) {
           const migrated = migrateData(stored);
-          setUsers(migrated.users || []);
+          const nextUsers = ensureDemoUsers(migrated.users || []);
+          setUsers(nextUsers);
           setCurrentUser(migrated.currentUser || null);
           setVaults(migrated.vaults || []);
           setCollections(migrated.collections || []);
           setAssets(migrated.assets || []);
-          await setItem(DATA_KEY, { ...migrated, version: STORAGE_VERSION });
+          await setItem(DATA_KEY, { ...migrated, users: nextUsers, version: STORAGE_VERSION });
         } else {
           const seedData = { users: seedUsers, vaults: seedVaults, collections: seedCollections, assets: seedAssets, currentUser: null };
           const migratedSeed = migrateData(seedData);
-          setUsers(migratedSeed.users);
+          const nextUsers = ensureDemoUsers(migratedSeed.users);
+          setUsers(nextUsers);
           setCurrentUser(migratedSeed.currentUser);
           setVaults(migratedSeed.vaults);
           setCollections(migratedSeed.collections);
           setAssets(migratedSeed.assets);
-          await setItem(DATA_KEY, { version: STORAGE_VERSION, users: migratedSeed.users, currentUser: migratedSeed.currentUser, vaults: migratedSeed.vaults, collections: migratedSeed.collections, assets: migratedSeed.assets });
+          await setItem(DATA_KEY, { version: STORAGE_VERSION, users: nextUsers, currentUser: migratedSeed.currentUser, vaults: migratedSeed.vaults, collections: migratedSeed.collections, assets: migratedSeed.assets });
         }
         setLoading(false);
       })();
@@ -261,7 +325,7 @@ const register = ({ firstName, lastName, email, username, password, subscription
       if (vault.ownerId === userId) return true;
       const match = (vault.sharedWith || []).find(s => s.userId === userId);
       if (!match) return false;
-      if (match.role === 'manager') return true;
+      if (normalizeRole(match.role) === 'manager') return true;
       return !!match.canCreateCollections;
     };
 
@@ -293,7 +357,7 @@ const register = ({ firstName, lastName, email, username, password, subscription
       if (collection.ownerId === userId) return true;
       const match = (collection.sharedWith || []).find(s => s.userId === userId);
       if (!match) return false;
-      if (match.role === 'manager') return true;
+      if (normalizeRole(match.role) === 'manager') return true;
       return !!match.canCreateAssets;
     };
 
@@ -322,37 +386,48 @@ const register = ({ firstName, lastName, email, username, password, subscription
       return { ok: true, asset };
     };
 
-    const shareVault = ({ vaultId, userId, role = 'viewer', canCreateCollections = false }) => {
+    const shareVault = ({ vaultId, userId, role = 'reviewer', canCreateCollections = false }) => {
       setVaults(prev => prev.map(v => {
         if (v.id !== vaultId) return v;
         const sharedWith = v.sharedWith || [];
         if (sharedWith.find(s => s.userId === userId)) return v;
-        return { ...v, sharedWith: [...sharedWith, { userId, role, canCreateCollections }] };
+        const normalizedRole = normalizeRole(role) || 'reviewer';
+        return { ...v, sharedWith: [...sharedWith, { userId, role: normalizedRole, canCreateCollections }] };
       }));
     };
 
-    const shareCollection = ({ collectionId, userId, role = 'viewer', canCreateAssets = false }) => {
+    const shareCollection = ({ collectionId, userId, role = 'reviewer', canCreateAssets = false }) => {
       setCollections(prev => prev.map(c => {
         if (c.id !== collectionId) return c;
         const sharedWith = c.sharedWith || [];
         if (sharedWith.find(s => s.userId === userId)) return c;
-        return { ...c, sharedWith: [...sharedWith, { userId, role, canCreateAssets }] };
+        const normalizedRole = normalizeRole(role) || 'reviewer';
+        return { ...c, sharedWith: [...sharedWith, { userId, role: normalizedRole, canCreateAssets }] };
       }));
     };
 
-    const shareAsset = ({ assetId, userId, role = 'viewer' }) => {
+    const shareAsset = ({ assetId, userId, role = 'reviewer' }) => {
       setAssets(prev => prev.map(a => {
         if (a.id !== assetId) return a;
         const sharedWith = a.sharedWith || [];
         if (sharedWith.find(s => s.userId === userId)) return a;
-        return { ...a, sharedWith: [...sharedWith, { userId, role }] };
+        const normalizedRole = normalizeRole(role) || 'reviewer';
+        return { ...a, sharedWith: [...sharedWith, { userId, role: normalizedRole }] };
       }));
     };
 
     const updateVaultShare = ({ vaultId, userId, role, canCreateCollections }) => {
       setVaults(prev => prev.map(v => {
         if (v.id !== vaultId) return v;
-        const sharedWith = (v.sharedWith || []).map(s => s.userId === userId ? { ...s, role: role || s.role, canCreateCollections: typeof canCreateCollections === 'boolean' ? canCreateCollections : s.canCreateCollections } : s);
+        const sharedWith = (v.sharedWith || []).map(s => {
+          if (s.userId !== userId) return s;
+          const normalizedRole = normalizeRole(role || s.role) || 'reviewer';
+          return {
+            ...s,
+            role: normalizedRole,
+            canCreateCollections: typeof canCreateCollections === 'boolean' ? canCreateCollections : s.canCreateCollections,
+          };
+        });
         return { ...v, sharedWith };
       }));
     };
@@ -360,7 +435,15 @@ const register = ({ firstName, lastName, email, username, password, subscription
     const updateCollectionShare = ({ collectionId, userId, role, canCreateAssets }) => {
       setCollections(prev => prev.map(c => {
         if (c.id !== collectionId) return c;
-        const sharedWith = (c.sharedWith || []).map(s => s.userId === userId ? { ...s, role: role || s.role, canCreateAssets: typeof canCreateAssets === 'boolean' ? canCreateAssets : s.canCreateAssets } : s);
+        const sharedWith = (c.sharedWith || []).map(s => {
+          if (s.userId !== userId) return s;
+          const normalizedRole = normalizeRole(role || s.role) || 'reviewer';
+          return {
+            ...s,
+            role: normalizedRole,
+            canCreateAssets: typeof canCreateAssets === 'boolean' ? canCreateAssets : s.canCreateAssets,
+          };
+        });
         return { ...c, sharedWith };
       }));
     };
@@ -368,7 +451,11 @@ const register = ({ firstName, lastName, email, username, password, subscription
     const updateAssetShare = ({ assetId, userId, role }) => {
       setAssets(prev => prev.map(a => {
         if (a.id !== assetId) return a;
-        const sharedWith = (a.sharedWith || []).map(s => s.userId === userId ? { ...s, role: role || s.role } : s);
+        const sharedWith = (a.sharedWith || []).map(s => {
+          if (s.userId !== userId) return s;
+          const normalizedRole = normalizeRole(role || s.role) || 'reviewer';
+          return { ...s, role: normalizedRole };
+        });
         return { ...a, sharedWith };
       }));
     };
@@ -429,7 +516,7 @@ const register = ({ firstName, lastName, email, username, password, subscription
     if (!vault) return null;
     if (vault.ownerId === userId) return 'owner';
     const match = (vault.sharedWith || []).find(s => s.userId === userId);
-    return match?.role || null;
+    return normalizeRole(match?.role) || null;
   };
 
     const getRoleForCollection = (collectionId, userId) => {
@@ -437,7 +524,7 @@ const register = ({ firstName, lastName, email, username, password, subscription
       if (!collection) return null;
       if (collection.ownerId === userId) return 'owner';
       const match = (collection.sharedWith || []).find(s => s.userId === userId);
-      return match?.role || null;
+      return normalizeRole(match?.role) || null;
     };
 
   const getRoleForAsset = (assetId, userId) => {
@@ -445,7 +532,7 @@ const register = ({ firstName, lastName, email, username, password, subscription
     if (!asset) return null;
     if (asset.ownerId === userId) return 'owner';
     const match = (asset.sharedWith || []).find(s => s.userId === userId);
-    return match?.role || null;
+    return normalizeRole(match?.role) || null;
   };
 
   const updateSubscription = (subscriptionTier, stripeSubscriptionId) => {

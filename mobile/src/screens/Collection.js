@@ -29,6 +29,11 @@ export default function Collection({ navigation, route }) {
   const collectionAssets = useMemo(() => assets.filter((a) => a.collectionId === collectionId), [assets, collectionId]);
   const role = getRoleForCollection(collectionId, currentUser?.id);
   const isOwner = role === 'owner';
+  const accessType = collection?.ownerId === currentUser?.id
+    ? 'Owner'
+    : role
+      ? `${role.charAt(0).toUpperCase()}${role.slice(1)}`
+      : 'Shared';
   const canCreate = canCreateAssetsInCollection(collectionId, currentUser?.id);
   const canMove = role === 'owner' || role === 'manager';
   const ownerVaults = vaults.filter(v => v.ownerId === collection?.ownerId);
@@ -250,7 +255,7 @@ export default function Collection({ navigation, route }) {
           <Text style={styles.infoButtonText}>ℹ</Text>
         </TouchableOpacity>
       </View>
-      <Text style={[styles.subtitleDim, role === 'owner' ? styles.visuallyHidden : null]}>{role ? role : 'Shared'}</Text>
+      <Text style={styles.subtitleDim}>Access Type: {accessType}</Text>
       {isOwner && (
         <View style={styles.actionsRow}>
           <TouchableOpacity style={[styles.primaryButton, styles.actionButton]} onPress={openEditModal}>

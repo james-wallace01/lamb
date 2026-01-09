@@ -32,6 +32,11 @@ export default function Vault({ navigation, route }) {
   const vaultCollections = useMemo(() => collections.filter((c) => c.vaultId === vaultId), [collections, vaultId]);
   const role = getRoleForVault(vaultId, currentUser?.id);
   const isOwner = role === 'owner';
+  const accessType = vault?.ownerId === currentUser?.id
+    ? 'Owner'
+    : role
+      ? `${role.charAt(0).toUpperCase()}${role.slice(1)}`
+      : 'Shared';
   const canCreate = canCreateCollectionsInVault(vaultId, currentUser?.id);
   const vaultImages = vault?.images || [];
   const heroImage = vault?.heroImage || DEFAULT_MEDIA_IMAGE;
@@ -337,7 +342,7 @@ export default function Vault({ navigation, route }) {
             <Text style={styles.infoButtonText}>ℹ</Text>
           </TouchableOpacity>
         </View>
-        <Text style={[styles.subtitleDim, role === 'owner' ? styles.visuallyHidden : null]}>{role ? role : 'Shared'}</Text>
+        <Text style={styles.subtitleDim}>Access Type: {accessType}</Text>
       </View>
       {isOwner && (
         <View style={styles.actionsRow}>
