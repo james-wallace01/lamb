@@ -48,6 +48,9 @@ export default function Asset({ route, navigation }) {
     category: '',
     quantity: 1,
     value: '',
+    estimateValue: '',
+    rrp: '',
+    purchasePrice: '',
     manager: '',
     description: '',
     images: [],
@@ -83,6 +86,9 @@ export default function Asset({ route, navigation }) {
       category: asset.category || '',
       quantity: asset.quantity ?? 1,
       value: asset.value ? String(asset.value) : '',
+      estimateValue: asset.estimateValue ? String(asset.estimateValue) : '',
+      rrp: asset.rrp ? String(asset.rrp) : '',
+      purchasePrice: asset.purchasePrice ? String(asset.purchasePrice) : '',
       manager: asset.manager || '',
       description: asset.description || '',
       images: trimToFour(assetImages),
@@ -173,6 +179,9 @@ export default function Asset({ route, navigation }) {
       category: editDraft.category || '',
       quantity: Number(editDraft.quantity) || 1,
       value: editDraft.value,
+      estimateValue: editDraft.estimateValue,
+      rrp: editDraft.rrp,
+      purchasePrice: editDraft.purchasePrice,
       manager: editDraft.manager,
       description: editDraft.description,
       images,
@@ -246,16 +255,62 @@ export default function Asset({ route, navigation }) {
                 editable={canEdit}
               />
 
+
               <Text style={styles.modalLabel}>Value</Text>
               <TextInput
                 style={styles.modalInput}
                 placeholder="Value"
                 placeholderTextColor="#80869b"
                 keyboardType="numeric"
-                value={editDraft.value}
-                onChangeText={(value) => setEditDraft((prev) => ({ ...prev, value }))}
+                value={formatCurrency(editDraft.value)}
+                onChangeText={(value) => setEditDraft((prev) => ({ ...prev, value: unformatCurrency(value) }))}
                 editable={canEdit}
               />
+
+              <Text style={styles.modalLabel}>Estimate Value</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Estimate Value"
+                placeholderTextColor="#80869b"
+                keyboardType="numeric"
+                value={formatCurrency(editDraft.estimateValue)}
+                onChangeText={(value) => setEditDraft((prev) => ({ ...prev, estimateValue: unformatCurrency(value) }))}
+                editable={canEdit}
+              />
+
+              <Text style={styles.modalLabel}>RRP</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="RRP"
+                placeholderTextColor="#80869b"
+                keyboardType="numeric"
+                value={formatCurrency(editDraft.rrp)}
+                onChangeText={(value) => setEditDraft((prev) => ({ ...prev, rrp: unformatCurrency(value) }))}
+                editable={canEdit}
+              />
+
+              <Text style={styles.modalLabel}>Purchase Price</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Purchase Price"
+                placeholderTextColor="#80869b"
+                keyboardType="numeric"
+                value={formatCurrency(editDraft.purchasePrice)}
+                onChangeText={(value) => setEditDraft((prev) => ({ ...prev, purchasePrice: unformatCurrency(value) }))}
+                editable={canEdit}
+              />
+// Format currency with $ and commas
+function formatCurrency(val) {
+  if (!val) return '';
+  const num = parseFloat(val.toString().replace(/[^\d.]/g, ''));
+  if (isNaN(num)) return '';
+  return '$' + num.toLocaleString();
+}
+
+function unformatCurrency(val) {
+  if (!val) return '';
+  return val.replace(/[^\d.]/g, '');
+}
 
 
               <Text style={styles.modalLabel}>Manager</Text>
