@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, Image, ScrollView } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, Image, ScrollView, RefreshControl } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
@@ -8,9 +8,10 @@ import BackButton from '../components/BackButton';
 const DEFAULT_AVATAR = 'https://via.placeholder.com/112?text=Profile';
 
 export default function Profile() {
-  const { currentUser, updateCurrentUser, assets, validatePassword, resetPassword, deleteAccount } = useData();
+  const { currentUser, updateCurrentUser, assets, validatePassword, resetPassword, deleteAccount, refreshData } = useData();
   const [draft, setDraft] = useState(currentUser || {});
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
@@ -275,7 +276,34 @@ export default function Profile() {
 
   return (
     <View style={styles.wrapper}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+        bounces
+        alwaysBounceVertical
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={async () => {
+              if (refreshing) return;
+              setRefreshing(true);
+              const startedAt = Date.now();
+              try {
+                await refreshData?.();
+              } finally {
+                const elapsed = Date.now() - startedAt;
+                const minMs = 800;
+                if (elapsed < minMs) {
+                  await new Promise((r) => setTimeout(r, minMs - elapsed));
+                }
+                setRefreshing(false);
+              }
+            }}
+            tintColor="#fff"
+            progressViewOffset={24}
+          />
+        }
+      >
         <View style={styles.headerRow}>
           <BackButton />
           <LambHeader />

@@ -1,16 +1,33 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, TextInput, Alert, Image } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, TextInput, Alert, Image, RefreshControl } from 'react-native';
 import { useData } from '../context/DataContext';
 import ShareModal from '../components/ShareModal';
 import LambHeader from '../components/LambHeader';
 
 export default function Home({ navigation }) {
-  const { loading, vaults, currentUser, addVault, logout } = useData();
+  const { loading, vaults, currentUser, addVault, logout, refreshData } = useData();
   const [newVaultName, setNewVaultName] = useState('');
   const [shareVaultId, setShareVaultId] = useState(null);
   const scrollRef = useRef(null);
   const [mySectionY, setMySectionY] = useState(0);
   const [sharedSectionY, setSharedSectionY] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    const startedAt = Date.now();
+    try {
+      await refreshData?.();
+    } finally {
+      const elapsed = Date.now() - startedAt;
+      const minMs = 800;
+      if (elapsed < minMs) {
+        await new Promise((r) => setTimeout(r, minMs - elapsed));
+      }
+      setRefreshing(false);
+    }
+  };
 
   const myVaults = useMemo(() => vaults.filter((v) => v.ownerId === currentUser?.id), [vaults, currentUser]);
   const sharedVaults = useMemo(() => vaults.filter((v) => v.ownerId !== currentUser?.id && (v.sharedWith || []).some(sw => sw.userId === currentUser?.id)), [vaults, currentUser]);
@@ -33,7 +50,14 @@ export default function Home({ navigation }) {
   );
 
   return (
-    <View style={styles.container}>
+    <View style={styles.wrapper}>
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.container}
+        bounces
+        alwaysBounceVertical
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" progressViewOffset={24} />}
+      >
         <LambHeader />
         <View style={styles.headerRow}>
           <Text style={styles.title}>Home</Text>
@@ -52,6 +76,7 @@ export default function Home({ navigation }) {
             </TouchableOpacity>
           </View>
         </View>
+
         <View style={styles.quickRow}>
           <TouchableOpacity style={styles.quickCard} onPress={() => scrollRef.current?.scrollTo({ y: mySectionY, animated: true })}>
             <Text style={styles.quickTitle}>My Vaults</Text>
@@ -70,30 +95,34 @@ export default function Home({ navigation }) {
             <Text style={styles.quickMeta}>Account</Text>
           </TouchableOpacity>
         </View>
-      {loading ? (
-        <Text style={styles.subtitle}>Loading…</Text>
-      ) : (
-          <ScrollView ref={scrollRef} contentContainerStyle={styles.scrollGap}>
+
+        {loading ? (
+          <Text style={styles.subtitle}>Loading…</Text>
+        ) : (
+          <>
             <View onLayout={(e) => setMySectionY(e.nativeEvent.layout.y)}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>My Vaults</Text>
-            </View>
-            <View style={styles.createRow}>
-              <TextInput
-                style={styles.input}
-                placeholder="New vault name"
-                placeholderTextColor="#80869b"
-                value={newVaultName}
-                onChangeText={setNewVaultName}
-              />
-              <TouchableOpacity style={styles.addButton} onPress={() => {
-                if (!newVaultName.trim()) return;
-                addVault({ name: newVaultName.trim() });
-                setNewVaultName('');
-              }}>
-                <Text style={styles.addButtonText}>Add</Text>
-              </TouchableOpacity>
-            </View>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>My Vaults</Text>
+              </View>
+              <View style={styles.createRow}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="New vault name"
+                  placeholderTextColor="#80869b"
+                  value={newVaultName}
+                  onChangeText={setNewVaultName}
+                />
+                <TouchableOpacity
+                  style={styles.addButton}
+                  onPress={() => {
+                    if (!newVaultName.trim()) return;
+                    addVault({ name: newVaultName.trim() });
+                    setNewVaultName('');
+                  }}
+                >
+                  <Text style={styles.addButtonText}>Add</Text>
+                </TouchableOpacity>
+              </View>
               {myVaults.length === 0 ? (
                 <Text style={styles.subtitle}>No vaults yet.</Text>
               ) : (
@@ -103,12 +132,12 @@ export default function Home({ navigation }) {
                   </View>
                 ))
               )}
-          </View>
+            </View>
 
             <View onLayout={(e) => setSharedSectionY(e.nativeEvent.layout.y)}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Shared Vaults</Text>
-            </View>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Shared Vaults</Text>
+              </View>
               {sharedVaults.length === 0 ? (
                 <Text style={styles.subtitle}>No shared vaults.</Text>
               ) : (
@@ -118,17 +147,19 @@ export default function Home({ navigation }) {
                   </View>
                 ))
               )}
-          </View>
+            </View>
+          </>
+        )}
+      </ScrollView>
 
-        </ScrollView>
-      )}
-        <ShareModal visible={!!shareVaultId} onClose={() => setShareVaultId(null)} targetType="vault" targetId={shareVaultId} />
-      </View>
+      <ShareModal visible={!!shareVaultId} onClose={() => setShareVaultId(null)} targetType="vault" targetId={shareVaultId} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: '#0b0b0f', gap: 12 },
+  wrapper: { flex: 1, backgroundColor: '#0b0b0f' },
+  container: { padding: 20, backgroundColor: '#0b0b0f', gap: 12 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   title: { fontSize: 24, fontWeight: '700', color: '#fff' },

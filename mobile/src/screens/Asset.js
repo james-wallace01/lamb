@@ -9,6 +9,7 @@ import {
   ScrollView,
   Image,
   Modal,
+  RefreshControl,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useData } from '../context/DataContext';
@@ -42,6 +43,7 @@ export default function Asset({ route, navigation }) {
     collections,
     getRoleForAsset,
     deleteAsset,
+    refreshData,
   } = useData();
 
   const asset = useMemo(() => assets.find((a) => a.id === assetId), [assetId, assets]);
@@ -55,6 +57,23 @@ export default function Asset({ route, navigation }) {
   const [collectionDropdownOpen, setCollectionDropdownOpen] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
   const [infoVisible, setInfoVisible] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    const startedAt = Date.now();
+    try {
+      await refreshData?.();
+    } finally {
+      const elapsed = Date.now() - startedAt;
+      const minMs = 800;
+      if (elapsed < minMs) {
+        await new Promise((r) => setTimeout(r, minMs - elapsed));
+      }
+      setRefreshing(false);
+    }
+  };
 
   const [editDraft, setEditDraft] = useState({
     title: '',
@@ -502,7 +521,12 @@ export default function Asset({ route, navigation }) {
         </View>
       </Modal>
 
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        bounces
+        alwaysBounceVertical
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" progressViewOffset={24} />}
+      >
         <View style={styles.headerRow}>
           <BackButton />
           <LambHeader />

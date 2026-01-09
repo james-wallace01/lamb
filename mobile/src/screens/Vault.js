@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FlatList, StyleSheet, View, Text, TouchableOpacity, TextInput, Alert, Image, ScrollView, Modal } from 'react-native';
+import { FlatList, StyleSheet, View, Text, TouchableOpacity, TextInput, Alert, Image, ScrollView, Modal, RefreshControl } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useData } from '../context/DataContext';
 import ShareModal from '../components/ShareModal';
@@ -8,7 +8,7 @@ import BackButton from '../components/BackButton';
 
 export default function Vault({ navigation, route }) {
   const { vaultId } = route.params || {};
-  const { loading, vaults, collections, addCollection, currentUser, getRoleForVault, canCreateCollectionsInVault, users, deleteVault, updateVault } = useData();
+  const { loading, vaults, collections, addCollection, currentUser, getRoleForVault, canCreateCollectionsInVault, users, deleteVault, updateVault, refreshData } = useData();
   const [newName, setNewName] = useState('');
   const [shareVisible, setShareVisible] = useState(false);
   const [shareTargetType, setShareTargetType] = useState(null);
@@ -17,6 +17,23 @@ export default function Vault({ navigation, route }) {
   const [infoVisible, setInfoVisible] = useState(false);
   const [editDraft, setEditDraft] = useState({ name: '', description: '', manager: '', images: [], heroImage: '' });
   const [previewImage, setPreviewImage] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    const startedAt = Date.now();
+    try {
+      await refreshData?.();
+    } finally {
+      const elapsed = Date.now() - startedAt;
+      const minMs = 800;
+      if (elapsed < minMs) {
+        await new Promise((r) => setTimeout(r, minMs - elapsed));
+      }
+      setRefreshing(false);
+    }
+  };
   const draftPreviewImages = editDraft.heroImage
     ? [editDraft.heroImage, ...(editDraft.images || []).filter((img) => img !== editDraft.heroImage)]
     : editDraft.images || [];
@@ -335,6 +352,9 @@ export default function Vault({ navigation, route }) {
               data={vaultCollections}
               keyExtractor={(c) => c.id}
               renderItem={renderCollection}
+              bounces
+              alwaysBounceVertical
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" progressViewOffset={24} />}
               ItemSeparatorComponent={() => <View style={styles.separator} />}
               ListHeaderComponent={
                 <View style={{ position: 'relative' }}>
@@ -462,6 +482,8 @@ export default function Vault({ navigation, route }) {
       </View>
     </>
   );
+
+                  {vaultCollections.length > 0 ? <View style={styles.separator} /> : null}
 }
 
 const styles = StyleSheet.create({

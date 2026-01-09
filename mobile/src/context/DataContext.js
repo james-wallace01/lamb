@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { getItem, setItem, removeItem } from '../storage';
 import bcrypt from 'bcryptjs';
 import * as Random from 'expo-random';
@@ -41,9 +41,12 @@ const deletePasswordHashFromSecureStore = async (userId) => {
 };
 
 const DATA_KEY = 'lamb-mobile-data-v5';
+const LAST_ACTIVITY_KEY = 'lamb-mobile-last-activity-v1';
 const STORAGE_VERSION = 5;
 const DEFAULT_PROFILE_IMAGE = 'http://192.168.7.112:3000/images/default-avatar.png';
 const DEFAULT_MEDIA_IMAGE = 'http://192.168.7.112:3000/images/collection_default.jpg';
+
+const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 
 const PASSWORD_MIN_LENGTH = 12;
 const PASSWORD_MAX_LENGTH = 72; // bcrypt truncates beyond 72 bytes
@@ -413,11 +416,88 @@ export function DataProvider({ children }) {
   const [vaults, setVaults] = useState([]);
   const [collections, setCollections] = useState([]);
   const [assets, setAssets] = useState([]);
+  const [lastActivityAt, setLastActivityAt] = useState(Date.now());
+  const lastActivityWriteAtRef = useRef(0);
+
+  const recordActivity = () => {
+    if (!currentUser) return;
+    const now = Date.now();
+    setLastActivityAt(now);
+
+    // Throttle writes to storage to avoid excessive IO.
+    if (now - lastActivityWriteAtRef.current < 15000) return;
+    lastActivityWriteAtRef.current = now;
+    setItem(LAST_ACTIVITY_KEY, now);
+  };
+
+  const enforceSessionTimeout = async () => {
+    if (!currentUser) return { ok: true };
+    try {
+      const stored = await getItem(LAST_ACTIVITY_KEY, null);
+      const last = typeof stored === 'number' ? stored : lastActivityAt;
+      if (Date.now() - last >= SESSION_TIMEOUT_MS) {
+        setCurrentUser(null);
+        await removeItem(LAST_ACTIVITY_KEY);
+        return { ok: false, expired: true };
+      }
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: error?.message || 'Session check failed' };
+    }
+  };
+
+  const refreshData = async () => {
+    try {
+      const stored = await getItem(DATA_KEY, null);
+      if (!stored) return { ok: false, message: 'No stored data' };
+
+      const migrated = migrateData(stored);
+      const nextUsers = ensureDemoUsers(migrated.users || []);
+      const hydratedUsers = await hydrateUsersWithPasswordHashes(nextUsers);
+
+      setUsers(hydratedUsers);
+
+      const storedCurrent = migrated.currentUser || null;
+      const matchingUser = storedCurrent
+        ? hydratedUsers.find((u) => u?.id && u.id === storedCurrent.id)
+        : null;
+      const nextCurrentUser = matchingUser
+        ? withoutPasswordSecrets(withProfileImage(matchingUser))
+        : storedCurrent;
+
+      setCurrentUser(nextCurrentUser);
+      setVaults(migrated.vaults || []);
+      setCollections(migrated.collections || []);
+      setAssets(migrated.assets || []);
+
+      await setItem(DATA_KEY, {
+        ...migrated,
+        version: STORAGE_VERSION,
+        users: hydratedUsers.map(withoutPasswordForStorage),
+        currentUser: nextCurrentUser,
+      });
+
+      return { ok: true };
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      return { ok: false, message: error?.message || 'Refresh failed' };
+    }
+  };
 
     useEffect(() => {
       (async () => {
         await removeItem('lamb-mobile-data-v1'); // clean legacy
         await removeItem('lamb-mobile-data-v2'); // clean previous version
+        const last = await getItem(LAST_ACTIVITY_KEY, null);
+        if (typeof last === 'number' && Number.isFinite(last)) {
+          setLastActivityAt(last);
+          lastActivityWriteAtRef.current = last;
+        } else {
+          const now = Date.now();
+          setLastActivityAt(now);
+          lastActivityWriteAtRef.current = now;
+          await setItem(LAST_ACTIVITY_KEY, now);
+        }
         const stored = await getItem(DATA_KEY, null);
         if (stored && stored.version === STORAGE_VERSION) {
           const migrated = migrateData(stored);
@@ -471,11 +551,16 @@ export function DataProvider({ children }) {
         }
       }
       setCurrentUser(withoutPasswordSecrets(ensured));
+      const now = Date.now();
+      setLastActivityAt(now);
+      lastActivityWriteAtRef.current = now;
+      setItem(LAST_ACTIVITY_KEY, now);
       return { ok: true };
     };
 
   const logout = () => {
     setCurrentUser(null);
+    removeItem(LAST_ACTIVITY_KEY);
   };
 
   // Reset all data - useful for testing
@@ -1028,6 +1113,9 @@ const register = async ({ firstName, lastName, email, username, password, subscr
     users,
     currentUser,
     setCurrentUser,
+    refreshData,
+    recordActivity,
+    enforceSessionTimeout,
     subscriptionTiers: SUBSCRIPTION_TIERS,
     vaults,
     collections,

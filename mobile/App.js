@@ -1,4 +1,6 @@
 import 'react-native-gesture-handler';
+import React, { useEffect, useRef } from 'react';
+import { AppState, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -50,13 +52,59 @@ function RootNavigator() {
   return currentUser ? <MainStack /> : <AuthStack />;
 }
 
+function SessionTimeoutBoundary({ children }) {
+  const { currentUser, recordActivity, enforceSessionTimeout } = useData();
+  const appStateRef = useRef(AppState.currentState);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    recordActivity?.();
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      const prev = appStateRef.current;
+      appStateRef.current = nextState;
+
+      if (!currentUser) return;
+      if ((prev === 'inactive' || prev === 'background') && nextState === 'active') {
+        enforceSessionTimeout?.();
+      }
+    });
+
+    return () => sub.remove();
+  }, [currentUser?.id, enforceSessionTimeout]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const id = setInterval(() => {
+      enforceSessionTimeout?.();
+    }, 30 * 1000);
+    return () => clearInterval(id);
+  }, [currentUser?.id, enforceSessionTimeout]);
+
+  return (
+    <View
+      style={{ flex: 1 }}
+      onStartShouldSetResponderCapture={() => {
+        recordActivity?.();
+        return false;
+      }}
+    >
+      {children}
+    </View>
+  );
+}
+
 export default function App() {
   return (
     <SafeAreaProvider>
       <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY} merchantIdentifier={STRIPE_MERCHANT_NAME}>
         <DataProvider>
           <NavigationContainer>
-            <RootNavigator />
+            <SessionTimeoutBoundary>
+              <RootNavigator />
+            </SessionTimeoutBoundary>
           </NavigationContainer>
           <VersionFooter />
           <StatusBar style="light" />

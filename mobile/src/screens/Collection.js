@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, TextInput, Alert, ScrollView, Image, Modal } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, TextInput, Alert, ScrollView, Image, Modal, RefreshControl } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useData } from '../context/DataContext';
 import ShareModal from '../components/ShareModal';
@@ -8,7 +8,7 @@ import BackButton from '../components/BackButton';
 
 export default function Collection({ navigation, route }) {
   const { collectionId } = route.params || {};
-  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection } = useData();
+  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData } = useData();
   const [newTitle, setNewTitle] = useState('');
   const [shareVisible, setShareVisible] = useState(false);
   const [shareTargetType, setShareTargetType] = useState(null);
@@ -20,6 +20,23 @@ export default function Collection({ navigation, route }) {
   const [infoVisible, setInfoVisible] = useState(false);
   const [editDraft, setEditDraft] = useState({ name: '', description: '', manager: '', images: [], heroImage: '' });
   const [previewImage, setPreviewImage] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    const startedAt = Date.now();
+    try {
+      await refreshData?.();
+    } finally {
+      const elapsed = Date.now() - startedAt;
+      const minMs = 800;
+      if (elapsed < minMs) {
+        await new Promise((r) => setTimeout(r, minMs - elapsed));
+      }
+      setRefreshing(false);
+    }
+  };
   const draftPreviewImages = editDraft.heroImage
     ? [editDraft.heroImage, ...(editDraft.images || []).filter((img) => img !== editDraft.heroImage)]
     : editDraft.images || [];
@@ -486,7 +503,12 @@ export default function Collection({ navigation, route }) {
         </View>
       </Modal>
       
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        bounces
+        alwaysBounceVertical
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" progressViewOffset={24} />}
+      >
         {header}
         {/* Images section, actions, etc. remain unchanged */}
         {/* Render assets */}

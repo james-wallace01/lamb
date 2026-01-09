@@ -1,14 +1,38 @@
-import React from 'react';
-import { StyleSheet, View, Text, ScrollView } from 'react-native';
+import React, { useState } from 'react';
+import { StyleSheet, View, Text, ScrollView, RefreshControl } from 'react-native';
 import LambHeader from '../components/LambHeader';
 import BackButton from '../components/BackButton';
 import SubscriptionManager from '../components/SubscriptionManager';
+import { useData } from '../context/DataContext';
 
 export default function Membership() {
+  const { refreshData } = useData();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    const startedAt = Date.now();
+    try {
+      await refreshData?.();
+    } finally {
+      const elapsed = Date.now() - startedAt;
+      const minMs = 800;
+      if (elapsed < minMs) {
+        await new Promise((r) => setTimeout(r, minMs - elapsed));
+      }
+      setRefreshing(false);
+    }
+  };
 
   return (
     <View style={styles.wrapper}>
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        bounces
+        alwaysBounceVertical
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" progressViewOffset={24} />}
+      >
         <View style={styles.headerRow}>
           <BackButton />
           <LambHeader />
