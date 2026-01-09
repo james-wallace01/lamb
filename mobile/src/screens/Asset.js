@@ -297,8 +297,10 @@ export default function Asset({ route, navigation }) {
                 keyboardType="numeric"
                 value={formatCurrency(editDraft.purchasePrice)}
                 onChangeText={(value) => setEditDraft((prev) => ({ ...prev, purchasePrice: unformatCurrency(value) }))}
+
                 editable={canEdit}
               />
+
 // Format currency with $ and commas
 function formatCurrency(val) {
   if (!val) return '';
