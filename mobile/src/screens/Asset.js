@@ -315,17 +315,6 @@ function unformatCurrency(val) {
   return val.replace(/[^\d.]/g, '');
 }
 
-
-              <Text style={styles.modalLabel}>Manager</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Manager"
-                placeholderTextColor="#80869b"
-                value={editDraft.manager}
-                onChangeText={(manager) => setEditDraft((prev) => ({ ...prev, manager }))}
-                editable={canEdit}
-              />
-
               <Text style={styles.modalLabel}>Description</Text>
               <TextInput
                 style={[styles.modalInput, styles.modalTextarea]}
