@@ -301,6 +301,7 @@ export default function Asset({ route, navigation }) {
                 editable={canEdit}
               />
 
+
 // Format currency with $ and commas
 function formatCurrency(val) {
   if (!val) return '';
