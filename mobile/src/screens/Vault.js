@@ -330,7 +330,9 @@ export default function Vault({ navigation, route }) {
             <BackButton />
             <View style={styles.headerArea}>
               <View style={styles.headerSection}>
-          <Text style={styles.title}>{vault?.name || 'Vault'}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title}>{vault?.name || 'Vault'}</Text>
+          </View>
           <TouchableOpacity style={styles.infoButton} onPress={() => setInfoVisible(true)}>
             <Text style={styles.infoButtonText}>ℹ</Text>
           </TouchableOpacity>

@@ -26,6 +26,7 @@ export default function Asset({ route, navigation }) {
     quantity: 1,
     value: '',
     manager: '',
+    description: '',
     images: [],
     heroImage: '',
   });
@@ -60,10 +61,11 @@ export default function Asset({ route, navigation }) {
       quantity: asset.quantity ?? 1,
       value: asset.value ? String(asset.value) : '',
       manager: asset.manager || '',
+      description: asset.description || '',
       images: trimToFour(assetImages),
       heroImage: ensureHero(assetImages, heroImage),
     });
-  }, [assetId, asset?.title, asset?.type, asset?.category, asset?.quantity, asset?.value, asset?.manager, heroImage, assetImages.join(',')]);
+  }, [assetId, asset?.title, asset?.type, asset?.category, asset?.quantity, asset?.value, asset?.manager, asset?.description, heroImage, assetImages.join(',')]);
 
   const addImagesToDraft = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -130,6 +132,7 @@ export default function Asset({ route, navigation }) {
       quantity: asset.quantity ?? 1,
       value: asset.value ? String(asset.value) : '',
       manager: asset.manager || '',
+      description: asset.description || '',
       images: trimToFour(assetImages),
       heroImage: ensureHero(assetImages, heroImage),
     });
@@ -148,6 +151,7 @@ export default function Asset({ route, navigation }) {
       quantity: Number(editDraft.quantity) || 1,
       value: editDraft.value,
       manager: editDraft.manager,
+      description: editDraft.description,
       images,
       heroImage: hero,
     });
@@ -230,6 +234,7 @@ export default function Asset({ route, navigation }) {
                 editable={canEdit}
               />
 
+
               <Text style={styles.modalLabel}>Manager</Text>
               <TextInput
                 style={styles.modalInput}
@@ -238,6 +243,17 @@ export default function Asset({ route, navigation }) {
                 value={editDraft.manager}
                 onChangeText={(manager) => setEditDraft((prev) => ({ ...prev, manager }))}
                 editable={canEdit}
+              />
+
+              <Text style={styles.modalLabel}>Description</Text>
+              <TextInput
+                style={[styles.modalInput, styles.modalTextarea]}
+                placeholder="Description"
+                placeholderTextColor="#80869b"
+                value={editDraft.description}
+                onChangeText={(description) => setEditDraft((prev) => ({ ...prev, description }))}
+                editable={canEdit}
+                multiline
               />
 
                 <View style={[styles.mediaCard, { marginTop: 12 }]}>
