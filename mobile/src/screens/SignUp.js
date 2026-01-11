@@ -1,18 +1,45 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Image, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { fetchSignInMethodsForEmail } from 'firebase/auth';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
+import { firebaseAuth, isFirebaseConfigured } from '../firebase';
+import { API_URL } from '../config/stripe';
+import { apiFetch } from '../utils/apiFetch';
 
 export default function SignUp({ navigation }) {
-  const { register, loading, theme, resetAllData } = useData();
+  const { register, loading, theme, resetAllData, ensureFirebaseSignupAuth } = useData();
   const insets = useSafeAreaInsets();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [emailTaken, setEmailTaken] = useState(false);
+  const [emailCheckError, setEmailCheckError] = useState(null);
+  const [emailChecking, setEmailChecking] = useState(false);
+  const [emailBlurred, setEmailBlurred] = useState(false);
+
+  const stripInvisibleChars = (value) => String(value || '').replace(/[\u200B-\u200D\uFEFF]/g, '');
+  const normalizeEmail = (value) => stripInvisibleChars(value).trim().toLowerCase();
+  const normalizeUsername = (value) => stripInvisibleChars(value).trim().toLowerCase();
+
+  const hasDisallowedControlChars = (value) => /[\u0000-\u001F\u007F]/.test(String(value || ''));
+
+  const validateUsernameLive = (value) => {
+    const v = normalizeUsername(value);
+    if (!v) return 'Username is required';
+    if (v.length < 3) return 'Username must be at least 3 characters';
+    if (v.length > 20) return 'Username must be 20 characters or fewer';
+    if (hasDisallowedControlChars(v)) return 'Username contains invalid characters';
+    if (/\s/.test(v)) return 'Username cannot contain spaces';
+    if (!/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(v)) {
+      return 'Username can only use letters, numbers, dot, underscore, and hyphen';
+    }
+    return null;
+  };
 
   const passwordInvalid = useMemo(() => {
     if (!password) return false;
@@ -30,31 +57,128 @@ export default function SignUp({ navigation }) {
     return false;
   }, [password, username, email]);
 
-  // Email validation regex
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  // Validate email format/characters
+  const emailError = useMemo(() => {
+    const v = normalizeEmail(email);
+    if (!v) return null;
+    if (v.length > 320) return 'Email is too long';
+    if (hasDisallowedControlChars(v)) return 'Email contains invalid characters';
+    if (/\s/.test(v)) return 'Email cannot contain spaces';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return 'Please enter a valid email address';
+    return null;
+  }, [email]);
 
-  // NOTE: With Firebase auth enabled, local cached users can be stale.
-  // Do not block signup based on local duplicates.
-  const usernameTaken = false;
-  const emailTaken = false;
+  const usernameError = useMemo(() => {
+    const v = normalizeUsername(username);
+    if (!v) return null;
+    return validateUsernameLive(v);
+  }, [username]);
 
-  // Validate email format
-  const emailInvalid = useMemo(() => 
-    email.trim().length > 0 && !emailRegex.test(email.trim()),
-    [email]
-  );
+  const checkEmailInUse = async (emailValue) => {
+    const v = normalizeEmail(emailValue);
+    if (!v || emailError) return { ok: true, taken: false };
+
+    // Prefer server-side lookup for reliability (Firebase Admin).
+    try {
+      const resp = await apiFetch(`${API_URL}/email-available`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: v }),
+      });
+      if (resp.ok) {
+        const json = await resp.json().catch(() => null);
+        if (json && json.available === false) return { ok: true, taken: true };
+        if (json && json.available === true) return { ok: true, taken: false };
+      }
+      // Fall through to client-side check if the endpoint is unavailable.
+    } catch {
+      // Fall through
+    }
+
+    if (!isFirebaseConfigured() || !firebaseAuth) return { ok: true, taken: false };
+    try {
+      const methods = await fetchSignInMethodsForEmail(firebaseAuth, v);
+      const taken = Array.isArray(methods) && methods.length > 0;
+      return { ok: true, taken };
+    } catch (e) {
+      return { ok: false, message: e?.message ? String(e.message) : 'Could not verify email' };
+    }
+  };
+
+  const handleEmailBlur = async () => {
+    setEmailBlurred(true);
+    const v = normalizeEmail(email);
+    if (!v || emailError) return;
+
+    setEmailChecking(true);
+    setEmailCheckError(null);
+    try {
+      const res = await checkEmailInUse(v);
+      if (res.ok) {
+        setEmailTaken(!!res.taken);
+      } else {
+        setEmailTaken(false);
+        setEmailCheckError(res.message || 'Could not verify email');
+      }
+    } finally {
+      setEmailChecking(false);
+    }
+  };
 
   // Check if form is valid
-  const isFormValid = firstName && lastName && email && username && password && !usernameTaken && !emailTaken && !emailInvalid && !passwordInvalid;
+  const isFormValid =
+    firstName &&
+    lastName &&
+    email &&
+    username &&
+    password &&
+    !emailError &&
+    !emailTaken &&
+    !emailChecking &&
+    !emailCheckError &&
+    !usernameError &&
+    !passwordInvalid;
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!firstName || !lastName || !email || !username || !password) {
       Alert.alert('Missing info', 'Please fill all fields');
       return;
     }
 
-    if (emailInvalid) {
-      Alert.alert('Invalid email', 'Please enter a valid email address');
+    if (emailError) {
+      Alert.alert('Invalid email', emailError);
+      return;
+    }
+
+    // If the user never unfocused the email field, run the same blur check now.
+    if (!emailBlurred) {
+      await handleEmailBlur();
+    }
+
+    if (emailTaken) {
+      setEmailBlurred(true);
+      return;
+    }
+
+    if (emailChecking) return;
+
+    if (emailCheckError) return;
+
+    // Safety net: re-check right before proceeding, but do not alert.
+    // If the email is taken, surface it inline on the email field.
+    const finalCheck = await checkEmailInUse(email);
+    if (!finalCheck.ok) {
+      setEmailCheckError(finalCheck.message || 'Could not verify email');
+      return;
+    }
+    if (finalCheck.taken) {
+      setEmailBlurred(true);
+      setEmailTaken(true);
+      return;
+    }
+
+    if (usernameError) {
+      Alert.alert('Invalid username', usernameError);
       return;
     }
 
@@ -63,12 +187,33 @@ export default function SignUp({ navigation }) {
       return;
     }
 
+    // Authoritative check: attempt to establish Firebase Auth for this email now.
+    // This prevents discovering "email already in use" only after selecting a plan.
+    if (ensureFirebaseSignupAuth) {
+      const authRes = await ensureFirebaseSignupAuth({
+        email: normalizeEmail(email),
+        password,
+        username: normalizeUsername(username),
+      });
+
+      if (authRes && authRes.ok === false) {
+        const msg = authRes.message || 'Unable to create account. Please try again.';
+        if (/email is already in use|email-already-in-use/i.test(String(msg))) {
+          setEmailBlurred(true);
+          setEmailTaken(true);
+          return;
+        }
+        Alert.alert('Sign up failed', msg);
+        return;
+      }
+    }
+
     // Show free trial info before plan selection
     navigation.navigate('FreeTrial', {
       firstName: firstName.trim(),
       lastName: lastName.trim(),
-      email: email.trim(),
-      username: username.trim(),
+      email: normalizeEmail(email),
+      username: normalizeUsername(username),
       password
     });
   };
@@ -123,7 +268,7 @@ export default function SignUp({ navigation }) {
       
       <View>
         <TextInput 
-          style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }, emailInvalid || emailTaken ? styles.inputError : null]}
+          style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }, (emailError || emailTaken) ? styles.inputError : null]}
           placeholder="Email" 
           placeholderTextColor={theme.placeholder} 
           value={email} 
@@ -133,22 +278,35 @@ export default function SignUp({ navigation }) {
           textContentType="emailAddress"
           inputMode="email"
           keyboardType="email-address" 
-          onChangeText={(t) => setEmail(String(t || '').replace(/\s/g, '').toLowerCase())}
+          onChangeText={(t) => {
+            setEmailBlurred(false);
+            setEmailTaken(false);
+            setEmailCheckError(null);
+            setEmail(normalizeEmail(String(t || '')));
+          }}
+          onBlur={handleEmailBlur}
         />
-        {emailInvalid && <Text style={styles.errorText}>Please enter a valid email address</Text>}
-        {emailTaken && <Text style={styles.errorText}>Email is already in use</Text>}
+        {!!emailError && <Text style={styles.errorText}>{emailError}</Text>}
+        {emailBlurred && emailTaken && <Text style={styles.errorText}>Email is already in use</Text>}
+        {!emailError && !emailTaken && emailChecking && (
+          <Text style={styles.errorText}>Checking email…</Text>
+        )}
+        {!emailError && !emailTaken && !!emailCheckError && (
+          <Text style={styles.errorText}>Could not verify email right now</Text>
+        )}
       </View>
       
       <View>
         <TextInput 
-          style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }, usernameTaken ? styles.inputError : null]}
+          style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }, usernameError ? styles.inputError : null]}
           placeholder="Username" 
           placeholderTextColor={theme.placeholder} 
           value={username} 
           autoCapitalize="none" 
-          onChangeText={setUsername} 
+          autoCorrect={false}
+          onChangeText={(t) => setUsername(normalizeUsername(String(t || '')))} 
         />
-        {usernameTaken && <Text style={styles.errorText}>Username is already in use</Text>}
+        {!!usernameError && <Text style={styles.errorText}>{usernameError}</Text>}
       </View>
       
       <View>

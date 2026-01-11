@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Linking } from 'react-native';
+import * as ExpoLinking from 'expo-linking';
 import { useStripe } from '@stripe/stripe-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
-import { API_URL } from '../config/stripe';
+import { API_URL, APPLE_PAY_COUNTRY_CODE, STRIPE_MERCHANT_DISPLAY_NAME } from '../config/stripe';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 import { apiFetch } from '../utils/apiFetch';
 
@@ -25,8 +26,11 @@ export default function ChooseSubscription({ navigation, route }) {
 
   const initializePaymentSheet = async (tier) => {
     try {
+      const returnURL = ExpoLinking.createURL('stripe-redirect');
+
       // Collect valid payment info first (no charge yet)
       const response = await apiFetch(`${API_URL}/create-subscription`, {
+        requireAuth: true,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -52,11 +56,13 @@ export default function ChooseSubscription({ navigation, route }) {
       }
 
       const { error } = await initPaymentSheet({
-        merchantDisplayName: 'LAMB',
+        merchantDisplayName: STRIPE_MERCHANT_DISPLAY_NAME,
         customerId: customer,
         customerEphemeralKeySecret: ephemeralKey,
         setupIntentClientSecret: setupIntentClientSecret,
         allowsDelayedPaymentMethods: true,
+        returnURL,
+        applePay: { merchantCountryCode: APPLE_PAY_COUNTRY_CODE },
       });
 
       if (error) {
@@ -115,6 +121,7 @@ export default function ChooseSubscription({ navigation, route }) {
 
     // Start 14-day free trial subscription (payment method is on file)
     const startResponse = await apiFetch(`${API_URL}/start-trial-subscription`, {
+      requireAuth: true,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

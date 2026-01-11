@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, Modal } from 'react-native';
+import * as ExpoLinking from 'expo-linking';
 import { useData } from '../context/DataContext';
 import { useStripe } from '@stripe/stripe-react-native';
-import { API_URL } from '../config/stripe';
+import { API_URL, APPLE_PAY_COUNTRY_CODE, STRIPE_MERCHANT_DISPLAY_NAME } from '../config/stripe';
 import { apiFetch } from '../utils/apiFetch';
 
 export default function SubscriptionManager() {
@@ -10,10 +11,12 @@ export default function SubscriptionManager() {
     currentUser,
     subscriptionTiers,
     updateSubscription,
+    syncSubscriptionFromServer,
     calculateProration,
     getFeaturesComparison,
     convertPrice,
     setCancelAtPeriodEnd,
+    logout,
     theme,
   } = useData();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
@@ -21,6 +24,12 @@ export default function SubscriptionManager() {
   const [submitting, setSubmitting] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmData, setConfirmData] = useState(null);
+  const [scheduledChange, setScheduledChange] = useState(null); // { tierId: string, changeDateMs: number }
+
+  useEffect(() => {
+    const tier = currentUser?.subscription?.tier ? String(currentUser.subscription.tier).toUpperCase() : null;
+    if (tier) setSelectedTier(tier);
+  }, [currentUser?.subscription?.tier]);
 
   if (!currentUser?.subscription) {
     return (
@@ -38,7 +47,9 @@ export default function SubscriptionManager() {
 
   const initializePaymentSheet = async (tier) => {
     try {
+      const returnURL = ExpoLinking.createURL('stripe-redirect');
       const response = await apiFetch(`${API_URL}/create-payment-intent`, {
+        requireAuth: true,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -54,11 +65,13 @@ export default function SubscriptionManager() {
       const { paymentIntent, ephemeralKey, customer } = await response.json();
 
       const { error } = await initPaymentSheet({
-        merchantDisplayName: 'LAMB',
+        merchantDisplayName: STRIPE_MERCHANT_DISPLAY_NAME,
         customerId: customer,
         customerEphemeralKeySecret: ephemeralKey,
         paymentIntentClientSecret: paymentIntent,
         allowsDelayedPaymentMethods: true,
+        returnURL,
+        applePay: { merchantCountryCode: APPLE_PAY_COUNTRY_CODE },
       });
 
       if (error) {
@@ -72,6 +85,14 @@ export default function SubscriptionManager() {
       console.error(error);
       return false;
     }
+  };
+
+  const readBackendError = async (response) => {
+    const status = response?.status;
+    const json = await response?.json?.().catch(() => null);
+    const messageFromJson = typeof json?.error === 'string' ? json.error : null;
+    if (messageFromJson) return messageFromJson;
+    return `Request failed (${status})`;
   };
 
   const handleChangePlan = async () => {
@@ -107,8 +128,14 @@ export default function SubscriptionManager() {
 
     try {
       if (confirmData.isUpgrade) {
+        setScheduledChange(null);
+        if (!currentUser.subscription?.stripeSubscriptionId) {
+          throw new Error('Missing billing subscription. Please sign out/in and try again.');
+        }
+
         // For upgrades, we need to collect payment for the prorated amount
         const response = await apiFetch(`${API_URL}/update-subscription`, {
+          requireAuth: true,
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -118,6 +145,10 @@ export default function SubscriptionManager() {
             newSubscriptionTier: confirmData.selectedTier,
           }),
         });
+
+        if (!response.ok) {
+          throw new Error(await readBackendError(response));
+        }
 
         const { requiresPayment, clientSecret, ephemeralKey, customer, invoiceId } = await response.json();
 
@@ -129,11 +160,13 @@ export default function SubscriptionManager() {
           
           // Initialize payment sheet for proration payment
           const { error: initError } = await initPaymentSheet({
-            merchantDisplayName: 'LAMB',
+            merchantDisplayName: STRIPE_MERCHANT_DISPLAY_NAME,
             customerId: customer,
             customerEphemeralKeySecret: ephemeralKey,
             paymentIntentClientSecret: clientSecret,
             allowsDelayedPaymentMethods: true,
+            returnURL: ExpoLinking.createURL('stripe-redirect'),
+            applePay: { merchantCountryCode: APPLE_PAY_COUNTRY_CODE },
           });
 
           if (initError) {
@@ -166,6 +199,7 @@ export default function SubscriptionManager() {
           // Verify the payment actually went through
           try {
             const confirmResponse = await apiFetch(`${API_URL}/confirm-payment`, {
+              requireAuth: true,
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -189,7 +223,7 @@ export default function SubscriptionManager() {
             console.log('Payment verified successfully');
           } catch (confirmError) {
             console.error('Error confirming payment:', confirmError);
-            Alert.alert('Error', 'Failed to verify payment. Please contact support.');
+            Alert.alert('Error', confirmError?.message || 'Failed to verify payment. Please contact support.');
             setSubmitting(false);
             return;
           }
@@ -203,6 +237,12 @@ export default function SubscriptionManager() {
         if (res.ok) {
           console.log('Subscription updated successfully');
           setSelectedTier(confirmData.selectedTier);
+          setScheduledChange(null);
+          try {
+            await syncSubscriptionFromServer?.({ force: true });
+          } catch {
+            // ignore
+          }
           Alert.alert('Success', `Your membership has been upgraded to ${confirmData.newTierName}!`);
         } else {
           console.log('Subscription update failed:', res.message);
@@ -212,6 +252,7 @@ export default function SubscriptionManager() {
         // For downgrades, schedule the change for the next billing cycle
         if (currentUser.subscription.stripeSubscriptionId) {
           const response = await apiFetch(`${API_URL}/schedule-subscription-change`, {
+            requireAuth: true,
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -223,10 +264,16 @@ export default function SubscriptionManager() {
           });
 
           if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            const msg = err?.error ? String(err.error) : `Failed to schedule downgrade (${response.status})`;
-            throw new Error(msg);
+            throw new Error(await readBackendError(response));
           }
+
+          const json = await response.json().catch(() => null);
+          const changeDateRaw = json?.changeDate;
+          const parsedMs = changeDateRaw ? Date.parse(String(changeDateRaw)) : NaN;
+          setScheduledChange({
+            tierId: String(confirmData.selectedTier),
+            changeDateMs: Number.isFinite(parsedMs) ? parsedMs : confirmData.prorationData?.nextBillDate?.getTime?.() || Date.now(),
+          });
         } else {
           // No Stripe subscription yet (seeded users), just update locally
           console.log('No Stripe subscription found, updating locally only');
@@ -234,9 +281,18 @@ export default function SubscriptionManager() {
           if (!res.ok) {
             throw new Error(res.message);
           }
+          setScheduledChange(null);
         }
 
         setSubmitting(false);
+
+        // Reset selection to the current tier so the UI doesn't keep offering the same change.
+        setSelectedTier(currentUser.subscription.tier.toUpperCase());
+        try {
+          await syncSubscriptionFromServer?.({ force: true });
+        } catch {
+          // ignore
+        }
 
         Alert.alert(
           'Success', 
@@ -245,7 +301,15 @@ export default function SubscriptionManager() {
       }
     } catch (error) {
       console.error('Error changing subscription:', error);
-      Alert.alert('Error', 'Unable to change membership. Please try again.');
+      const msg = error?.message || 'Unable to change membership. Please try again.';
+      if (/session expired|sign in with your password/i.test(String(msg))) {
+        Alert.alert('Session expired', String(msg), [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Sign in', style: 'destructive', onPress: () => logout?.() },
+        ]);
+      } else {
+        Alert.alert('Error', msg);
+      }
       setSubmitting(false);
     }
   };
@@ -290,6 +354,12 @@ export default function SubscriptionManager() {
               ? `Free trial ends on ${trialEndsAt.toLocaleDateString()}`
               : `Renews on ${renewalDate.toLocaleDateString()}`}
         </Text>
+        {!!scheduledChange?.tierId && typeof scheduledChange?.changeDateMs === 'number' && (
+          <Text style={[styles.renewalText, { color: theme.textMuted }]}>
+            Scheduled: changes to {subscriptionTiers[scheduledChange.tierId]?.name || scheduledChange.tierId} on{' '}
+            {new Date(scheduledChange.changeDateMs).toLocaleDateString()}
+          </Text>
+        )}
       </View>
 
       <Text style={[styles.sectionTitle, { color: theme.text }]}>Change Your Membership</Text>

@@ -97,13 +97,19 @@ const validatePasswordStrength = (password, { username, email } = {}) => {
 
 const clampItemTitle = (value) => String(value || '').slice(0, ITEM_TITLE_MAX_LENGTH);
 
-const hasDisallowedControlChars = (value) => {
+const stripInvisibleChars = (value) => {
   const raw = (value || '').toString();
-  // ASCII control chars + DEL + common zero-width/invisible chars
-  return /[\u0000-\u001F\u007F\u200B-\u200D\uFEFF]/.test(raw);
+  // Common zero-width/invisible chars that sometimes sneak in via copy/paste or autofill.
+  return raw.replace(/[\u200B-\u200D\uFEFF]/g, '');
 };
 
-const normalizeName = (value) => (value || '').toString().trim().replace(/\s+/g, ' ');
+const hasDisallowedControlChars = (value) => {
+  const raw = (value || '').toString();
+  // ASCII control chars + DEL. (Zero-width chars are stripped during normalization.)
+  return /[\u0000-\u001F\u007F]/.test(raw);
+};
+
+const normalizeName = (value) => stripInvisibleChars(value).toString().trim().replace(/\s+/g, ' ');
 const validateName = (value, label) => {
   const v = normalizeName(value);
   if (!v) return { ok: false, message: `${label} is required` };
@@ -112,7 +118,7 @@ const validateName = (value, label) => {
   return { ok: true, value: v };
 };
 
-const normalizeUsername = (value) => (value || '').toString().trim().toLowerCase();
+const normalizeUsername = (value) => stripInvisibleChars(value).toString().trim().toLowerCase();
 const validateUsername = (value) => {
   const v = normalizeUsername(value);
   if (!v) return { ok: false, message: 'Username is required' };
@@ -126,7 +132,7 @@ const validateUsername = (value) => {
   return { ok: true, value: v };
 };
 
-const normalizeEmail = (value) => (value || '').toString().trim().toLowerCase();
+const normalizeEmail = (value) => stripInvisibleChars(value).toString().trim().toLowerCase();
 const validateEmail = (value) => {
   const v = normalizeEmail(value);
   if (!v) return { ok: false, message: 'Email is required' };
@@ -430,7 +436,7 @@ export function DataProvider({ children }) {
     setUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updatedUser : u)));
   };
 
-  const syncSubscriptionFromServer = async () => {
+  const syncSubscriptionFromServer = async ({ force = false } = {}) => {
     if (!currentUser?.subscription) return { ok: true, skipped: true };
     if (backendReachable === false) return { ok: false, message: 'Offline' };
 
@@ -440,11 +446,12 @@ export function DataProvider({ children }) {
 
     // Throttle to avoid spamming the backend.
     const now = Date.now();
-    if (now - lastSubscriptionSyncAtRef.current < 15000) return { ok: true, skipped: true };
+    if (!force && now - lastSubscriptionSyncAtRef.current < 15000) return { ok: true, skipped: true };
     lastSubscriptionSyncAtRef.current = now;
 
     try {
       const resp = await apiFetch(`${API_URL}/subscription-status`, {
+        requireAuth: true,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subscriptionId, customerId }),
@@ -469,7 +476,9 @@ export function DataProvider({ children }) {
     if (!currentUser) return { ok: true };
     try {
       const stored = await getItem(LAST_ACTIVITY_KEY, null);
-      const last = typeof stored === 'number' ? stored : lastActivityAt;
+      const storedMs = typeof stored === 'number' ? stored : null;
+      // Prefer the freshest of (persisted) and (in-memory) timestamps.
+      const last = Math.max(storedMs || 0, lastActivityAt || 0);
       if (Date.now() - last >= SESSION_TIMEOUT_MS) {
         setCurrentUser(null);
         await removeItem(LAST_ACTIVITY_KEY);
@@ -592,7 +601,15 @@ export function DataProvider({ children }) {
       if (!currentUser) return;
       // Keep membership state in sync with Stripe when online.
       syncSubscriptionFromServer();
-    }, [loading, currentUser?.id, currentUser?.subscription?.stripeSubscriptionId, currentUser?.subscription?.stripeCustomerId, backendReachable]);
+    }, [
+      loading,
+      currentUser?.id,
+      currentUser?.subscription?.stripeSubscriptionId,
+      currentUser?.subscription?.stripeCustomerId,
+      currentUser?.subscription?.tier,
+      currentUser?.subscription?.cancelAtPeriodEnd,
+      backendReachable,
+    ]);
 
     useEffect(() => {
       // Near-instant offline detection: if the device loses internet, immediately block writes.
@@ -697,6 +714,18 @@ export function DataProvider({ children }) {
     const loginByUserId = (userId) => {
       const found = users.find((u) => u?.id === userId);
       if (!found) return { ok: false, message: 'Account not found' };
+
+      // With server-side auth enforced, Face ID can only unlock the app if Firebase Auth
+      // already has an active session for this user (we do not store passwords).
+      if (isFirebaseAuthEnabled()) {
+        const fbUid = firebaseAuth?.currentUser?.uid ? String(firebaseAuth.currentUser.uid) : null;
+        if (!fbUid) {
+          return { ok: false, message: 'Session expired. Please sign in with your password.' };
+        }
+        if (fbUid !== String(userId)) {
+          return { ok: false, message: 'Please sign in with your password.' };
+        }
+      }
 
       if (!found.subscription || !found.subscription.tier) {
         return { ok: false, message: 'No active membership. Please purchase a membership to continue.' };
@@ -1369,14 +1398,11 @@ export function DataProvider({ children }) {
       return { ok: false, message: 'Invalid membership tier' };
     }
     
-    const now = Date.now();
     const updated = {
       ...currentUser,
       subscription: {
         ...currentUser.subscription,
         tier: tierUpper,
-        startDate: now,
-        renewalDate: now + (30 * 24 * 60 * 60 * 1000),
         stripeSubscriptionId: stripeSubscriptionId || currentUser.subscription?.stripeSubscriptionId,
         cancelAtPeriodEnd: false
       }

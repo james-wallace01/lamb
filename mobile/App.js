@@ -9,7 +9,7 @@ import { StatusBar } from 'expo-status-bar';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import { DataProvider } from './src/context/DataContext';
 import { useData } from './src/context/DataContext';
-import { fetchStripePublishableKey, STRIPE_MERCHANT_NAME } from './src/config/stripe';
+import { fetchStripePublishableKey, APPLE_PAY_MERCHANT_ID } from './src/config/stripe';
 import HomeScreen from './src/screens/Home';
 import VaultScreen from './src/screens/Vault';
 import CollectionScreen from './src/screens/Collection';
@@ -188,7 +188,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <StripeProvider publishableKey={stripeKey} merchantIdentifier={STRIPE_MERCHANT_NAME}>
+      <StripeProvider publishableKey={stripeKey} merchantIdentifier={APPLE_PAY_MERCHANT_ID}>
         <DataProvider>
           <NavigationContainer>
             <SessionTimeoutBoundary>

@@ -11,7 +11,14 @@ const getPublicEnv = (key, fallback) => {
 // Replace with your actual backend URL
 export const API_URL = getPublicEnv('EXPO_PUBLIC_LAMB_API_URL', 'https://lamb-backend-staging.onrender.com');
 
-export const STRIPE_MERCHANT_NAME = 'LAMB';
+// Shown in Stripe PaymentSheet.
+export const STRIPE_MERCHANT_DISPLAY_NAME = 'LAMB';
+
+// Apple Pay merchant identifier (must match your Apple Developer Merchant ID and Expo plugin config).
+export const APPLE_PAY_MERCHANT_ID = 'merchant.com.lamb';
+
+// Apple Pay country code (ISO 3166-1 alpha-2). Keep simple unless you support multiple regions.
+export const APPLE_PAY_COUNTRY_CODE = getPublicEnv('EXPO_PUBLIC_APPLE_PAY_COUNTRY_CODE', 'US');
 
 export async function fetchStripePublishableKey() {
 	const url = `${API_URL}/public-config`;

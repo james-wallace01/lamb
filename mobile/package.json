@@ -19,6 +19,7 @@
     "@stripe/stripe-react-native": "0.50.3",
     "expo": "~54.0.31",
     "expo-image-picker": "~17.0.10",
+    "expo-linking": "~8.0.11",
     "expo-secure-store": "~15.0.8",
     "expo-status-bar": "~3.0.9",
     "firebase": "^12.7.0",

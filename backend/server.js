@@ -10,6 +10,7 @@ require('dotenv').config();
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const stripe = typeof stripeSecretKey === 'string' && stripeSecretKey.trim() ? require('stripe')(stripeSecretKey.trim()) : null;
 const { initFirebaseAdmin, firebaseEnabled, requireFirebaseAuth } = require('./firebaseAdmin');
+const firebaseAdmin = require('firebase-admin');
 
 const app = express();
 
@@ -53,7 +54,7 @@ initFirebaseAdmin();
 // If Stripe isn't configured, still allow /health and /me so Firebase auth can be tested.
 app.use((req, res, next) => {
   if (isStripeConfigured()) return next();
-  if (req.path === '/health' || req.path === '/me' || req.path === '/public-config') return next();
+  if (req.path === '/health' || req.path === '/me' || req.path === '/public-config' || req.path === '/email-available') return next();
   return res.status(503).json({ error: 'Stripe is not configured on this server' });
 });
 
@@ -70,6 +71,33 @@ const maybeRequireFirebaseAuth = (req, res, next) => {
 };
 
 const normalizeEmail = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+
+// Email availability check used by the signup UI (runs before the user is authenticated).
+// Note: This endpoint intentionally reveals whether an email exists. Keep the rate limit tight.
+app.post('/email-available', authRateLimiter, async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    if (!email) return res.status(400).json({ error: 'Missing email' });
+    if (!firebaseEnabled()) {
+      return res.status(503).json({ error: 'Firebase is not configured on this server' });
+    }
+
+    try {
+      await firebaseAdmin.auth().getUserByEmail(email);
+      return res.json({ available: false });
+    } catch (err) {
+      const code = err?.code ? String(err.code) : '';
+      if (code === 'auth/user-not-found') {
+        return res.json({ available: true });
+      }
+      console.error('Email availability check failed:', err?.message || err);
+      return res.status(500).json({ error: 'Email check failed' });
+    }
+  } catch (error) {
+    console.error('Email availability endpoint error:', error);
+    return res.status(500).json({ error: 'Email check failed' });
+  }
+});
 
 const assertStripeCustomerOwnedByFirebaseUser = async (customerId, firebaseUser) => {
   if (!customerId) return { ok: false, status: 400, error: 'Missing customerId' };
