@@ -170,7 +170,8 @@ async function getOrCreateCustomer(email, name) {
   return await stripe.customers.create({ email, name });
 }
 
-app.post('/create-subscription', maybeRequireFirebaseAuth, async (req, res) => {
+// Signup flow: runs before the user has an ID token, so this endpoint must not require Firebase auth.
+app.post('/create-subscription', async (req, res) => {
   try {
     const { email, name, subscriptionTier } = req.body;
     const customer = await getOrCreateCustomer(email, name);
@@ -203,7 +204,8 @@ app.post('/create-subscription', maybeRequireFirebaseAuth, async (req, res) => {
   }
 });
 
-app.post('/start-trial-subscription', maybeRequireFirebaseAuth, async (req, res) => {
+// Signup flow: runs before the user has an ID token, so this endpoint must not require Firebase auth.
+app.post('/start-trial-subscription', async (req, res) => {
   try {
     const { customerId, subscriptionTier, setupIntentId } = req.body;
     if (!customerId || !subscriptionTier || !setupIntentId) {
@@ -493,6 +495,7 @@ app.get('/health', (req, res) => {
     stripe: isStripeConfigured() ? 'configured' : 'not_configured',
     stripePrices: stripePriceIds,
     firebase: firebaseEnabled() ? 'enabled' : 'disabled',
+    requireFirebaseAuth: String(process.env.REQUIRE_FIREBASE_AUTH).toLowerCase() === 'true',
   });
 });
 

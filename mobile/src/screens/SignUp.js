@@ -1,11 +1,13 @@
-import React, { useState, useMemo } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, ScrollView, Image, Linking } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Alert, Image, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 
 export default function SignUp({ navigation }) {
   const { register, loading, users, theme } = useData();
+  const insets = useSafeAreaInsets();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -39,7 +41,7 @@ export default function SignUp({ navigation }) {
 
   // Check for duplicate email
   const emailTaken = useMemo(() => 
-    email.trim().length > 0 && users.some(u => u.email === email.trim()),
+    email.trim().length > 0 && users.some(u => (u.email || '').toLowerCase() === email.trim().toLowerCase()),
     [email, users]
   );
 
@@ -92,8 +94,14 @@ export default function SignUp({ navigation }) {
     Linking.openURL(url).catch(() => {});
   };
 
+  const footerSpacer = 72 + (insets?.bottom || 0);
+
   return (
-    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: theme.background }}
+      contentContainerStyle={[styles.container, { backgroundColor: theme.background, paddingBottom: 24 + footerSpacer }]}
+      keyboardShouldPersistTaps="handled"
+    >
       <LambHeader />
       <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
       <Text style={[styles.tagline, { color: theme.textSecondary }]}>Take Control</Text>
@@ -110,8 +118,12 @@ export default function SignUp({ navigation }) {
           placeholderTextColor={theme.placeholder} 
           value={email} 
           autoCapitalize="none" 
+          autoCorrect={false}
+          autoComplete="email"
+          textContentType="emailAddress"
+          inputMode="email"
           keyboardType="email-address" 
-          onChangeText={setEmail} 
+          onChangeText={(t) => setEmail(String(t || '').replace(/\s/g, '').toLowerCase())}
         />
         {emailInvalid && <Text style={styles.errorText}>Please enter a valid email address</Text>}
         {emailTaken && <Text style={styles.errorText}>Email is already in use</Text>}

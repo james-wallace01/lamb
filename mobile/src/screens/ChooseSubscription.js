@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Linking } from 'react-native';
 import { useStripe } from '@stripe/stripe-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
 import { API_URL } from '../config/stripe';
@@ -9,11 +10,14 @@ import { apiFetch } from '../utils/apiFetch';
 
 export default function ChooseSubscription({ navigation, route }) {
   const { subscriptionTiers, convertPrice, theme } = useData();
+  const insets = useSafeAreaInsets();
   const { firstName, lastName, email, username, password } = route.params || {};
   const [selectedTier, setSelectedTier] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const { register, loading } = useData();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
+
+  const footerSpacer = 72 + (insets?.bottom || 0);
 
   const openLegalLink = (url) => {
     Linking.openURL(url).catch(() => {});
@@ -150,7 +154,10 @@ export default function ChooseSubscription({ navigation, route }) {
   const tiers = Object.values(subscriptionTiers);
 
   return (
-    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: theme.background }}
+      contentContainerStyle={[styles.container, { backgroundColor: theme.background, paddingBottom: 24 + footerSpacer }]}
+    >
       <LambHeader />
       <Text style={[styles.title, { color: theme.text }]}>Choose Your Membership</Text>
       <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Add payment info to start a 14-day free trial. You won’t be charged until the trial ends.</Text>

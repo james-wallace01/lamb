@@ -1,11 +1,13 @@
 import React from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Linking } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LambHeader from '../components/LambHeader';
 import { useData } from '../context/DataContext';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 
 export default function FreeTrial({ navigation, route }) {
   const { theme } = useData();
+  const insets = useSafeAreaInsets();
   const { firstName, lastName, email, username, password } = route.params || {};
 
   const openLegalLink = (url) => {
@@ -22,8 +24,13 @@ export default function FreeTrial({ navigation, route }) {
     });
   };
 
+  const footerSpacer = 72 + (insets?.bottom || 0);
+
   return (
-    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: theme.background }}
+      contentContainerStyle={[styles.container, { backgroundColor: theme.background, paddingBottom: 24 + footerSpacer }]}
+    >
       <LambHeader />
       <Text style={[styles.title, { color: theme.text }]}>Free Trial</Text>
       <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Start with a 14-day free trial.</Text>

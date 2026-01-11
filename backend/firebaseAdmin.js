@@ -66,7 +66,7 @@ const firebaseEnabled = () => initialized;
 
 const requireFirebaseAuth = async (req, res, next) => {
   if (!initialized) {
-    return res.status(500).json({ error: 'Firebase is not configured on this server' });
+    return res.status(503).json({ error: 'Firebase is not configured on this server' });
   }
 
   const authHeader = req.headers.authorization || '';
