@@ -15,17 +15,20 @@ export default function SignIn({ navigation }) {
     return match?.username || match?.email || null;
   })();
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!identifier || !password) {
       Alert.alert('Missing info', 'Please enter username/email and password');
       return;
     }
     setSubmitting(true);
-    const res = login(identifier.trim(), password);
-    setSubmitting(false);
-    if (!res.ok) {
-      Alert.alert('Sign in failed', res.message || 'Check your credentials');
-      return;
+    try {
+      const res = await login(identifier.trim(), password);
+      if (!res.ok) {
+        Alert.alert('Sign in failed', res.message || 'Check your credentials');
+        return;
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 

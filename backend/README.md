@@ -7,6 +7,10 @@
 2. Go to Developers > API Keys
 3. Copy your Publishable Key and Secret Key
 
+Important:
+- Never commit keys to git.
+- Don’t paste secret keys into chat.
+
 ### 2. Update Mobile App Configuration
 Edit `mobile/src/config/stripe.js`:
 ```javascript
@@ -91,6 +95,39 @@ Any 3-digit CVC
 3. **AWS EC2**: More control, scalable
 4. **DigitalOcean**: Affordable VPS hosting
 
+## Staging on Render (recommended)
+
+This repo includes a Render Blueprint at [render.yaml](render.yaml) that deploys the backend as a Render Web Service.
+
+### 1) Create the Render service
+1. Push your repo to GitHub.
+2. In Render: **New** → **Blueprint** → select your repo.
+3. Render will detect [render.yaml](render.yaml) and create `lamb-backend-staging`.
+
+### 2) Set environment variables in Render
+In Render → your service → **Environment**, set:
+- `STRIPE_SECRET_KEY` (test secret key, starts with `sk_test_...`)
+- `STRIPE_WEBHOOK_SECRET` (starts with `whsec_...`)
+- `FIREBASE_SERVICE_ACCOUNT_JSON`
+  - Recommended: paste **base64(JSON)** of your Firebase service account key.
+  - On macOS you can generate it with:
+    - `base64 -i /absolute/path/to/serviceAccountKey.json | tr -d '\n'`
+- `REQUIRE_FIREBASE_AUTH=true` (recommended)
+
+Note: for Render you generally *don't* use `GOOGLE_APPLICATION_CREDENTIALS` because you don't have a stable file path on disk.
+
+### 3) Add the Stripe webhook (Test mode)
+Stripe Dashboard (Test mode) → **Developers** → **Webhooks** → **Add endpoint**
+- Endpoint URL: `https://YOUR-RENDER-SERVICE.onrender.com/webhook`
+- Select events (recommended for subscriptions):
+  - `customer.subscription.created`
+  - `customer.subscription.updated`
+  - `customer.subscription.deleted`
+  - `invoice.payment_succeeded`
+  - `invoice.payment_failed`
+
+After creating the endpoint, copy its **Signing secret** (`whsec_...`) into Render as `STRIPE_WEBHOOK_SECRET`.
+
 ### Security Checklist:
 - [ ] Use environment variables for all keys
 - [ ] Never commit .env files to git
@@ -103,7 +140,12 @@ Any 3-digit CVC
 ## Webhook Setup
 1. Go to Stripe Dashboard > Developers > Webhooks
 2. Add endpoint: `https://your-domain.com/webhook`
-3. Select events: `payment_intent.succeeded`, `payment_intent.payment_failed`
+3. Select events (recommended for subscriptions):
+  - `customer.subscription.created`
+  - `customer.subscription.updated`
+  - `customer.subscription.deleted`
+  - `invoice.payment_succeeded`
+  - `invoice.payment_failed`
 4. Copy webhook secret to `.env`
 
 ## API Endpoints

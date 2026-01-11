@@ -5,6 +5,8 @@ import * as Random from 'expo-random';
 import * as SecureStore from 'expo-secure-store';
 import { DEFAULT_DARK_MODE_ENABLED, getTheme } from '../theme';
 import { getAssetCapabilities, getCollectionCapabilities, getVaultCapabilities } from '../policies/capabilities';
+import { firebaseAuth, isFirebaseConfigured } from '../firebase';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 
 // bcryptjs needs secure randomness for salts in React Native.
 // Expo Go doesn't provide WebCrypto by default, so use expo-random.
@@ -157,6 +159,21 @@ const validateEmail = (value) => {
   // Practical (not fully RFC) validation; matches common Apple/UX expectations.
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return { ok: false, message: 'Please enter a valid email address' };
   return { ok: true, value: v };
+};
+
+const isFirebaseAuthEnabled = () => !!firebaseAuth && isFirebaseConfigured();
+
+const mapFirebaseAuthError = (error) => {
+  const code = error?.code ? String(error.code) : '';
+  if (code === 'auth/email-already-in-use') return 'This email is already in use';
+  if (code === 'auth/invalid-email') return 'Please enter a valid email address';
+  if (code === 'auth/weak-password') return 'Password is too weak';
+  if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+    return 'Invalid credentials';
+  }
+  if (code === 'auth/user-disabled') return 'This account is disabled';
+  if (code === 'auth/network-request-failed') return 'Network error. Please try again.';
+  return error?.message || 'Authentication failed';
 };
 
 const hashPassword = (password) => bcrypt.hashSync(password, BCRYPT_ROUNDS);
@@ -556,18 +573,40 @@ export function DataProvider({ children }) {
       return { ok: true };
     };
 
-    const login = (identifier, password) => {
-      const found = users.find((u) => u.username === identifier || u.email === identifier);
+    const login = async (identifier, password) => {
+      const id = (identifier || '').toString().trim().toLowerCase();
+      if (!id || !password) return { ok: false, message: 'Invalid credentials' };
+
+      const found = users.find((u) => {
+        const uname = u?.username ? normalizeUsername(u.username) : null;
+        const em = u?.email ? normalizeEmail(u.email) : null;
+        return (uname && uname === id) || (em && em === id);
+      });
+
+      // If we can resolve an email, try Firebase email/password first.
+      const emailForFirebase = id.includes('@') ? id : normalizeEmail(found?.email || '');
+      if (isFirebaseAuthEnabled() && emailForFirebase) {
+        try {
+          await signInWithEmailAndPassword(firebaseAuth, emailForFirebase, String(password));
+        } catch (error) {
+          // Allow demo/offline sign-in via local credential check.
+          if (!found) return { ok: false, message: mapFirebaseAuthError(error) };
+
+          const verify = verifyPasswordAndMaybeUpgrade(found, password);
+          if (!verify.ok) return { ok: false, message: mapFirebaseAuthError(error) };
+        }
+      }
+
       if (!found) return { ok: false, message: 'Invalid credentials' };
 
       const { ok, upgradedUser } = verifyPasswordAndMaybeUpgrade(found, password);
       if (!ok) return { ok: false, message: 'Invalid credentials' };
-      
+
       // Check if user has an active subscription
       if (!found.subscription || !found.subscription.tier) {
         return { ok: false, message: 'No active membership. Please purchase a membership to continue.' };
       }
-      
+
       const ensuredUser = upgradedUser || found;
       const ensured = withProfileImage(ensuredUser);
       if (upgradedUser) {
@@ -657,6 +696,10 @@ export function DataProvider({ children }) {
   const logout = () => {
     setCurrentUser(null);
     removeItem(LAST_ACTIVITY_KEY);
+
+    if (isFirebaseAuthEnabled()) {
+      signOut(firebaseAuth).catch(() => {});
+    }
   };
 
   // Reset all data - useful for testing
@@ -700,6 +743,14 @@ const register = async ({ firstName, lastName, email, username, password, subscr
       // Subscription is required
       if (!subscriptionTier) return { ok: false, message: 'You must select a membership' };
       
+      if (isFirebaseAuthEnabled()) {
+        try {
+          await createUserWithEmailAndPassword(firebaseAuth, em.value, String(password));
+        } catch (error) {
+          return { ok: false, message: mapFirebaseAuthError(error) };
+        }
+      }
+
       const now = Date.now();
       const trialEndsAt = now + (TRIAL_DAYS * 24 * 60 * 60 * 1000);
       const passwordHash = hashPassword(password);
@@ -712,6 +763,7 @@ const register = async ({ firstName, lastName, email, username, password, subscr
         prefersDarkMode: DEFAULT_DARK_MODE_ENABLED,
         passwordHash,
         profileImage: DEFAULT_PROFILE_IMAGE,
+        firebaseUid: firebaseAuth?.currentUser?.uid || null,
         subscription: {
           tier: subscriptionTier,
           startDate: now,

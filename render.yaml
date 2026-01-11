@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: lamb-backend-staging
+    runtime: node
+    rootDir: backend
+    plan: starter
+    buildCommand: npm ci
+    startCommand: node server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: staging
+      - key: PORT
+        value: 3001
+      # Set these in Render Dashboard (do not commit real values)
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      # Firebase Admin credentials (recommended for Render): base64(JSON) or raw JSON
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+      # Optional: require Firebase auth for Stripe endpoints
+      - key: REQUIRE_FIREBASE_AUTH
+        value: "true"

@@ -5,22 +5,101 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+const stripe = typeof stripeSecretKey === 'string' && stripeSecretKey.trim() ? require('stripe')(stripeSecretKey.trim()) : null;
 const { initFirebaseAdmin, firebaseEnabled, requireFirebaseAuth } = require('./firebaseAdmin');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
 
 const PORT = process.env.PORT || 3001;
 
+const isStripeConfigured = () => !!stripe;
+
 // Optional Firebase Admin initialization (used for verifying Firebase ID tokens)
 initFirebaseAdmin();
+
+// If Stripe isn't configured, still allow /health and /me so Firebase auth can be tested.
+app.use((req, res, next) => {
+  if (isStripeConfigured()) return next();
+  if (req.path === '/health' || req.path === '/me') return next();
+  return res.status(503).json({ error: 'Stripe is not configured on this server' });
+});
 
 const maybeRequireFirebaseAuth = (req, res, next) => {
   if (String(process.env.REQUIRE_FIREBASE_AUTH).toLowerCase() !== 'true') return next();
   return requireFirebaseAuth(req, res, next);
 };
+
+// Stripe webhooks require the raw request body to validate signatures.
+// This MUST be registered before express.json().
+app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  if (!isStripeConfigured()) {
+    return res.status(503).json({ error: 'Stripe is not configured on this server' });
+  }
+
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!secret || !String(secret).trim()) {
+    return res.status(500).json({ error: 'STRIPE_WEBHOOK_SECRET is not set' });
+  }
+
+  const sig = req.headers['stripe-signature'];
+  if (!sig) {
+    return res.status(400).json({ error: 'Missing Stripe-Signature header' });
+  }
+
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, String(secret).trim());
+  } catch (err) {
+    return res.status(400).json({ error: `Webhook signature verification failed: ${err?.message || 'invalid signature'}` });
+  }
+
+  try {
+    switch (event.type) {
+      // Subscription lifecycle
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated':
+      case 'customer.subscription.deleted': {
+        const sub = event.data.object;
+        console.log('[stripe webhook]', event.type, {
+          id: sub?.id,
+          status: sub?.status,
+          customer: sub?.customer,
+          cancel_at_period_end: sub?.cancel_at_period_end,
+          current_period_end: sub?.current_period_end,
+        });
+        break;
+      }
+
+      // Invoicing/payment status
+      case 'invoice.payment_succeeded':
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object;
+        console.log('[stripe webhook]', event.type, {
+          id: invoice?.id,
+          customer: invoice?.customer,
+          subscription: invoice?.subscription,
+          status: invoice?.status,
+          paid: invoice?.paid,
+        });
+        break;
+      }
+
+      default:
+        // Keep logs quiet for unhandled events.
+        break;
+    }
+
+    return res.json({ received: true });
+  } catch (err) {
+    console.error('Error handling webhook:', err);
+    return res.status(500).json({ error: 'Webhook handler failed' });
+  }
+});
+
+// JSON parser for all non-webhook routes.
+app.use(express.json());
 
 // Price amounts in cents
 const PRICE_MAP = {
@@ -35,6 +114,11 @@ let stripePriceIds = {};
 // Initialize Stripe Products and Prices
 async function initializeStripePrices() {
   try {
+    if (!isStripeConfigured()) {
+      console.warn('Skipping Stripe price initialization: STRIPE_SECRET_KEY is not set.');
+      stripePriceIds = {};
+      return;
+    }
     console.log('Initializing Stripe products and prices...');
     
     for (const [tier, amount] of Object.entries(PRICE_MAP)) {
@@ -404,7 +488,12 @@ app.post('/create-payment-intent', maybeRequireFirebaseAuth, async (req, res) =>
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', stripePrices: stripePriceIds, firebase: firebaseEnabled() ? 'enabled' : 'disabled' });
+  res.json({
+    status: 'ok',
+    stripe: isStripeConfigured() ? 'configured' : 'not_configured',
+    stripePrices: stripePriceIds,
+    firebase: firebaseEnabled() ? 'enabled' : 'disabled',
+  });
 });
 
 // Simple endpoint to validate Firebase auth wiring.

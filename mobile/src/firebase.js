@@ -1,6 +1,7 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, initializeAuth, getReactNativePersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FIREBASE_CONFIG } from './config/firebase';
 
 const looksConfigured = (cfg) => {
@@ -16,7 +17,18 @@ export const firebaseApp = (() => {
   return getApps().length ? getApps()[0] : initializeApp(FIREBASE_CONFIG);
 })();
 
-export const firebaseAuth = firebaseApp ? getAuth(firebaseApp) : null;
+export const firebaseAuth = firebaseApp
+  ? (() => {
+      try {
+        return initializeAuth(firebaseApp, {
+          persistence: getReactNativePersistence(AsyncStorage),
+        });
+      } catch {
+        // If Auth was already initialized, just reuse it.
+        return getAuth(firebaseApp);
+      }
+    })()
+  : null;
 export const firestore = firebaseApp ? getFirestore(firebaseApp) : null;
 
 export const getFirebaseIdToken = async () => {
