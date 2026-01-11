@@ -1,7 +1,7 @@
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, initializeAuth, getReactNativePersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { FIREBASE_CONFIG } from './config/firebase';
 
 const looksConfigured = (cfg) => {
@@ -20,8 +20,22 @@ export const firebaseApp = (() => {
 export const firebaseAuth = firebaseApp
   ? (() => {
       try {
+        const secureStoreAdapter = {
+          setItem: async (key, value) => {
+            await SecureStore.setItemAsync(String(key), String(value), {
+              keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+            });
+          },
+          getItem: async (key) => {
+            return await SecureStore.getItemAsync(String(key));
+          },
+          removeItem: async (key) => {
+            await SecureStore.deleteItemAsync(String(key));
+          },
+        };
+
         return initializeAuth(firebaseApp, {
-          persistence: getReactNativePersistence(AsyncStorage),
+          persistence: getReactNativePersistence(secureStoreAdapter),
         });
       } catch {
         // If Auth was already initialized, just reuse it.

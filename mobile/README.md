@@ -50,15 +50,18 @@ npm install
 
 The app reads these Expo public environment variables:
 - `EXPO_PUBLIC_LAMB_API_URL`
-- `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` (optional; defaults to the repo's test key)
+
+Stripe publishable key is loaded at runtime from the backend (`/public-config`).
 
 For convenience, see [mobile/.env.example](mobile/.env.example).
 
 Examples:
 - Staging (Render):
 	- `EXPO_PUBLIC_LAMB_API_URL=https://lamb-backend-staging.onrender.com`
-- Local (LAN):
-	- `EXPO_PUBLIC_LAMB_API_URL=http://192.168.7.112:3001`
+
+Notes:
+- The mobile app enforces HTTPS-only networking and iOS App Transport Security is configured to disallow HTTP.
+- For local development against a local backend, use an HTTPS tunnel (e.g. ngrok/cloudflared) or run your local backend behind HTTPS.
 
 ## Testing/Health
 - Expo doctor: `npx expo-doctor`

@@ -550,6 +550,13 @@ app.post('/confirm-subscription-payment', maybeRequireFirebaseAuth, authRateLimi
 app.post('/schedule-subscription-change', maybeRequireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
   try {
     const { subscriptionId, newSubscriptionTier } = req.body;
+    if (!subscriptionId) {
+      return res.status(400).json({ error: 'Missing subscriptionId' });
+    }
+    if (!newSubscriptionTier || !stripePriceIds[newSubscriptionTier]) {
+      return res.status(400).json({ error: 'Invalid newSubscriptionTier' });
+    }
+
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
 
     if (req.firebaseUser?.uid) {
@@ -557,16 +564,29 @@ app.post('/schedule-subscription-change', maybeRequireFirebaseAuth, sensitiveRat
       const ownership = await assertStripeCustomerOwnedByFirebaseUser(customerId, req.firebaseUser);
       if (!ownership.ok) return res.status(ownership.status).json({ error: ownership.error });
     }
-    
-    const schedule = await stripe.subscriptionSchedules.create({
-      from_subscription: subscriptionId,
-    });
+
+    // Stripe allows only one schedule per subscription.
+    // If the subscription already has a schedule, reuse it; otherwise create a new one.
+    const existingScheduleId =
+      (typeof subscription.schedule === 'string' && subscription.schedule) ||
+      (typeof subscription.subscription_schedule === 'string' && subscription.subscription_schedule) ||
+      null;
+
+    const schedule = existingScheduleId
+      ? await stripe.subscriptionSchedules.retrieve(existingScheduleId)
+      : await stripe.subscriptionSchedules.create({ from_subscription: subscriptionId });
+
+    const phaseStart = schedule?.phases?.[0]?.start_date || Math.floor(Date.now() / 1000);
+    const currentPriceId = subscription?.items?.data?.[0]?.price?.id;
+    if (!currentPriceId) {
+      return res.status(500).json({ error: 'Subscription is missing price information' });
+    }
 
     const updatedSchedule = await stripe.subscriptionSchedules.update(schedule.id, {
       phases: [
         {
-          items: [{ price: subscription.items.data[0].price.id }],
-          start_date: schedule.phases[0].start_date,
+          items: [{ price: currentPriceId }],
+          start_date: phaseStart,
           end_date: subscription.current_period_end,
         },
         {
@@ -583,7 +603,7 @@ app.post('/schedule-subscription-change', maybeRequireFirebaseAuth, sensitiveRat
     });
   } catch (error) {
     console.error('Error scheduling subscription change:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error?.message || 'Failed to schedule subscription change' });
   }
 });
 

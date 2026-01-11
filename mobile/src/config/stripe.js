@@ -1,6 +1,3 @@
-// Stripe Configuration
-// For production, use environment variables or secure storage
-
 const getPublicEnv = (key, fallback) => {
 	try {
 		const v = typeof process !== 'undefined' && process.env ? process.env[key] : undefined;
@@ -10,13 +7,32 @@ const getPublicEnv = (key, fallback) => {
 	}
 };
 
-export const STRIPE_PUBLISHABLE_KEY = getPublicEnv(
-	'EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY',
-	'pk_test_51SmPtKGfJUDcxcWzCZGOUyiTBNTgmC8zJjYmIJncmez9g1O8mJODJexNhVOJdWZQsxFhF9qIFbniQqVGzlThCAL700j1BKEQeK'
-);
-
 // Backend API endpoint for creating payment intents
 // Replace with your actual backend URL
 export const API_URL = getPublicEnv('EXPO_PUBLIC_LAMB_API_URL', 'https://lamb-backend-staging.onrender.com');
 
 export const STRIPE_MERCHANT_NAME = 'LAMB';
+
+export async function fetchStripePublishableKey() {
+	const url = `${API_URL}/public-config`;
+	const res = await fetch(url);
+	if (!res.ok) {
+		// Dev-only escape hatch: allow local development to proceed even if the backend
+		// hasn't been redeployed with /public-config yet.
+		const devFallback = getPublicEnv('EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY', '');
+		if (typeof __DEV__ !== 'undefined' && __DEV__ && devFallback) {
+			return devFallback;
+		}
+		throw new Error(`Failed to load public config (${res.status}) at ${url}`);
+	}
+	const json = await res.json();
+	const key = typeof json?.stripePublishableKey === 'string' ? json.stripePublishableKey.trim() : '';
+	if (!key) {
+		const devFallback = getPublicEnv('EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY', '');
+		if (typeof __DEV__ !== 'undefined' && __DEV__ && devFallback) {
+			return devFallback;
+		}
+		throw new Error('Missing STRIPE_PUBLISHABLE_KEY on backend');
+	}
+	return key;
+}

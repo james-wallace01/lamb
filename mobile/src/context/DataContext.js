@@ -1,56 +1,25 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { getItem, setItem, removeItem } from '../storage';
-import bcrypt from 'bcryptjs';
-import * as Random from 'expo-random';
 import * as SecureStore from 'expo-secure-store';
 import { DEFAULT_DARK_MODE_ENABLED, getTheme } from '../theme';
 import { getAssetCapabilities, getCollectionCapabilities, getVaultCapabilities } from '../policies/capabilities';
 import { firebaseAuth, isFirebaseConfigured } from '../firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword as firebaseUpdatePassword,
+} from 'firebase/auth';
 import { API_URL } from '../config/stripe';
 import NetInfo from '@react-native-community/netinfo';
 import { apiFetch } from '../utils/apiFetch';
 
-// bcryptjs needs secure randomness for salts in React Native.
-// Expo Go doesn't provide WebCrypto by default, so use expo-random.
-bcrypt.setRandomFallback((length) => Array.from(Random.getRandomBytes(length)));
-
-const PASSWORD_HASH_KEY_PREFIX = 'lamb_pwHash_v1_';
-const passwordHashKey = (userId) => `${PASSWORD_HASH_KEY_PREFIX}${userId}`;
-
-const setPasswordHashInSecureStore = async (userId, passwordHash) => {
-  if (!userId || !passwordHash) return;
-  try {
-    await SecureStore.setItemAsync(passwordHashKey(userId), String(passwordHash), {
-      keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-    });
-  } catch (err) {
-    // If SecureStore isn't available (rare), we still keep the hash in memory.
-  }
-};
-
-const getPasswordHashFromSecureStore = async (userId) => {
-  if (!userId) return null;
-  try {
-    return await SecureStore.getItemAsync(passwordHashKey(userId));
-  } catch (err) {
-    return null;
-  }
-};
-
-const deletePasswordHashFromSecureStore = async (userId) => {
-  if (!userId) return;
-  try {
-    await SecureStore.deleteItemAsync(passwordHashKey(userId));
-  } catch (err) {
-    // ignore
-  }
-};
-
 const DATA_KEY = 'lamb-mobile-data-v5';
 const LAST_ACTIVITY_KEY = 'lamb-mobile-last-activity-v1';
-const BIOMETRIC_USER_ID_KEY = 'lamb-mobile-biometric-user-id-v1';
 const BIOMETRIC_SECURE_USER_ID_KEY = 'lamb-mobile-biometric-userid-secure-v1';
+const BIOMETRIC_ENABLED_USER_ID_KEY = 'lamb-mobile-biometric-userid-enabled-v1';
 const STORAGE_VERSION = 5;
 // Do not hardcode a remote default avatar URL.
 // Avatar fallback is rendered in the UI when profileImage is missing or fails to load.
@@ -62,8 +31,7 @@ const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 const TRIAL_DAYS = 14;
 
 const PASSWORD_MIN_LENGTH = 12;
-const PASSWORD_MAX_LENGTH = 72; // bcrypt truncates beyond 72 bytes
-const BCRYPT_ROUNDS = 10;
+const PASSWORD_MAX_LENGTH = 128;
 
 const NAME_MAX_LENGTH = 50;
 const ITEM_TITLE_MAX_LENGTH = 35;
@@ -185,29 +153,6 @@ const mapFirebaseAuthError = (error) => {
   return error?.message || 'Authentication failed';
 };
 
-const hashPassword = (password) => bcrypt.hashSync(password, BCRYPT_ROUNDS);
-
-const verifyPasswordAndMaybeUpgrade = (user, password) => {
-  if (!user) return { ok: false };
-
-  if (user.passwordHash) {
-    try {
-      return { ok: bcrypt.compareSync(password, user.passwordHash) };
-    } catch {
-      return { ok: false };
-    }
-  }
-
-  // Legacy support: previously stored plaintext passwords in AsyncStorage.
-  if (typeof user.password === 'string' && user.password === password) {
-    const upgraded = { ...user, passwordHash: hashPassword(password) };
-    delete upgraded.password;
-    return { ok: true, upgradedUser: upgraded };
-  }
-
-  return { ok: false };
-};
-
 const generateStrongPassword = (length = 16) => {
   const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
   const digits = '23456789';
@@ -242,50 +187,18 @@ const withoutPasswordForStorage = (user) => {
   return next;
 };
 
-const hydrateUsersWithPasswordHashes = async (inputUsers) => {
+const sanitizeUsersOnLoad = (inputUsers) => {
   const list = Array.isArray(inputUsers) ? inputUsers : [];
-  const out = [];
-
-  for (const user of list) {
-    if (!user?.id) {
-      out.push(user);
-      continue;
-    }
-
-    let next = { ...user };
+  return list.map((user) => {
+    if (!user) return user;
+    const next = { ...user };
+    delete next.password;
+    delete next.passwordHash;
     if (typeof next.prefersDarkMode !== 'boolean') {
       next.prefersDarkMode = DEFAULT_DARK_MODE_ENABLED;
     }
-
-    const storedHash = await getPasswordHashFromSecureStore(next.id);
-    if (storedHash) {
-      next.passwordHash = storedHash;
-      delete next.password;
-      out.push(next);
-      continue;
-    }
-
-    // Migrate legacy secrets from AsyncStorage -> SecureStore.
-    if (next.passwordHash) {
-      await setPasswordHashInSecureStore(next.id, next.passwordHash);
-      delete next.password;
-      out.push(next);
-      continue;
-    }
-
-    if (typeof next.password === 'string' && next.password) {
-      const migratedHash = hashPassword(next.password);
-      next.passwordHash = migratedHash;
-      delete next.password;
-      await setPasswordHashInSecureStore(next.id, migratedHash);
-      out.push(next);
-      continue;
-    }
-
-    out.push(next);
-  }
-
-  return out;
+    return next;
+  });
 };
 
 const normalizeRole = (role) => {
@@ -467,7 +380,7 @@ export function DataProvider({ children }) {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timeoutId = setTimeout(() => controller?.abort?.(), 8000);
     try {
-      const res = await fetch(`${API_URL}/health`, {
+      const res = await apiFetch(`${API_URL}/health`, {
         method: 'GET',
         signal: controller?.signal,
         headers: { Accept: 'application/json' },
@@ -574,7 +487,7 @@ export function DataProvider({ children }) {
       if (!stored) return { ok: false, message: 'No stored data' };
 
       const migrated = migrateData(stored);
-      const hydratedUsers = await hydrateUsersWithPasswordHashes(normalizeUsersArray(migrated.users));
+      const hydratedUsers = sanitizeUsersOnLoad(normalizeUsersArray(migrated.users));
 
       setUsers(hydratedUsers);
 
@@ -613,7 +526,10 @@ export function DataProvider({ children }) {
         await removeItem('lamb-mobile-data-v1'); // clean legacy
         await removeItem('lamb-mobile-data-v2'); // clean previous version
 
-        const storedBiometricUserId = await getItem(BIOMETRIC_USER_ID_KEY, null);
+        // Legacy cleanup: biometric enabled marker used to live in AsyncStorage.
+        await removeItem('lamb-mobile-biometric-user-id-v1');
+
+        const storedBiometricUserId = await SecureStore.getItemAsync(BIOMETRIC_ENABLED_USER_ID_KEY).catch(() => null);
         if (typeof storedBiometricUserId === 'string' && storedBiometricUserId) {
           setBiometricUserId(storedBiometricUserId);
         } else {
@@ -633,7 +549,7 @@ export function DataProvider({ children }) {
         const stored = await getItem(DATA_KEY, null);
         if (stored && stored.version === STORAGE_VERSION) {
           const migrated = migrateData(stored);
-          const hydratedUsers = await hydrateUsersWithPasswordHashes(normalizeUsersArray(migrated.users));
+          const hydratedUsers = sanitizeUsersOnLoad(normalizeUsersArray(migrated.users));
           setUsers(hydratedUsers);
           setCurrentUser(migrated.currentUser || null);
           setVaults(migrated.vaults || []);
@@ -644,7 +560,7 @@ export function DataProvider({ children }) {
           // Start with an empty local state (no seeded users or content).
           const seedData = { users: [], vaults: [], collections: [], assets: [], currentUser: null };
           const migratedSeed = migrateData(seedData);
-          const hydratedUsers = await hydrateUsersWithPasswordHashes(normalizeUsersArray(migratedSeed.users));
+          const hydratedUsers = sanitizeUsersOnLoad(normalizeUsersArray(migratedSeed.users));
           setUsers(hydratedUsers);
           setCurrentUser(migratedSeed.currentUser);
           setVaults(migratedSeed.vaults);
@@ -726,38 +642,50 @@ export function DataProvider({ children }) {
         return (uname && uname === id) || (em && em === id);
       });
 
-      // If we can resolve an email, try Firebase email/password first.
       const emailForFirebase = id.includes('@') ? id : normalizeEmail(found?.email || '');
-      if (isFirebaseAuthEnabled() && emailForFirebase) {
-        try {
-          await signInWithEmailAndPassword(firebaseAuth, emailForFirebase, String(password));
-        } catch (error) {
-          // Allow demo/offline sign-in via local credential check.
-          if (!found) return { ok: false, message: mapFirebaseAuthError(error) };
-
-          const verify = verifyPasswordAndMaybeUpgrade(found, password);
-          if (!verify.ok) return { ok: false, message: mapFirebaseAuthError(error) };
-        }
+      if (!isFirebaseAuthEnabled() || !emailForFirebase) {
+        return { ok: false, message: 'Authentication is unavailable' };
       }
 
-      if (!found) return { ok: false, message: 'Invalid credentials' };
-
-      const { ok, upgradedUser } = verifyPasswordAndMaybeUpgrade(found, password);
-      if (!ok) return { ok: false, message: 'Invalid credentials' };
-
-      // Check if user has an active subscription
-      if (!found.subscription || !found.subscription.tier) {
-        return { ok: false, message: 'No active membership. Please purchase a membership to continue.' };
+      try {
+        await signInWithEmailAndPassword(firebaseAuth, emailForFirebase, String(password));
+      } catch (error) {
+        return { ok: false, message: mapFirebaseAuthError(error) };
       }
 
-      const ensuredUser = upgradedUser || found;
-      const ensured = withProfileImage(ensuredUser);
-      if (upgradedUser) {
-        setUsers((prev) => prev.map((u) => (u.id === upgradedUser.id ? upgradedUser : u)));
-        if (upgradedUser.passwordHash) {
-          setPasswordHashInSecureStore(upgradedUser.id, upgradedUser.passwordHash);
-        }
+      const fbUser = firebaseAuth?.currentUser || null;
+      const uid = fbUser?.uid ? String(fbUser.uid) : null;
+      const email = fbUser?.email ? normalizeEmail(fbUser.email) : emailForFirebase;
+      if (!uid) return { ok: false, message: 'Authentication failed' };
+
+      const local =
+        users.find((u) => u?.firebaseUid && String(u.firebaseUid) === uid) ||
+        users.find((u) => u?.email && normalizeEmail(u.email) === email) ||
+        null;
+
+      if (!local) {
+        const now = Date.now();
+        const newUser = {
+          id: uid,
+          firstName: '',
+          lastName: '',
+          email,
+          username: email.split('@')[0] || 'user',
+          prefersDarkMode: DEFAULT_DARK_MODE_ENABLED,
+          profileImage: null,
+          firebaseUid: uid,
+          subscription: null,
+        };
+        setUsers((prev) => [...prev, newUser]);
+        setCurrentUser(withoutPasswordSecrets(withProfileImage(newUser)));
+        const nowMs = now;
+        setLastActivityAt(nowMs);
+        lastActivityWriteAtRef.current = nowMs;
+        setItem(LAST_ACTIVITY_KEY, nowMs);
+        return { ok: true };
       }
+
+      const ensured = withProfileImage({ ...local, id: local.id || uid, firebaseUid: uid, email });
       setCurrentUser(withoutPasswordSecrets(ensured));
       const now = Date.now();
       setLastActivityAt(now);
@@ -795,7 +723,10 @@ export function DataProvider({ children }) {
           authenticationPrompt: 'Enable Face ID to sign in',
         });
 
-        await setItem(BIOMETRIC_USER_ID_KEY, String(currentUser.id));
+        await SecureStore.setItemAsync(BIOMETRIC_ENABLED_USER_ID_KEY, String(currentUser.id), {
+          keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+        });
+
         setBiometricUserId(String(currentUser.id));
         return { ok: true };
       } catch (error) {
@@ -806,9 +737,9 @@ export function DataProvider({ children }) {
     const disableBiometricSignIn = async () => {
       try {
         setBiometricUserId(null);
-        await removeItem(BIOMETRIC_USER_ID_KEY);
         try {
           await SecureStore.deleteItemAsync(BIOMETRIC_SECURE_USER_ID_KEY);
+          await SecureStore.deleteItemAsync(BIOMETRIC_ENABLED_USER_ID_KEY);
         } catch {
           // ignore
         }
@@ -848,17 +779,15 @@ export function DataProvider({ children }) {
   // Reset all local data - useful for testing
   const resetAllData = async () => {
     try {
-      const ids = (users || []).map((u) => u?.id).filter(Boolean);
-      await Promise.all(ids.map((id) => deletePasswordHashFromSecureStore(id)));
       setCurrentUser(null);
       setUsers([]);
       setVaults([]);
       setCollections([]);
       setAssets([]);
       await removeItem(LAST_ACTIVITY_KEY);
-      await removeItem(BIOMETRIC_USER_ID_KEY);
       try {
         await SecureStore.deleteItemAsync(BIOMETRIC_SECURE_USER_ID_KEY);
+        await SecureStore.deleteItemAsync(BIOMETRIC_ENABLED_USER_ID_KEY);
       } catch {
         // ignore
       }
@@ -874,71 +803,110 @@ export function DataProvider({ children }) {
     }
   };
 
-const register = async ({ firstName, lastName, email, username, password, subscriptionTier, stripeSubscriptionId, stripeCustomerId }) => {
-  const first = validateName(firstName, 'First name');
-  if (!first.ok) return { ok: false, message: first.message };
-  const last = validateName(lastName, 'Last name');
-  if (!last.ok) return { ok: false, message: last.message };
-  const em = validateEmail(email);
-  if (!em.ok) return { ok: false, message: em.message };
-  const un = validateUsername(username);
-  if (!un.ok) return { ok: false, message: un.message };
+  const ensureFirebaseSignupAuth = async ({ email: rawEmail, password: rawPassword, username: rawUsername } = {}) => {
+    const em = validateEmail(rawEmail);
+    if (!em.ok) return { ok: false, message: em.message };
 
-  const exists = users.find(u =>
-    (u?.username && normalizeUsername(u.username) === un.value) ||
-    (u?.email && normalizeEmail(u.email) === em.value)
-  );
-  if (exists) return { ok: false, message: 'User already exists' };
+    const un = validateUsername(rawUsername || 'user');
+    if (!un.ok) return { ok: false, message: un.message };
 
-  const pw = validatePasswordStrength(password, { username: un.value, email: em.value });
-      if (!pw.ok) return { ok: false, message: pw.message };
-      
-      // Subscription is required
-      if (!subscriptionTier) return { ok: false, message: 'You must select a membership' };
-      
-      if (isFirebaseAuthEnabled()) {
-        try {
-          await createUserWithEmailAndPassword(firebaseAuth, em.value, String(password));
-        } catch (error) {
-          return { ok: false, message: mapFirebaseAuthError(error) };
-        }
-      }
+    const pw = validatePasswordStrength(rawPassword, { username: un.value, email: em.value });
+    if (!pw.ok) return { ok: false, message: pw.message };
 
-      const now = Date.now();
-      const trialEndsAt = now + (TRIAL_DAYS * 24 * 60 * 60 * 1000);
-      const passwordHash = hashPassword(password);
-      const newUser = { 
-        id: `u${Date.now()}`, 
-        firstName: first.value,
-        lastName: last.value,
-        email: em.value,
-        username: un.value,
-        prefersDarkMode: DEFAULT_DARK_MODE_ENABLED,
-        passwordHash,
-        profileImage: null,
-        firebaseUid: firebaseAuth?.currentUser?.uid || null,
-        subscription: {
-          tier: subscriptionTier,
-          startDate: now,
-          trialEndsAt,
-          renewalDate: trialEndsAt,
-          stripeSubscriptionId: stripeSubscriptionId || null,
-          stripeCustomerId: stripeCustomerId || null,
-          cancelAtPeriodEnd: false
-        }
-      };
-      
-      const newVault = { id: `v${Date.now()}`, name: 'Example Vault', ownerId: newUser.id, sharedWith: [], createdAt: now, viewedAt: now, editedAt: now, heroImage: DEFAULT_MEDIA_IMAGE, images: [] };
-      const newCollection = { id: `c${Date.now() + 1}`, vaultId: newVault.id, name: 'Example Collection', ownerId: newUser.id, sharedWith: [], createdAt: now, viewedAt: now, editedAt: now, heroImage: DEFAULT_MEDIA_IMAGE, images: [] };
-      const newAsset = { id: `a${Date.now() + 2}`, vaultId: newVault.id, collectionId: newCollection.id, title: 'Example Asset', type: 'Asset', category: 'Example', ownerId: newUser.id, manager: newUser.username, createdAt: now, viewedAt: now, editedAt: now, quantity: 1, heroImage: DEFAULT_MEDIA_IMAGE, images: [] };
-      
-          setUsers(prev => [...prev, newUser]);
-      setVaults(prev => [newVault, ...prev]);
-      setCollections(prev => [newCollection, ...prev]);
-      setAssets(prev => [newAsset, ...prev]);
-          setCurrentUser(withoutPasswordSecrets(newUser));
-            await setPasswordHashInSecureStore(newUser.id, passwordHash);
+    if (!isFirebaseAuthEnabled()) {
+      return { ok: false, message: 'Authentication is unavailable' };
+    }
+
+    const signedInEmail = firebaseAuth?.currentUser?.email ? normalizeEmail(String(firebaseAuth.currentUser.email)) : null;
+    if (signedInEmail && signedInEmail === em.value) {
       return { ok: true };
+    }
+
+    if (signedInEmail && signedInEmail !== em.value) {
+      await signOut(firebaseAuth).catch(() => {});
+    }
+
+    try {
+      await createUserWithEmailAndPassword(firebaseAuth, em.value, String(rawPassword));
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: mapFirebaseAuthError(error) };
+    }
+  };
+
+  const register = async ({ firstName, lastName, email, username, password, subscriptionTier, stripeSubscriptionId, stripeCustomerId }) => {
+    const first = validateName(firstName, 'First name');
+    if (!first.ok) return { ok: false, message: first.message };
+    const last = validateName(lastName, 'Last name');
+    if (!last.ok) return { ok: false, message: last.message };
+    const em = validateEmail(email);
+    if (!em.ok) return { ok: false, message: em.message };
+    const un = validateUsername(username);
+    if (!un.ok) return { ok: false, message: un.message };
+
+    const exists = users.find(u =>
+      (u?.username && normalizeUsername(u.username) === un.value) ||
+      (u?.email && normalizeEmail(u.email) === em.value)
+    );
+    if (exists) return { ok: false, message: 'User already exists' };
+
+    const pw = validatePasswordStrength(password, { username: un.value, email: em.value });
+    if (!pw.ok) return { ok: false, message: pw.message };
+
+    if (!subscriptionTier) return { ok: false, message: 'You must select a membership' };
+
+    if (!isFirebaseAuthEnabled()) {
+      return { ok: false, message: 'Authentication is unavailable' };
+    }
+
+    const signedInEmail = firebaseAuth?.currentUser?.email ? normalizeEmail(String(firebaseAuth.currentUser.email)) : null;
+    if (signedInEmail && signedInEmail !== em.value) {
+      return { ok: false, message: 'You are signed in as a different user. Please sign out and try again.' };
+    }
+
+    if (!firebaseAuth?.currentUser?.uid) {
+      try {
+        await createUserWithEmailAndPassword(firebaseAuth, em.value, String(password));
+      } catch (error) {
+        return { ok: false, message: mapFirebaseAuthError(error) };
+      }
+    }
+
+    const now = Date.now();
+    const trialEndsAt = now + (TRIAL_DAYS * 24 * 60 * 60 * 1000);
+    const uid = firebaseAuth?.currentUser?.uid ? String(firebaseAuth.currentUser.uid) : null;
+    if (!uid) return { ok: false, message: 'Authentication failed' };
+
+    const newUser = {
+      id: uid,
+      firstName: first.value,
+      lastName: last.value,
+      email: em.value,
+      username: un.value,
+      prefersDarkMode: DEFAULT_DARK_MODE_ENABLED,
+      profileImage: null,
+      firebaseUid: uid,
+      subscription: {
+        tier: subscriptionTier,
+        startDate: now,
+        trialEndsAt,
+        renewalDate: trialEndsAt,
+        stripeSubscriptionId: stripeSubscriptionId || null,
+        stripeCustomerId: stripeCustomerId || null,
+        cancelAtPeriodEnd: false,
+      },
+    };
+
+    const newVault = { id: `v${Date.now()}`, name: 'Example Vault', ownerId: newUser.id, sharedWith: [], createdAt: now, viewedAt: now, editedAt: now, heroImage: DEFAULT_MEDIA_IMAGE, images: [] };
+    const newCollection = { id: `c${Date.now() + 1}`, vaultId: newVault.id, name: 'Example Collection', ownerId: newUser.id, sharedWith: [], createdAt: now, viewedAt: now, editedAt: now, heroImage: DEFAULT_MEDIA_IMAGE, images: [] };
+    const newAsset = { id: `a${Date.now() + 2}`, vaultId: newVault.id, collectionId: newCollection.id, title: 'Example Asset', type: 'Asset', category: 'Example', ownerId: newUser.id, manager: newUser.username, createdAt: now, viewedAt: now, editedAt: now, quantity: 1, heroImage: DEFAULT_MEDIA_IMAGE, images: [] };
+
+    setUsers(prev => [...prev, newUser]);
+    setVaults(prev => [newVault, ...prev]);
+    setCollections(prev => [newCollection, ...prev]);
+    setAssets(prev => [newAsset, ...prev]);
+    setCurrentUser(withoutPasswordSecrets(newUser));
+    return { ok: true };
   };
 
     const updateCurrentUser = (patch) => {
@@ -997,28 +965,21 @@ const register = async ({ firstName, lastName, email, username, password, subscr
           return { ok: false, message: 'Please enter a new password' };
         }
 
-        const baseRecord = users.find((u) => u.id === currentUser.id) || currentUser || {};
-
-        const verify = verifyPasswordAndMaybeUpgrade(baseRecord, currentPassword);
-        if (!verify.ok) return { ok: false, message: 'Current password is incorrect' };
-
-        if (verify.upgradedUser) {
-          setUsers((prev) => prev.map((u) => (u.id === verify.upgradedUser.id ? verify.upgradedUser : u)));
-          if (verify.upgradedUser.passwordHash) {
-            await setPasswordHashInSecureStore(verify.upgradedUser.id, verify.upgradedUser.passwordHash);
-          }
+        if (!isFirebaseAuthEnabled() || !firebaseAuth?.currentUser?.email) {
+          return { ok: false, message: 'Authentication is unavailable' };
         }
 
         const pw = validatePasswordStrength(newPassword, { username: currentUser?.username, email: currentUser?.email });
         if (!pw.ok) return { ok: false, message: pw.message };
 
-        const nextHash = hashPassword(newPassword);
-        const updatedUserRecord = { ...baseRecord, passwordHash: nextHash };
-        delete updatedUserRecord.password;
-        setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUserRecord : u));
-        setCurrentUser(withoutPasswordSecrets({ ...currentUser }));
-        await setPasswordHashInSecureStore(currentUser.id, nextHash);
-        return { ok: true };
+        try {
+          const credential = EmailAuthProvider.credential(String(firebaseAuth.currentUser.email), String(currentPassword));
+          await reauthenticateWithCredential(firebaseAuth.currentUser, credential);
+          await firebaseUpdatePassword(firebaseAuth.currentUser, String(newPassword));
+          return { ok: true };
+        } catch (error) {
+          return { ok: false, message: mapFirebaseAuthError(error) };
+        }
       };
 
       const validatePassword = (password) => {
@@ -1032,11 +993,10 @@ const register = async ({ firstName, lastName, email, username, password, subscr
 
         if (biometricUserId && biometricUserId === userId) {
           setBiometricUserId(null);
-          removeItem(BIOMETRIC_USER_ID_KEY);
           SecureStore.deleteItemAsync(BIOMETRIC_SECURE_USER_ID_KEY).catch(() => {});
+          SecureStore.deleteItemAsync(BIOMETRIC_ENABLED_USER_ID_KEY).catch(() => {});
         }
 
-        deletePasswordHashFromSecureStore(userId);
         setUsers(prev => prev.filter(u => u.id !== userId));
         setVaults(prev => prev
           .filter(v => v.ownerId !== userId)
@@ -1566,6 +1526,7 @@ const register = async ({ firstName, lastName, email, username, password, subscr
     logout,
     resetAllData,
     // Auth / profile
+    ensureFirebaseSignupAuth: wrapOnlineAsync(ensureFirebaseSignupAuth),
     register: wrapOnlineAsync(register),
     updateCurrentUser: wrapOnline(updateCurrentUser),
     resetPassword: wrapOnlineAsync(resetPassword),

@@ -14,10 +14,19 @@
     },
     "ios": {
       "supportsTablet": true,
-      "buildNumber": "19"
+      "buildNumber": "19",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSAllowsArbitraryLoadsInMedia": false,
+          "NSAllowsArbitraryLoadsForMedia": false,
+          "NSAllowsLocalNetworking": false
+        }
+      }
     },
     "android": {
       "versionCode": 19,
+      "allowBackup": false,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -35,7 +44,18 @@
           "enableGooglePay": false
         }
       ],
-      "expo-secure-store"
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow LAMB to access your photo library to choose images for your profile, vaults, collections, and assets."
+        }
+      ],
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "Allow LAMB to use Face ID to help protect your account."
+        }
+      ]
     ]
   }
 }

@@ -14,7 +14,7 @@ export default function ChooseSubscription({ navigation, route }) {
   const { firstName, lastName, email, username, password } = route.params || {};
   const [selectedTier, setSelectedTier] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const { register, loading } = useData();
+  const { register, loading, ensureFirebaseSignupAuth } = useData();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
   const footerSpacer = 72 + (insets?.bottom || 0);
@@ -83,6 +83,15 @@ export default function ChooseSubscription({ navigation, route }) {
     }
 
     setSubmitting(true);
+
+    // In production, backend membership endpoints require Firebase auth.
+    // Ensure we have a Firebase session so apiFetch can attach an ID token.
+    const authRes = await ensureFirebaseSignupAuth?.({ email, password, username });
+    if (authRes && authRes.ok === false) {
+      Alert.alert('Sign up failed', authRes.message || 'Unable to create account. Please try again.');
+      setSubmitting(false);
+      return;
+    }
 
     const tier = subscriptionTiers[selectedTier];
     const localPrice = convertPrice(tier.price);
