@@ -96,7 +96,9 @@ export default function SubscriptionManager() {
   };
 
   const handleChangePlan = async () => {
-    console.log('handleChangePlan called', { selectedTier, currentTier: currentUser.subscription.tier });
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.log('handleChangePlan called', { selectedTier, currentTier: currentUser.subscription.tier });
+    }
     
     if (!selectedTier || selectedTier === currentUser.subscription.tier.toUpperCase()) {
       Alert.alert('Select Membership', 'Please choose a different membership');
@@ -108,7 +110,9 @@ export default function SubscriptionManager() {
     const prorationData = calculateProration(currentUser.subscription.tier, selectedTier);
     const { featuresLost, featuresGained } = getFeaturesComparison(currentUser.subscription.tier, selectedTier);
 
-    console.log('Plan change details:', { newTier, isUpgrade, prorationData });
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.log('Plan change details:', { newTier, isUpgrade, prorationData });
+    }
 
     // Show confirmation modal with detailed proration info
     setConfirmData({
@@ -153,10 +157,9 @@ export default function SubscriptionManager() {
         const { requiresPayment, clientSecret, ephemeralKey, customer, invoiceId } = await response.json();
 
         if (requiresPayment && clientSecret) {
-          console.log('Processing upgrade payment...');
-          console.log('Client secret received:', clientSecret?.substring(0, 20) + '...');
-          console.log('Customer ID:', customer);
-          console.log('Invoice ID:', invoiceId);
+          if (typeof __DEV__ !== 'undefined' && __DEV__) {
+            console.log('Processing upgrade payment...');
+          }
           
           // Initialize payment sheet for proration payment
           const { error: initError } = await initPaymentSheet({
@@ -170,31 +173,32 @@ export default function SubscriptionManager() {
           });
 
           if (initError) {
-            console.error('Init payment sheet error:', JSON.stringify(initError));
+            if (typeof __DEV__ !== 'undefined' && __DEV__) {
+              console.error('Init payment sheet error:', JSON.stringify(initError));
+            }
             Alert.alert('Error', initError.message);
             setSubmitting(false);
             return;
           }
 
-          console.log('Payment sheet initialized successfully');
-
           // Present payment sheet
-          console.log('About to present payment sheet...');
           const { error: presentError } = await presentPaymentSheet();
-          console.log('presentPaymentSheet completed');
-          console.log('Present error:', JSON.stringify(presentError, null, 2));
+          if (typeof __DEV__ !== 'undefined' && __DEV__) {
+            console.log('presentPaymentSheet completed');
+          }
           
           if (presentError) {
-            console.error('Payment sheet error details:', JSON.stringify(presentError));
-            console.error('Error code:', presentError.code);
-            console.error('Error message:', presentError.message);
-            console.error('Error type:', presentError.type);
+            if (typeof __DEV__ !== 'undefined' && __DEV__) {
+              console.error('Payment sheet error details:', JSON.stringify(presentError));
+            }
             Alert.alert('Payment error', `${presentError.message}\n\nPlease try again or contact support.`);
             setSubmitting(false);
             return;
           }
-          
-          console.log('Payment sheet closed successfully, verifying with invoiceId:', invoiceId);
+
+          if (typeof __DEV__ !== 'undefined' && __DEV__) {
+            console.log('Payment sheet closed successfully, verifying invoice');
+          }
           
           // Verify the payment actually went through
           try {
@@ -209,9 +213,10 @@ export default function SubscriptionManager() {
               }),
             });
             
-            console.log('Confirm response status:', confirmResponse.status);
             const confirmData = await confirmResponse.json();
-            console.log('Confirm payment data:', JSON.stringify(confirmData));
+            if (typeof __DEV__ !== 'undefined' && __DEV__) {
+              console.log('Confirm response status:', confirmResponse.status);
+            }
             
             if (!confirmData.success) {
               Alert.alert('Payment failed', 
@@ -220,9 +225,13 @@ export default function SubscriptionManager() {
               return;
             }
             
-            console.log('Payment verified successfully');
+            if (typeof __DEV__ !== 'undefined' && __DEV__) {
+              console.log('Payment verified successfully');
+            }
           } catch (confirmError) {
-            console.error('Error confirming payment:', confirmError);
+            if (typeof __DEV__ !== 'undefined' && __DEV__) {
+              console.error('Error confirming payment:', confirmError);
+            }
             Alert.alert('Error', confirmError?.message || 'Failed to verify payment. Please contact support.');
             setSubmitting(false);
             return;
@@ -230,12 +239,16 @@ export default function SubscriptionManager() {
         }
 
         // Update local subscription
-        console.log('Updating subscription in database...');
+        if (typeof __DEV__ !== 'undefined' && __DEV__) {
+          console.log('Updating subscription in database...');
+        }
         const res = updateSubscription(confirmData.selectedTier, currentUser.subscription.stripeSubscriptionId);
         setSubmitting(false);
         
         if (res.ok) {
-          console.log('Subscription updated successfully');
+          if (typeof __DEV__ !== 'undefined' && __DEV__) {
+            console.log('Subscription updated successfully');
+          }
           setSelectedTier(confirmData.selectedTier);
           setScheduledChange(null);
           try {
@@ -245,7 +258,9 @@ export default function SubscriptionManager() {
           }
           Alert.alert('Success', `Your membership has been upgraded to ${confirmData.newTierName}!`);
         } else {
-          console.log('Subscription update failed:', res.message);
+          if (typeof __DEV__ !== 'undefined' && __DEV__) {
+            console.log('Subscription update failed:', res.message);
+          }
           Alert.alert('Error', res.message);
         }
       } else {
@@ -276,7 +291,9 @@ export default function SubscriptionManager() {
           });
         } else {
           // No Stripe subscription yet (seeded users), just update locally
-          console.log('No Stripe subscription found, updating locally only');
+          if (typeof __DEV__ !== 'undefined' && __DEV__) {
+            console.log('No Stripe subscription found, updating locally only');
+          }
           const res = updateSubscription(confirmData.selectedTier, null);
           if (!res.ok) {
             throw new Error(res.message);

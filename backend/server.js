@@ -33,6 +33,15 @@ const authRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Email enumeration protection: keep this tighter than other auth-adjacent endpoints.
+// This endpoint intentionally reveals whether an email exists, so we rate limit aggressively.
+const emailAvailabilityRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const sensitiveRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 120,
@@ -181,8 +190,10 @@ app.use(express.json());
 
 // Email availability check used by the signup UI (runs before the user is authenticated).
 // Note: This endpoint intentionally reveals whether an email exists. Keep the rate limit tight.
-app.post('/email-available', authRateLimiter, async (req, res) => {
+app.post('/email-available', emailAvailabilityRateLimiter, async (req, res) => {
   try {
+    // Ensure intermediaries don't cache an email existence response.
+    res.set('Cache-Control', 'no-store');
     const email = normalizeEmail(req.body?.email);
     if (!email) return res.status(400).json({ error: 'Missing email' });
     if (!firebaseEnabled()) {

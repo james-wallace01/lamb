@@ -142,7 +142,9 @@ export default function ChooseSubscription({ navigation, route }) {
 
     const { subscriptionId } = await startResponse.json();
 
-    console.log('Free trial subscription started - creating account');
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.log('Free trial subscription started - creating account');
+    }
     const res = await register({
       firstName,
       lastName,
