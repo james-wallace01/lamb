@@ -5,6 +5,7 @@ import { useData } from '../context/DataContext';
 import ShareModal from '../components/ShareModal';
 import LambHeader from '../components/LambHeader';
 import BackButton from '../components/BackButton';
+import { getVaultCapabilities } from '../policies/capabilities';
 
 export default function Vault({ navigation, route }) {
   const { vaultId } = route.params || {};
@@ -48,13 +49,16 @@ export default function Vault({ navigation, route }) {
   const vault = useMemo(() => vaults.find((v) => v.id === vaultId), [vaultId, vaults]);
   const vaultCollections = useMemo(() => collections.filter((c) => c.vaultId === vaultId), [collections, vaultId]);
   const role = getRoleForVault(vaultId, currentUser?.id);
-  const isOwner = role === 'owner';
   const accessType = vault?.ownerId === currentUser?.id
     ? 'Owner'
     : role
       ? `${role.charAt(0).toUpperCase()}${role.slice(1)}`
       : 'Shared';
   const canCreate = canCreateCollectionsInVault(vaultId, currentUser?.id);
+  const caps = getVaultCapabilities({ role, canCreateCollections: canCreate });
+  const canEdit = caps.canEdit;
+  const canShare = caps.canShare;
+  const canDelete = caps.canDelete;
   const vaultImages = vault?.images || [];
   const heroImage = vault?.heroImage || DEFAULT_MEDIA_IMAGE;
   const previewImages = heroImage ? [heroImage, ...vaultImages.filter((img) => img !== heroImage)] : vaultImages;
@@ -185,6 +189,7 @@ export default function Vault({ navigation, route }) {
   };
 
   const openEditModal = () => {
+    if (!canEdit) return;
     if (!vault) return;
     setEditDraft({
       name: vault?.name || '',
@@ -197,6 +202,7 @@ export default function Vault({ navigation, route }) {
   };
 
   const handleSaveDraft = () => {
+    if (!canEdit) return;
     if (!vault) return;
     const images = trimToFour(editDraft.images || []);
     const hero = ensureHero(images, editDraft.heroImage);
@@ -234,7 +240,7 @@ export default function Vault({ navigation, route }) {
           <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>Collection • {new Date(item.createdAt).toLocaleDateString()}</Text>
         </View>
         <View style={styles.cardActions}>
-          {isOwner && (
+          {canShare && (
             <TouchableOpacity
               style={styles.sharePill}
               onPress={(e) => {
@@ -326,10 +332,14 @@ export default function Vault({ navigation, route }) {
                   <TouchableOpacity style={styles.secondaryButton} onPress={() => setEditVisible(false)}>
                     <Text style={styles.secondaryButtonText}>Close</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.primaryButton} onPress={handleSaveDraft}>
+                  <TouchableOpacity
+                    style={[styles.primaryButton, !canEdit && styles.buttonDisabled]}
+                    disabled={!canEdit}
+                    onPress={handleSaveDraft}
+                  >
                     <Text style={styles.primaryButtonText}>Save</Text>
                   </TouchableOpacity>
-                  {isOwner && (
+                  {canDelete && (
                     <TouchableOpacity
                       style={styles.dangerButton}
                       onPress={() => {
@@ -381,14 +391,22 @@ export default function Vault({ navigation, route }) {
                     <Text style={[styles.subtitleDim, { color: theme.textMuted }]}>Access Type: {accessType}</Text>
                   </View>
 
-                  {isOwner && (
+                  {(canEdit || canShare) && (
                     <View style={styles.actionsRow}>
-                      <TouchableOpacity style={[styles.primaryButton, styles.actionButton]} onPress={openEditModal}>
+                      <TouchableOpacity
+                        style={[styles.primaryButton, styles.actionButton, !canEdit && styles.buttonDisabled]}
+                        disabled={!canEdit}
+                        onPress={openEditModal}
+                      >
                         <Text style={styles.primaryButtonText}>Edit</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={[styles.shareButton, styles.actionButton]} onPress={() => openShare('vault', vaultId)}>
-                        <Text style={styles.secondaryButtonText}>Share</Text>
-                      </TouchableOpacity>
+                      {canShare ? (
+                        <TouchableOpacity style={[styles.shareButton, styles.actionButton]} onPress={() => openShare('vault', vaultId)}>
+                          <Text style={styles.secondaryButtonText}>Share</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <View style={[styles.actionButton, { opacity: 0 }]} pointerEvents="none" />
+                      )}
                       <View style={[styles.actionButton, { opacity: 0 }]} pointerEvents="none" />
                     </View>
                   )}
@@ -427,6 +445,7 @@ export default function Vault({ navigation, route }) {
                       placeholder="New collection name"
                       placeholderTextColor={theme.placeholder}
                       value={newName}
+                      editable={canCreate}
                       onChangeText={(text) => setNewName(limit20(text || ''))}
                     />
                     <TouchableOpacity

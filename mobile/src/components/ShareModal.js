@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Modal, View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView } from 'react-native';
+import { Alert, Modal, View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView } from 'react-native';
 import { useData } from '../context/DataContext';
 
 const ROLE_OPTIONS = [
@@ -93,9 +93,21 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
 
   const handleShare = (userId) => {
     const normalizedRole = normalizeRole(role) || 'reviewer';
-    if (targetType === 'vault') shareVault({ vaultId: targetId, userId, role: normalizedRole, canCreateCollections });
-    if (targetType === 'collection') shareCollection({ collectionId: targetId, userId, role: normalizedRole, canCreateAssets });
-    if (targetType === 'asset') shareAsset({ assetId: targetId, userId, role: normalizedRole });
+
+    const res =
+      targetType === 'vault'
+        ? shareVault({ vaultId: targetId, userId, role: normalizedRole, canCreateCollections })
+        : targetType === 'collection'
+          ? shareCollection({ collectionId: targetId, userId, role: normalizedRole, canCreateAssets })
+          : targetType === 'asset'
+            ? shareAsset({ assetId: targetId, userId, role: normalizedRole })
+            : null;
+
+    if (res && res.ok === false) {
+      Alert.alert('Not allowed', res.message || 'You do not have permission to share this item.');
+      return;
+    }
+
     setQuery('');
     setCanCreateCollections(false);
     setCanCreateAssets(false);
@@ -103,15 +115,35 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
 
   const handleUpdate = (userId, nextRole, nextFlag) => {
     const normalizedRole = normalizeRole(nextRole) || 'reviewer';
-    if (targetType === 'vault') updateVaultShare({ vaultId: targetId, userId, role: normalizedRole, canCreateCollections: nextFlag });
-    if (targetType === 'collection') updateCollectionShare({ collectionId: targetId, userId, role: normalizedRole, canCreateAssets: nextFlag });
-    if (targetType === 'asset') updateAssetShare({ assetId: targetId, userId, role: normalizedRole });
+
+    const res =
+      targetType === 'vault'
+        ? updateVaultShare({ vaultId: targetId, userId, role: normalizedRole, canCreateCollections: nextFlag })
+        : targetType === 'collection'
+          ? updateCollectionShare({ collectionId: targetId, userId, role: normalizedRole, canCreateAssets: nextFlag })
+          : targetType === 'asset'
+            ? updateAssetShare({ assetId: targetId, userId, role: normalizedRole })
+            : null;
+
+    if (res && res.ok === false) {
+      Alert.alert('Not allowed', res.message || 'You do not have permission to update sharing on this item.');
+    }
   };
 
   const handleRemove = (userId) => {
-    if (targetType === 'vault') removeVaultShare({ vaultId: targetId, userId });
-    if (targetType === 'collection') removeCollectionShare({ collectionId: targetId, userId });
-    if (targetType === 'asset') removeAssetShare({ assetId: targetId, userId });
+
+    const res =
+      targetType === 'vault'
+        ? removeVaultShare({ vaultId: targetId, userId })
+        : targetType === 'collection'
+          ? removeCollectionShare({ collectionId: targetId, userId })
+          : targetType === 'asset'
+            ? removeAssetShare({ assetId: targetId, userId })
+            : null;
+
+    if (res && res.ok === false) {
+      Alert.alert('Not allowed', res.message || 'You do not have permission to remove sharing on this item.');
+    }
   };
 
   return (

@@ -5,6 +5,7 @@ import { useData } from '../context/DataContext';
 import ShareModal from '../components/ShareModal';
 import LambHeader from '../components/LambHeader';
 import BackButton from '../components/BackButton';
+import { getCollectionCapabilities } from '../policies/capabilities';
 
 export default function Collection({ navigation, route }) {
   const { collectionId } = route.params || {};
@@ -45,14 +46,17 @@ export default function Collection({ navigation, route }) {
   const collection = useMemo(() => collections.find((c) => c.id === collectionId), [collectionId, collections]);
   const collectionAssets = useMemo(() => assets.filter((a) => a.collectionId === collectionId), [assets, collectionId]);
   const role = getRoleForCollection(collectionId, currentUser?.id);
-  const isOwner = role === 'owner';
   const accessType = collection?.ownerId === currentUser?.id
     ? 'Owner'
     : role
       ? `${role.charAt(0).toUpperCase()}${role.slice(1)}`
       : 'Shared';
   const canCreate = canCreateAssetsInCollection(collectionId, currentUser?.id);
-  const canMove = role === 'owner' || role === 'manager';
+  const caps = getCollectionCapabilities({ role, canCreateAssets: canCreate });
+  const canEdit = caps.canEdit;
+  const canMove = caps.canMove;
+  const canShare = caps.canShare;
+  const canDelete = caps.canDelete;
   const ownerVaults = vaults.filter(v => v.ownerId === collection?.ownerId);
   const collectionImages = collection?.images || [];
   const heroImage = collection?.heroImage || 'https://via.placeholder.com/900x600?text=Image';
@@ -188,6 +192,7 @@ export default function Collection({ navigation, route }) {
   };
 
   const openEditModal = () => {
+    if (!canEdit) return;
     if (!collection) return;
     setEditDraft({
       name: limit20(collection?.name || ''),
@@ -200,6 +205,7 @@ export default function Collection({ navigation, route }) {
   };
 
   const handleSaveDraft = () => {
+    if (!canEdit) return;
     if (!collection) return;
     const images = trimToFour(editDraft.images || []);
     const hero = ensureHero(images, editDraft.heroImage);
@@ -241,7 +247,7 @@ export default function Collection({ navigation, route }) {
           <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>{item.type || 'Asset'} • {new Date(item.createdAt).toLocaleDateString()}</Text>
         </View>
         <View style={styles.cardActions}>
-          {isOwner && (
+          {canShare && (
             <TouchableOpacity
               style={styles.sharePill}
               onPress={(e) => {
@@ -282,14 +288,22 @@ export default function Collection({ navigation, route }) {
         </TouchableOpacity>
       </View>
       <Text style={[styles.subtitleDim, { color: theme.textMuted }]}>Access Type: {accessType}</Text>
-      {isOwner && (
+      {(canEdit || canShare || canMove) && (
         <View style={styles.actionsRow}>
-          <TouchableOpacity style={[styles.primaryButton, styles.actionButton]} onPress={openEditModal}>
+          <TouchableOpacity
+            style={[styles.primaryButton, styles.actionButton, !canEdit && styles.buttonDisabled]}
+            disabled={!canEdit}
+            onPress={openEditModal}
+          >
             <Text style={styles.primaryButtonText}>Edit</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.shareButton, styles.actionButton]} onPress={() => openShare('collection', collectionId)}>
-            <Text style={styles.secondaryButtonText}>Share</Text>
-          </TouchableOpacity>
+          {canShare ? (
+            <TouchableOpacity style={[styles.shareButton, styles.actionButton]} onPress={() => openShare('collection', collectionId)}>
+              <Text style={styles.secondaryButtonText}>Share</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={[styles.actionButton, { opacity: 0 }]} pointerEvents="none" />
+          )}
           {canMove && (
             <TouchableOpacity
               style={[styles.moveButton, styles.actionButton]}
@@ -298,6 +312,7 @@ export default function Collection({ navigation, route }) {
               <Text style={styles.secondaryButtonText}>Move</Text>
             </TouchableOpacity>
           )}
+          {!canMove && <View style={[styles.actionButton, { opacity: 0 }]} pointerEvents="none" />}
         </View>
       )}
       <View style={[styles.mediaCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -331,6 +346,7 @@ export default function Collection({ navigation, route }) {
           placeholder="New asset title"
           placeholderTextColor={theme.placeholder}
           value={newTitle}
+          editable={canCreate}
           onChangeText={(text) => setNewTitle(limit20(text))}
         />
         <TouchableOpacity
@@ -448,9 +464,9 @@ export default function Collection({ navigation, route }) {
                 <View style={[styles.mediaCard, { marginTop: 12, backgroundColor: theme.surface, borderColor: theme.border }]}>
                   <View style={styles.mediaHeader}>
                     <Text style={[styles.sectionLabel, { color: theme.text }]}>Images</Text>
-                  <TouchableOpacity style={styles.addImageButton} onPress={addImagesToDraft}>
+                  <TouchableOpacity style={styles.addImageButton} disabled={!canEdit} onPress={addImagesToDraft}>
                     <Text style={styles.addImageButtonText}>{(editDraft.images || []).length ? 'Add more' : 'Add images'}</Text>
-                    </TouchableOpacity>
+                  </TouchableOpacity>
                   </View>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow}>
                     {draftPreviewImages.length === 0 ? (
@@ -466,11 +482,11 @@ export default function Collection({ navigation, route }) {
                               </View>
                             )}
                             <Image source={{ uri: img }} style={styles.thumb} />
-                            <TouchableOpacity style={styles.removeImageBtn} onPress={() => removeDraftImage(img)}>
+                            <TouchableOpacity style={styles.removeImageBtn} disabled={!canEdit} onPress={() => removeDraftImage(img)}>
                               <Text style={styles.removeImageBtnText}>✕</Text>
                             </TouchableOpacity>
                             {!isHeroImg && (
-                              <TouchableOpacity style={styles.makeHeroBtn} onPress={() => setDraftHero(img)}>
+                              <TouchableOpacity style={styles.makeHeroBtn} disabled={!canEdit} onPress={() => setDraftHero(img)}>
                                 <Text style={styles.makeHeroBtnText}>☆</Text>
                               </TouchableOpacity>
                             )}
@@ -485,10 +501,14 @@ export default function Collection({ navigation, route }) {
               <TouchableOpacity style={styles.secondaryButton} onPress={() => setEditVisible(false)}>
                 <Text style={styles.secondaryButtonText}>Close</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.primaryButton} onPress={handleSaveDraft}>
+              <TouchableOpacity
+                style={[styles.primaryButton, !canEdit && styles.buttonDisabled]}
+                disabled={!canEdit}
+                onPress={handleSaveDraft}
+              >
                 <Text style={styles.primaryButtonText}>Save</Text>
               </TouchableOpacity>
-              {isOwner && (
+              {canDelete && (
                 <TouchableOpacity
                   style={styles.dangerButton}
                   onPress={() => {

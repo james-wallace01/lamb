@@ -16,6 +16,7 @@ import { useData } from '../context/DataContext';
 import ShareModal from '../components/ShareModal';
 import LambHeader from '../components/LambHeader';
 import BackButton from '../components/BackButton';
+import { getAssetCapabilities } from '../policies/capabilities';
 
 function formatCurrency(val) {
   if (!val) return '';
@@ -103,9 +104,12 @@ export default function Asset({ route, navigation }) {
     : role
       ? `${role.charAt(0).toUpperCase()}${role.slice(1)}`
       : 'Shared';
-  const canEdit = role === 'owner' || role === 'editor' || role === 'manager';
-  const canMove = role === 'owner' || role === 'manager';
-  const canShare = role === 'owner' || role === 'manager';
+  const caps = getAssetCapabilities({ role });
+  const canEdit = caps.canEdit;
+  const canMove = caps.canMove;
+  const canShare = caps.canShare;
+  const canClone = caps.canClone;
+  const canDelete = caps.canDelete;
 
   const assetImages = asset?.images || [];
   const heroImage = asset?.heroImage || 'https://via.placeholder.com/900x600?text=Image';
@@ -478,7 +482,7 @@ export default function Asset({ route, navigation }) {
               >
                 <Text style={styles.primaryButtonText}>Save</Text>
               </TouchableOpacity>
-              {canEdit && (
+              {canDelete && (
                 <TouchableOpacity
                   style={styles.dangerButton}
                   onPress={() => {
@@ -565,7 +569,7 @@ export default function Asset({ route, navigation }) {
             </TouchableOpacity>
           )}
 
-          {canEdit && (
+          {canClone && (
             <TouchableOpacity style={[styles.cloneButton, styles.actionButton]} onPress={handleCloneAsset}>
               <Text style={styles.cloneButtonText}>Clone</Text>
             </TouchableOpacity>

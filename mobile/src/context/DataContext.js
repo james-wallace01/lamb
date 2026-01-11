@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import * as Random from 'expo-random';
 import * as SecureStore from 'expo-secure-store';
 import { DEFAULT_DARK_MODE_ENABLED, getTheme } from '../theme';
+import { getAssetCapabilities, getCollectionCapabilities, getVaultCapabilities } from '../policies/capabilities';
 
 // bcryptjs needs secure randomness for salts in React Native.
 // Expo Go doesn't provide WebCrypto by default, so use expo-random.
@@ -933,6 +934,12 @@ const register = async ({ firstName, lastName, email, username, password, subscr
     };
 
     const shareVault = ({ vaultId, userId, role = 'reviewer', canCreateCollections = false }) => {
+      if (!currentUser) return { ok: false, message: 'Not signed in' };
+      const caps = getVaultCapabilities({
+        role: getRoleForVault(vaultId, currentUser.id),
+        canCreateCollections: canCreateCollectionsInVault(vaultId, currentUser.id),
+      });
+      if (!caps.canShare) return { ok: false, message: 'No permission to share vaults' };
       setVaults(prev => prev.map(v => {
         if (v.id !== vaultId) return v;
         const sharedWith = v.sharedWith || [];
@@ -940,9 +947,16 @@ const register = async ({ firstName, lastName, email, username, password, subscr
         const normalizedRole = normalizeRole(role) || 'reviewer';
         return { ...v, sharedWith: [...sharedWith, { userId, role: normalizedRole, canCreateCollections }] };
       }));
+      return { ok: true };
     };
 
     const shareCollection = ({ collectionId, userId, role = 'reviewer', canCreateAssets = false }) => {
+      if (!currentUser) return { ok: false, message: 'Not signed in' };
+      const caps = getCollectionCapabilities({
+        role: getRoleForCollection(collectionId, currentUser.id),
+        canCreateAssets: canCreateAssetsInCollection(collectionId, currentUser.id),
+      });
+      if (!caps.canShare) return { ok: false, message: 'No permission to share collections' };
       setCollections(prev => prev.map(c => {
         if (c.id !== collectionId) return c;
         const sharedWith = c.sharedWith || [];
@@ -950,9 +964,13 @@ const register = async ({ firstName, lastName, email, username, password, subscr
         const normalizedRole = normalizeRole(role) || 'reviewer';
         return { ...c, sharedWith: [...sharedWith, { userId, role: normalizedRole, canCreateAssets }] };
       }));
+      return { ok: true };
     };
 
     const shareAsset = ({ assetId, userId, role = 'reviewer' }) => {
+      if (!currentUser) return { ok: false, message: 'Not signed in' };
+      const caps = getAssetCapabilities({ role: getRoleForAsset(assetId, currentUser.id) });
+      if (!caps.canShare) return { ok: false, message: 'No permission to share assets' };
       setAssets(prev => prev.map(a => {
         if (a.id !== assetId) return a;
         const sharedWith = a.sharedWith || [];
@@ -960,9 +978,16 @@ const register = async ({ firstName, lastName, email, username, password, subscr
         const normalizedRole = normalizeRole(role) || 'reviewer';
         return { ...a, sharedWith: [...sharedWith, { userId, role: normalizedRole }] };
       }));
+      return { ok: true };
     };
 
     const updateVaultShare = ({ vaultId, userId, role, canCreateCollections }) => {
+      if (!currentUser) return { ok: false, message: 'Not signed in' };
+      const caps = getVaultCapabilities({
+        role: getRoleForVault(vaultId, currentUser.id),
+        canCreateCollections: canCreateCollectionsInVault(vaultId, currentUser.id),
+      });
+      if (!caps.canShare) return { ok: false, message: 'No permission to share vaults' };
       setVaults(prev => prev.map(v => {
         if (v.id !== vaultId) return v;
         const sharedWith = (v.sharedWith || []).map(s => {
@@ -976,9 +1001,16 @@ const register = async ({ firstName, lastName, email, username, password, subscr
         });
         return { ...v, sharedWith };
       }));
+      return { ok: true };
     };
 
     const updateCollectionShare = ({ collectionId, userId, role, canCreateAssets }) => {
+      if (!currentUser) return { ok: false, message: 'Not signed in' };
+      const caps = getCollectionCapabilities({
+        role: getRoleForCollection(collectionId, currentUser.id),
+        canCreateAssets: canCreateAssetsInCollection(collectionId, currentUser.id),
+      });
+      if (!caps.canShare) return { ok: false, message: 'No permission to share collections' };
       setCollections(prev => prev.map(c => {
         if (c.id !== collectionId) return c;
         const sharedWith = (c.sharedWith || []).map(s => {
@@ -992,9 +1024,13 @@ const register = async ({ firstName, lastName, email, username, password, subscr
         });
         return { ...c, sharedWith };
       }));
+      return { ok: true };
     };
 
     const updateAssetShare = ({ assetId, userId, role }) => {
+      if (!currentUser) return { ok: false, message: 'Not signed in' };
+      const caps = getAssetCapabilities({ role: getRoleForAsset(assetId, currentUser.id) });
+      if (!caps.canShare) return { ok: false, message: 'No permission to share assets' };
       setAssets(prev => prev.map(a => {
         if (a.id !== assetId) return a;
         const sharedWith = (a.sharedWith || []).map(s => {
@@ -1004,57 +1040,123 @@ const register = async ({ firstName, lastName, email, username, password, subscr
         });
         return { ...a, sharedWith };
       }));
+      return { ok: true };
     };
 
     const removeVaultShare = ({ vaultId, userId }) => {
+      if (!currentUser) return { ok: false, message: 'Not signed in' };
+      const caps = getVaultCapabilities({
+        role: getRoleForVault(vaultId, currentUser.id),
+        canCreateCollections: canCreateCollectionsInVault(vaultId, currentUser.id),
+      });
+      if (!caps.canShare) return { ok: false, message: 'No permission to share vaults' };
       setVaults(prev => prev.map(v => v.id === vaultId ? { ...v, sharedWith: (v.sharedWith || []).filter(s => s.userId !== userId) } : v));
+      return { ok: true };
     };
 
     const removeCollectionShare = ({ collectionId, userId }) => {
+      if (!currentUser) return { ok: false, message: 'Not signed in' };
+      const caps = getCollectionCapabilities({
+        role: getRoleForCollection(collectionId, currentUser.id),
+        canCreateAssets: canCreateAssetsInCollection(collectionId, currentUser.id),
+      });
+      if (!caps.canShare) return { ok: false, message: 'No permission to share collections' };
       setCollections(prev => prev.map(c => c.id === collectionId ? { ...c, sharedWith: (c.sharedWith || []).filter(s => s.userId !== userId) } : c));
+      return { ok: true };
     };
 
     const removeAssetShare = ({ assetId, userId }) => {
+      if (!currentUser) return { ok: false, message: 'Not signed in' };
+      const caps = getAssetCapabilities({ role: getRoleForAsset(assetId, currentUser.id) });
+      if (!caps.canShare) return { ok: false, message: 'No permission to share assets' };
       setAssets(prev => prev.map(a => a.id === assetId ? { ...a, sharedWith: (a.sharedWith || []).filter(s => s.userId !== userId) } : a));
+      return { ok: true };
     };
 
   const updateVault = (vaultId, patch) => {
+    if (!currentUser) return { ok: false, message: 'Not signed in' };
+    const caps = getVaultCapabilities({
+      role: getRoleForVault(vaultId, currentUser.id),
+      canCreateCollections: canCreateCollectionsInVault(vaultId, currentUser.id),
+    });
+    if (!caps.canEdit) return { ok: false, message: 'No permission to edit vault' };
     const editedAt = Date.now();
     setVaults(prev => prev.map(v => v.id === vaultId ? withMedia({ ...v, ...patch, editedAt }) : v));
+    return { ok: true };
   };
 
   const updateCollection = (collectionId, patch) => {
+    if (!currentUser) return { ok: false, message: 'Not signed in' };
+    const caps = getCollectionCapabilities({
+      role: getRoleForCollection(collectionId, currentUser.id),
+      canCreateAssets: canCreateAssetsInCollection(collectionId, currentUser.id),
+    });
+    if (!caps.canEdit) return { ok: false, message: 'No permission to edit collection' };
     const editedAt = Date.now();
     setCollections(prev => prev.map(c => c.id === collectionId ? withMedia({ ...c, ...patch, editedAt }) : c));
+    return { ok: true };
   };
 
   const updateAsset = (assetId, patch) => {
+    if (!currentUser) return { ok: false, message: 'Not signed in' };
+    const caps = getAssetCapabilities({ role: getRoleForAsset(assetId, currentUser.id) });
+    if (!caps.canEdit) return { ok: false, message: 'No permission to edit asset' };
     const editedAt = Date.now();
     setAssets(prev => prev.map(a => a.id === assetId ? withMedia({ ...a, ...patch, editedAt }) : a));
+    return { ok: true };
   };
 
   const moveCollection = ({ collectionId, targetVaultId }) => {
+    if (!currentUser) return { ok: false, message: 'Not signed in' };
+    const caps = getCollectionCapabilities({
+      role: getRoleForCollection(collectionId, currentUser.id),
+      canCreateAssets: canCreateAssetsInCollection(collectionId, currentUser.id),
+    });
+    if (!caps.canMove) return { ok: false, message: 'No permission to move collection' };
     setCollections(prev => prev.map(c => c.id === collectionId ? { ...c, vaultId: targetVaultId } : c));
     setAssets(prev => prev.map(a => a.collectionId && a.collectionId === collectionId ? { ...a, vaultId: targetVaultId } : a));
+    return { ok: true };
   };
 
   const moveAsset = ({ assetId, targetVaultId, targetCollectionId }) => {
+    if (!currentUser) return { ok: false, message: 'Not signed in' };
+    const caps = getAssetCapabilities({ role: getRoleForAsset(assetId, currentUser.id) });
+    if (!caps.canMove) return { ok: false, message: 'No permission to move asset' };
     setAssets(prev => prev.map(a => a.id === assetId ? { ...a, vaultId: targetVaultId, collectionId: targetCollectionId } : a));
+    return { ok: true };
   };
 
   const deleteVault = (vaultId) => {
+    if (!currentUser) return { ok: false, message: 'Not signed in' };
+    const caps = getVaultCapabilities({
+      role: getRoleForVault(vaultId, currentUser.id),
+      canCreateCollections: canCreateCollectionsInVault(vaultId, currentUser.id),
+    });
+    if (!caps.canDelete) return { ok: false, message: 'No permission to delete vault' };
     setVaults(prev => prev.filter(v => v.id !== vaultId));
     setCollections(prev => prev.filter(c => c.vaultId !== vaultId));
     setAssets(prev => prev.filter(a => a.vaultId !== vaultId));
+    return { ok: true };
   };
 
   const deleteCollection = (collectionId) => {
+    if (!currentUser) return { ok: false, message: 'Not signed in' };
+    const caps = getCollectionCapabilities({
+      role: getRoleForCollection(collectionId, currentUser.id),
+      canCreateAssets: canCreateAssetsInCollection(collectionId, currentUser.id),
+    });
+    if (!caps.canDelete) return { ok: false, message: 'No permission to delete collection' };
     setCollections(prev => prev.filter(c => c.id !== collectionId));
     setAssets(prev => prev.filter(a => a.collectionId !== collectionId));
+    return { ok: true };
   };
 
   const deleteAsset = (assetId) => {
+    if (!currentUser) return { ok: false, message: 'Not signed in' };
+    const caps = getAssetCapabilities({ role: getRoleForAsset(assetId, currentUser.id) });
+    if (!caps.canDelete) return { ok: false, message: 'No permission to delete asset' };
     setAssets(prev => prev.filter(a => a.id !== assetId));
+    return { ok: true };
   };
 
   const getRoleForVault = (vaultId, userId) => {
