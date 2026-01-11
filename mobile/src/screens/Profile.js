@@ -5,13 +5,24 @@ import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
 import BackButton from '../components/BackButton';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
+import ShareModal from '../components/ShareModal';
 
-const DEFAULT_AVATAR = 'https://via.placeholder.com/112?text=Profile';
+const getInitials = (user) => {
+  const first = (user?.firstName || '').toString().trim();
+  const last = (user?.lastName || '').toString().trim();
+  const a = first ? first[0] : '';
+  const b = last ? last[0] : '';
+  const initials = `${a}${b}`.toUpperCase();
+  return initials || '?';
+};
 
 export default function Profile() {
   const {
     currentUser,
     updateCurrentUser,
+    resetAllData,
+    vaults,
+    collections,
     assets,
     validatePassword,
     resetPassword,
@@ -20,6 +31,7 @@ export default function Profile() {
     theme,
     isDarkMode,
     setDarkModeEnabled,
+    membershipAccess,
     biometricEnabledForCurrentUser,
     enableBiometricSignInForCurrentUser,
     disableBiometricSignIn,
@@ -39,6 +51,8 @@ export default function Profile() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  const [shareTarget, setShareTarget] = useState(null);
 
   const openLegalLink = (url) => {
     Linking.openURL(url).catch(() => {});
@@ -71,13 +85,15 @@ export default function Profile() {
   const handleSave = () => {
     if (!currentUser) return;
     setLoading(true);
-    const result = updateCurrentUser({
+    const patch = {
       firstName: draft.firstName || '',
       lastName: draft.lastName || '',
       email: draft.email || '',
       username: draft.username || '',
-      profileImage: draft.profileImage || currentUser.profileImage || DEFAULT_AVATAR,
-    });
+    };
+    // Only set profileImage when the user explicitly selected one.
+    if (draft.profileImage) patch.profileImage = draft.profileImage;
+    const result = updateCurrentUser(patch);
     setLoading(false);
     if (!result.ok) {
       Alert.alert(result.message || 'Could not save');
@@ -85,6 +101,20 @@ export default function Profile() {
     }
     Alert.alert('Profile updated');
   };
+
+  const ownedVaultsShared = useMemo(
+    () => (vaults || []).filter((v) => v?.ownerId === currentUser?.id && (v.sharedWith || []).length > 0),
+    [vaults, currentUser?.id]
+  );
+  const ownedCollectionsShared = useMemo(
+    () => (collections || []).filter((c) => c?.ownerId === currentUser?.id && (c.sharedWith || []).length > 0),
+    [collections, currentUser?.id]
+  );
+  const ownedAssetsShared = useMemo(
+    () => (assets || []).filter((a) => a?.ownerId === currentUser?.id && (a.sharedWith || []).length > 0),
+    [assets, currentUser?.id]
+  );
+  const anyShares = ownedVaultsShared.length + ownedCollectionsShared.length + ownedAssetsShared.length > 0;
 
   const handleProfilePictureChange = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -294,7 +324,30 @@ export default function Profile() {
     );
   };
 
+  const handleResetTestData = () => {
+    Alert.alert(
+      'Clear all local data',
+      'This removes all local users, profiles, subscriptions, vaults, and assets from this device. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            const res = await resetAllData?.();
+            if (!res?.ok) {
+              Alert.alert('Could not clear data', res?.message || 'Please try again');
+              return;
+            }
+            Alert.alert('Cleared', 'All local test data has been removed.');
+          },
+        },
+      ]
+    );
+  };
+
   return (
+    <>
     <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
       <ScrollView
         contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
@@ -333,10 +386,27 @@ export default function Profile() {
           <>
             <View style={styles.avatarContainer}>
               <TouchableOpacity onPress={handleProfilePictureChange} activeOpacity={0.8}>
-                <Image
-                  source={{ uri: draft.profileImage || currentUser.profileImage || DEFAULT_AVATAR }}
-                  style={styles.avatar}
-                />
+                {!avatarFailed && (draft.profileImage || currentUser.profileImage) ? (
+                  <Image
+                    source={{ uri: draft.profileImage || currentUser.profileImage }}
+                    style={styles.avatar}
+                    onError={() => setAvatarFailed(true)}
+                  />
+                ) : (
+                  <View
+                    style={[
+                      styles.avatar,
+                      {
+                        backgroundColor: theme.primary,
+                        borderColor: theme.primary,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      },
+                    ]}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 34, fontWeight: '800' }}>{getInitials(draft)}</Text>
+                  </View>
+                )}
                 <View style={styles.cameraBadge}>
                   <Text style={styles.cameraText}>📷</Text>
                 </View>
@@ -558,6 +628,60 @@ export default function Profile() {
               <TouchableOpacity style={[styles.button, styles.deleteButton]} onPress={handleDeleteAccount}>
                 <Text style={[styles.buttonText, styles.deleteButtonText]}>Delete Account</Text>
               </TouchableOpacity>
+
+              <TouchableOpacity style={[styles.button, styles.deleteButton]} onPress={handleResetTestData}>
+                <Text style={[styles.buttonText, styles.deleteButtonText]}>Clear All Local Test Data</Text>
+              </TouchableOpacity>
+            </View>
+
+            {!membershipAccess && (
+              <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Membership required</Text>
+                <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Only Profile and Membership are available until you renew.</Text>
+              </View>
+            )}
+
+            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Sharing</Text>
+              {!anyShares ? (
+                <Text style={[styles.subtitle, { color: theme.textSecondary }]}>You haven’t shared anything.</Text>
+              ) : (
+                <>
+                  {!membershipAccess && (
+                    <Text style={[styles.subtitle, { color: theme.textSecondary }]}>You can revoke access to items you previously shared.</Text>
+                  )}
+                  {ownedVaultsShared.map((v) => (
+                    <TouchableOpacity
+                      key={`vault-${v.id}`}
+                      style={[styles.shareRow, { borderTopColor: theme.border }]}
+                      onPress={() => setShareTarget({ targetType: 'vault', targetId: v.id })}
+                    >
+                      <Text style={[styles.shareRowTitle, { color: theme.text }]}>{v.name || 'Vault'}</Text>
+                      <Text style={[styles.shareRowMeta, { color: theme.textMuted }]}>Vault • {(v.sharedWith || []).length} shared</Text>
+                    </TouchableOpacity>
+                  ))}
+                  {ownedCollectionsShared.map((c) => (
+                    <TouchableOpacity
+                      key={`collection-${c.id}`}
+                      style={[styles.shareRow, { borderTopColor: theme.border }]}
+                      onPress={() => setShareTarget({ targetType: 'collection', targetId: c.id })}
+                    >
+                      <Text style={[styles.shareRowTitle, { color: theme.text }]}>{c.name || 'Collection'}</Text>
+                      <Text style={[styles.shareRowMeta, { color: theme.textMuted }]}>Collection • {(c.sharedWith || []).length} shared</Text>
+                    </TouchableOpacity>
+                  ))}
+                  {ownedAssetsShared.map((a) => (
+                    <TouchableOpacity
+                      key={`asset-${a.id}`}
+                      style={[styles.shareRow, { borderTopColor: theme.border }]}
+                      onPress={() => setShareTarget({ targetType: 'asset', targetId: a.id })}
+                    >
+                      <Text style={[styles.shareRowTitle, { color: theme.text }]}>{a.title || 'Asset'}</Text>
+                      <Text style={[styles.shareRowMeta, { color: theme.textMuted }]}>Asset • {(a.sharedWith || []).length} shared</Text>
+                    </TouchableOpacity>
+                  ))}
+                </>
+              )}
             </View>
 
             <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
@@ -581,6 +705,13 @@ export default function Profile() {
         <View style={styles.spacer} />
       </ScrollView>
     </View>
+    <ShareModal
+      visible={!!shareTarget}
+      onClose={() => setShareTarget(null)}
+      targetType={shareTarget?.targetType}
+      targetId={shareTarget?.targetId}
+    />
+    </>
   );
 }
 
@@ -620,6 +751,9 @@ const styles = StyleSheet.create({
   toggleSubtitle: { color: '#9aa1b5', fontSize: 12, marginTop: 2, lineHeight: 16 },
   deleteButton: { backgroundColor: '#3b0f0f', borderColor: '#ef4444', borderWidth: 1 },
   deleteButtonText: { color: '#fecaca' },
+  shareRow: { paddingVertical: 10, borderTopWidth: 1 },
+  shareRowTitle: { fontWeight: '700' },
+  shareRowMeta: { marginTop: 2, fontSize: 12 },
   legalRow: { paddingVertical: 6 },
   legalLink: { color: '#9ab6ff', fontWeight: '600' },
   spacer: { height: 40 },

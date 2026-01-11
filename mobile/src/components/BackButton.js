@@ -12,6 +12,14 @@ export default function BackButton({ style }) {
   const handlePress = () => {
     if (navigation.canGoBack()) {
       navigation.goBack();
+      return;
+    }
+
+    const state = navigation.getState?.();
+    const initialRouteName = state?.routeNames?.[0];
+    const currentRouteName = state?.routes?.[state?.index]?.name;
+    if (initialRouteName && currentRouteName && initialRouteName !== currentRouteName && navigation.reset) {
+      navigation.reset({ index: 0, routes: [{ name: initialRouteName }] });
     }
   };
 

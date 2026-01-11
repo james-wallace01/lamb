@@ -6,7 +6,7 @@ import LambHeader from '../components/LambHeader';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 
 export default function SignUp({ navigation }) {
-  const { register, loading, users, theme } = useData();
+  const { register, loading, theme, resetAllData } = useData();
   const insets = useSafeAreaInsets();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -33,17 +33,10 @@ export default function SignUp({ navigation }) {
   // Email validation regex
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  // Check for duplicate username
-  const usernameTaken = useMemo(() => 
-    username.trim().length > 0 && users.some(u => u.username === username.trim()),
-    [username, users]
-  );
-
-  // Check for duplicate email
-  const emailTaken = useMemo(() => 
-    email.trim().length > 0 && users.some(u => (u.email || '').toLowerCase() === email.trim().toLowerCase()),
-    [email, users]
-  );
+  // NOTE: With Firebase auth enabled, local cached users can be stale.
+  // Do not block signup based on local duplicates.
+  const usernameTaken = false;
+  const emailTaken = false;
 
   // Validate email format
   const emailInvalid = useMemo(() => 
@@ -65,16 +58,6 @@ export default function SignUp({ navigation }) {
       return;
     }
 
-    if (emailTaken) {
-      Alert.alert('Email taken', 'This email is already in use');
-      return;
-    }
-
-    if (usernameTaken) {
-      Alert.alert('Username taken', 'This username is already taken');
-      return;
-    }
-
     if (passwordInvalid) {
       Alert.alert('Weak password', 'Use 12+ characters with a letter, number, and symbol. Avoid your username/email.');
       return;
@@ -92,6 +75,33 @@ export default function SignUp({ navigation }) {
 
   const openLegalLink = (url) => {
     Linking.openURL(url).catch(() => {});
+  };
+
+  const handleClearLocalData = () => {
+    Alert.alert(
+      'Clear Local Data',
+      'This removes all locally stored accounts and content on this device. Remote accounts are not affected.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await resetAllData?.();
+              setFirstName('');
+              setLastName('');
+              setEmail('');
+              setUsername('');
+              setPassword('');
+              Alert.alert('Cleared', 'Local data has been cleared.');
+            } catch {
+              Alert.alert('Error', 'Could not clear local data.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const footerSpacer = 72 + (insets?.bottom || 0);
@@ -170,6 +180,10 @@ export default function SignUp({ navigation }) {
       
       <TouchableOpacity onPress={() => navigation.navigate('SignIn')}>
         <Text style={[styles.link, { color: theme.link }]}>Have an account? Sign in</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity onPress={handleClearLocalData} disabled={loading}>
+        <Text style={[styles.link, { color: theme.textSecondary, marginTop: 8, marginBottom: 24 }]}>Clear local data</Text>
       </TouchableOpacity>
 
       <View style={[styles.legalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 

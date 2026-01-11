@@ -7,7 +7,7 @@ import { useData } from '../context/DataContext';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 
 export default function Membership() {
-  const { refreshData, theme } = useData();
+  const { refreshData, syncSubscriptionFromServer, theme } = useData();
   const [refreshing, setRefreshing] = useState(false);
 
   const openLegalLink = (url) => {
@@ -19,6 +19,7 @@ export default function Membership() {
     setRefreshing(true);
     const startedAt = Date.now();
     try {
+      await syncSubscriptionFromServer?.();
       await refreshData?.();
     } finally {
       const elapsed = Date.now() - startedAt;

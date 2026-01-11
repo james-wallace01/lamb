@@ -9,7 +9,7 @@ import { getVaultCapabilities } from '../policies/capabilities';
 
 export default function Vault({ navigation, route }) {
   const { vaultId } = route.params || {};
-  const { loading, vaults, collections, addCollection, currentUser, getRoleForVault, canCreateCollectionsInVault, users, deleteVault, updateVault, refreshData, theme } = useData();
+  const { loading, vaults, collections, addCollection, currentUser, getRoleForVault, canCreateCollectionsInVault, users, deleteVault, updateVault, refreshData, theme, defaultHeroImage } = useData();
   const [newName, setNewName] = useState('');
   const [shareVisible, setShareVisible] = useState(false);
   const [shareTargetType, setShareTargetType] = useState(null);
@@ -35,14 +35,14 @@ export default function Vault({ navigation, route }) {
       setRefreshing(false);
     }
   };
-  const draftPreviewImages = editDraft.heroImage
+  const draftPreviewImages = editDraft.heroImage && (editDraft.images || []).includes(editDraft.heroImage)
     ? [editDraft.heroImage, ...(editDraft.images || []).filter((img) => img !== editDraft.heroImage)]
     : editDraft.images || [];
   const limit20 = (value = '') => value.slice(0, 20);
+  const limit35 = (value = '') => String(value).slice(0, 35);
 
   const MAX_IMAGE_BYTES = 30 * 1024 * 1024;
   const MAX_IMAGES = 4;
-  const DEFAULT_MEDIA_IMAGE = 'https://via.placeholder.com/900x600?text=Image';
   const mediaTypes = ImagePicker.MediaType?.Images || ImagePicker.MediaTypeOptions.Images;
   const trimToFour = (arr = []) => arr.filter(Boolean).slice(0, MAX_IMAGES);
 
@@ -60,12 +60,15 @@ export default function Vault({ navigation, route }) {
   const canShare = caps.canShare;
   const canDelete = caps.canDelete;
   const vaultImages = vault?.images || [];
-  const heroImage = vault?.heroImage || DEFAULT_MEDIA_IMAGE;
-  const previewImages = heroImage ? [heroImage, ...vaultImages.filter((img) => img !== heroImage)] : vaultImages;
+  const storedHeroImage = vault?.heroImage || null;
+  const heroImage = storedHeroImage || defaultHeroImage;
+  const previewImages = heroImage ? [heroImage, ...vaultImages.filter((img) => img !== storedHeroImage)] : vaultImages;
+
+  const toImageSource = (value) => (typeof value === 'number' ? value : { uri: value });
 
   const ensureHero = (images, currentHero) => {
     if (currentHero && images.includes(currentHero)) return currentHero;
-    return images[0] || DEFAULT_MEDIA_IMAGE;
+    return images[0] || null;
   };
 
   useEffect(() => {
@@ -74,9 +77,9 @@ export default function Vault({ navigation, route }) {
       description: vault?.description || '',
       manager: vault?.manager || '',
       images: trimToFour(vaultImages),
-      heroImage: ensureHero(vaultImages, heroImage),
+      heroImage: ensureHero(vaultImages, storedHeroImage),
     });
-  }, [vaultId, vault?.name, vault?.description, vault?.manager, heroImage, vaultImages.join(',')]);
+  }, [vaultId, vault?.name, vault?.description, vault?.manager, storedHeroImage, vaultImages.join(',')]);
 
   const handleAddImages = async () => {
     if (!vault) return;
@@ -207,7 +210,7 @@ export default function Vault({ navigation, route }) {
     const images = trimToFour(editDraft.images || []);
     const hero = ensureHero(images, editDraft.heroImage);
     updateVault(vaultId, {
-      name: limit20((editDraft.name || '').trim() || vault.name || ''),
+      name: limit35((editDraft.name || '').trim() || vault.name || ''),
       description: (editDraft.description || '').trim(),
       manager: (editDraft.manager || '').trim(),
       images,
@@ -270,7 +273,7 @@ export default function Vault({ navigation, route }) {
                     placeholder="Vault title"
                     placeholderTextColor={theme.placeholder}
                     value={editDraft.name}
-                    onChangeText={(name) => setEditDraft((prev) => ({ ...prev, name: limit20(name || '') }))}
+                    onChangeText={(name) => setEditDraft((prev) => ({ ...prev, name: limit35(name || '') }))}
                   />
 
                   <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Manager</Text>
@@ -301,7 +304,7 @@ export default function Vault({ navigation, route }) {
                       </View>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow}>
                         {draftPreviewImages.length === 0 ? (
-                          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No images yet.</Text>
+                          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No images yet. A default hero image will be used.</Text>
                         ) : (
                           draftPreviewImages.map((img) => {
                             const isHeroImg = editDraft.heroImage === img;
@@ -312,7 +315,7 @@ export default function Vault({ navigation, route }) {
                                     <Text style={styles.heroBadgeText}>★</Text>
                                   </View>
                                 )}
-                                <Image source={{ uri: img }} style={styles.thumb} />
+                                <Image source={toImageSource(img)} style={styles.thumb} />
                                 <TouchableOpacity style={styles.removeImageBtn} onPress={() => removeDraftImage(img)}>
                                   <Text style={styles.removeImageBtnText}>✕</Text>
                                 </TouchableOpacity>
@@ -389,53 +392,53 @@ export default function Vault({ navigation, route }) {
                       </TouchableOpacity>
                     </View>
                     <Text style={[styles.subtitleDim, { color: theme.textMuted }]}>Access Type: {accessType}</Text>
-                  </View>
 
-                  {(canEdit || canShare) && (
-                    <View style={styles.actionsRow}>
-                      <TouchableOpacity
-                        style={[styles.primaryButton, styles.actionButton, !canEdit && styles.buttonDisabled]}
-                        disabled={!canEdit}
-                        onPress={openEditModal}
-                      >
-                        <Text style={styles.primaryButtonText}>Edit</Text>
-                      </TouchableOpacity>
-                      {canShare ? (
-                        <TouchableOpacity style={[styles.shareButton, styles.actionButton]} onPress={() => openShare('vault', vaultId)}>
-                          <Text style={styles.secondaryButtonText}>Share</Text>
+                    {(canEdit || canShare) && (
+                      <View style={styles.actionsRow}>
+                        <TouchableOpacity
+                          style={[styles.primaryButton, styles.actionButton, !canEdit && styles.buttonDisabled]}
+                          disabled={!canEdit}
+                          onPress={openEditModal}
+                        >
+                          <Text style={styles.primaryButtonText}>Edit</Text>
                         </TouchableOpacity>
-                      ) : (
+                        {canShare ? (
+                          <TouchableOpacity style={[styles.shareButton, styles.actionButton]} onPress={() => openShare('vault', vaultId)}>
+                            <Text style={styles.secondaryButtonText}>Share</Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <View style={[styles.actionButton, { opacity: 0 }]} pointerEvents="none" />
+                        )}
                         <View style={[styles.actionButton, { opacity: 0 }]} pointerEvents="none" />
-                      )}
-                      <View style={[styles.actionButton, { opacity: 0 }]} pointerEvents="none" />
-                    </View>
-                  )}
+                      </View>
+                    )}
 
-                  <View style={[styles.mediaCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                    <View style={styles.mediaHeader}>
-                      <Text style={[styles.sectionLabel, { color: theme.text }]}>
-                        Images
-                      </Text>
+                    <View style={[styles.mediaCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+                      <View style={styles.mediaHeader}>
+                        <Text style={[styles.sectionLabel, { color: theme.text }]}> 
+                          Images
+                        </Text>
+                      </View>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow}>
+                        {previewImages.length === 0 ? (
+                          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No images yet. A default hero image will be used.</Text>
+                        ) : (
+                          previewImages.map((img) => {
+                            const isHeroImg = heroImage === img;
+                            return (
+                              <TouchableOpacity key={img} style={[styles.thumbCard, isHeroImg && styles.heroThumbCard]} onPress={() => setPreviewImage(img)}>
+                                {isHeroImg && (
+                                  <View style={styles.heroBadge}>
+                                    <Text style={styles.heroBadgeText}>★</Text>
+                                  </View>
+                                )}
+                                <Image source={toImageSource(img)} style={styles.thumb} />
+                              </TouchableOpacity>
+                            );
+                          })
+                        )}
+                      </ScrollView>
                     </View>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow}>
-                      {previewImages.length === 0 ? (
-                        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No images yet.</Text>
-                      ) : (
-                        previewImages.map((img) => {
-                          const isHeroImg = heroImage === img;
-                          return (
-                            <TouchableOpacity key={img} style={[styles.thumbCard, isHeroImg && styles.heroThumbCard]} onPress={() => setPreviewImage(img)}>
-                              {isHeroImg && (
-                                <View style={styles.heroBadge}>
-                                  <Text style={styles.heroBadgeText}>★</Text>
-                                </View>
-                              )}
-                              <Image source={{ uri: img }} style={styles.thumb} />
-                            </TouchableOpacity>
-                          );
-                        })
-                      )}
-                    </ScrollView>
                   </View>
 
                   <View style={styles.divider} />
@@ -446,7 +449,7 @@ export default function Vault({ navigation, route }) {
                       placeholderTextColor={theme.placeholder}
                       value={newName}
                       editable={canCreate}
-                      onChangeText={(text) => setNewName(limit20(text || ''))}
+                      onChangeText={(text) => setNewName(limit35(text || ''))}
                     />
                     <TouchableOpacity
                       style={[styles.addButton, !canCreate && styles.buttonDisabled]}
@@ -507,7 +510,7 @@ export default function Vault({ navigation, route }) {
         <View style={styles.modalOverlay}>
           <TouchableOpacity style={[styles.modalCard, { padding: 0 }]} activeOpacity={1} onPress={() => setPreviewImage(null)}>
             {previewImage ? (
-              <Image source={{ uri: previewImage }} style={{ width: '100%', height: 360, borderRadius: 12 }} resizeMode="contain" />
+              <Image source={toImageSource(previewImage)} style={{ width: '100%', height: 360, borderRadius: 12 }} resizeMode="contain" />
             ) : null}
           </TouchableOpacity>
         </View>
@@ -559,7 +562,7 @@ const styles = StyleSheet.create({
   sharedDotOff: { backgroundColor: '#475569', borderColor: '#475569' },
   chevron: { color: '#9aa1b5', fontSize: 20, fontWeight: '700' },
   actionsRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  actionButton: { flexGrow: 1, flexBasis: '24%', minWidth: '22%', minHeight: 44, justifyContent: 'center' },
+  actionButton: { flexGrow: 1, flexBasis: '24%', minWidth: '22%' },
   sharePill: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 20, backgroundColor: '#22c55e', borderWidth: 2, borderColor: '#16a34a' },
   sharePillText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   primaryButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#2563eb' },

@@ -10,10 +10,18 @@ export default function LambHeader({ style }) {
   const { theme } = useData();
   
   const handlePress = () => {
-    try {
+    const state = navigation.getState?.();
+    const initialRouteName = state?.routeNames?.[0];
+    const routeNames = state?.routeNames || [];
+
+    if (routeNames.includes('Home')) {
       navigation.navigate('Home');
-    } catch (e) {
-      console.log('Cannot navigate to Home');
+      return;
+    }
+
+    // Auth stack doesn't have Home; treat its first screen as "home".
+    if (initialRouteName && navigation.reset) {
+      navigation.reset({ index: 0, routes: [{ name: initialRouteName }] });
     }
   };
 

@@ -46,6 +46,7 @@ export default function Asset({ route, navigation }) {
     deleteAsset,
     refreshData,
     theme,
+    defaultHeroImage,
   } = useData();
 
   const asset = useMemo(() => assets.find((a) => a.id === assetId), [assetId, assets]);
@@ -93,11 +94,11 @@ export default function Asset({ route, navigation }) {
   });
   const [previewImage, setPreviewImage] = useState(null);
 
-  const draftPreviewImages = editDraft.heroImage
+  const draftPreviewImages = editDraft.heroImage && (editDraft.images || []).includes(editDraft.heroImage)
     ? [editDraft.heroImage, ...(editDraft.images || []).filter((img) => img !== editDraft.heroImage)]
     : editDraft.images || [];
 
-  const limit20 = (value = '') => value.slice(0, 20);
+  const limit35 = (value = '') => String(value).slice(0, 35);
   const role = getRoleForAsset(assetId, currentUser?.id);
   const accessType = asset?.ownerId === currentUser?.id
     ? 'Owner'
@@ -112,8 +113,11 @@ export default function Asset({ route, navigation }) {
   const canDelete = caps.canDelete;
 
   const assetImages = asset?.images || [];
-  const heroImage = asset?.heroImage || 'https://via.placeholder.com/900x600?text=Image';
-  const previewImages = heroImage ? [heroImage, ...assetImages.filter((img) => img !== heroImage)] : assetImages;
+  const storedHeroImage = asset?.heroImage || null;
+  const heroImage = storedHeroImage || defaultHeroImage;
+  const previewImages = heroImage ? [heroImage, ...assetImages.filter((img) => img !== storedHeroImage)] : assetImages;
+
+  const toImageSource = (value) => (typeof value === 'number' ? value : { uri: value });
 
   const MAX_IMAGE_BYTES = 30 * 1024 * 1024;
   const MAX_IMAGES = 4;
@@ -122,13 +126,13 @@ export default function Asset({ route, navigation }) {
 
   const ensureHero = (images, currentHero) => {
     if (currentHero && images.includes(currentHero)) return currentHero;
-    return images[0] || 'https://via.placeholder.com/900x600?text=Image';
+    return images[0] || null;
   };
 
   useEffect(() => {
     if (!asset) return;
     setEditDraft({
-      title: limit20(asset.title || ''),
+      title: limit35(asset.title || ''),
       type: asset.type || '',
       category: asset.category || '',
       quantity: asset.quantity ?? 1,
@@ -139,7 +143,7 @@ export default function Asset({ route, navigation }) {
       manager: asset.manager || '',
       description: asset.description || '',
       images: trimToFour(assetImages),
-      heroImage: ensureHero(assetImages, heroImage),
+      heroImage: ensureHero(assetImages, storedHeroImage),
     });
   }, [
     assetId,
@@ -153,7 +157,7 @@ export default function Asset({ route, navigation }) {
     asset?.purchasePrice,
     asset?.manager,
     asset?.description,
-    heroImage,
+    storedHeroImage,
     assetImages.join(','),
   ]);
 
@@ -216,7 +220,7 @@ export default function Asset({ route, navigation }) {
   const openEditModal = () => {
     if (!asset) return;
     setEditDraft({
-      title: limit20(asset.title || ''),
+      title: limit35(asset.title || ''),
       type: asset.type || '',
       category: asset.category || '',
       quantity: asset.quantity ?? 1,
@@ -227,7 +231,7 @@ export default function Asset({ route, navigation }) {
       manager: asset.manager || '',
       description: asset.description || '',
       images: trimToFour(assetImages),
-      heroImage: ensureHero(assetImages, heroImage),
+      heroImage: ensureHero(assetImages, storedHeroImage),
     });
     setEditVisible(true);
   };
@@ -236,7 +240,7 @@ export default function Asset({ route, navigation }) {
     if (!canEdit || !asset) return;
     const images = trimToFour(editDraft.images || []);
     const hero = ensureHero(images, editDraft.heroImage);
-    const title = limit20(editDraft.title || 'Untitled');
+    const title = limit35(editDraft.title || 'Untitled');
 
     updateAsset(asset.id, {
       title,
@@ -319,7 +323,7 @@ export default function Asset({ route, navigation }) {
                 placeholder="Title"
                 placeholderTextColor={theme.placeholder}
                 value={editDraft.title}
-                onChangeText={(title) => setEditDraft((prev) => ({ ...prev, title: limit20(title) }))}
+                onChangeText={(title) => setEditDraft((prev) => ({ ...prev, title: limit35(title) }))}
                 editable={canEdit}
               />
 
@@ -435,7 +439,7 @@ export default function Asset({ route, navigation }) {
 
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow}>
                   {draftPreviewImages.length === 0 ? (
-                    <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No images yet.</Text>
+                    <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No images yet. A default hero image will be used.</Text>
                   ) : (
                     draftPreviewImages.map((img) => {
                       const isHeroImg = editDraft.heroImage === img;
@@ -446,7 +450,7 @@ export default function Asset({ route, navigation }) {
                               <Text style={styles.heroBadgeText}>★</Text>
                             </View>
                           )}
-                          <Image source={{ uri: img }} style={styles.thumb} />
+                          <Image source={toImageSource(img)} style={styles.thumb} />
                           <TouchableOpacity
                             style={styles.removeImageBtn}
                             onPress={() => removeDraftImage(img)}
@@ -517,7 +521,7 @@ export default function Asset({ route, navigation }) {
           >
             {previewImage ? (
               <Image
-                source={{ uri: previewImage }}
+                source={toImageSource(previewImage)}
                 style={{ width: '100%', height: 360, borderRadius: 12 }}
                 resizeMode="contain"
               />
@@ -576,13 +580,13 @@ export default function Asset({ route, navigation }) {
           )}
         </View>
 
-        <View style={styles.mediaCard}>
+        <View style={[styles.mediaCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <View style={styles.mediaHeader}>
-            <Text style={styles.sectionLabel}>Images</Text>
+            <Text style={[styles.sectionLabel, { color: theme.text }]}>Images</Text>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow}>
             {previewImages.length === 0 ? (
-              <Text style={styles.subtitle}>No images yet.</Text>
+              <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No images yet. A default hero image will be used.</Text>
             ) : (
               previewImages.map((img) => {
                 const isHeroImg = heroImage === img;
@@ -597,7 +601,7 @@ export default function Asset({ route, navigation }) {
                         <Text style={styles.heroBadgeText}>★</Text>
                       </View>
                     )}
-                    <Image source={{ uri: img }} style={styles.thumb} />
+                    <Image source={toImageSource(img)} style={[styles.thumb, { backgroundColor: theme.inputBg }]} />
                   </TouchableOpacity>
                 );
               })

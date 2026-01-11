@@ -4,10 +4,34 @@ import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
 
 export default function SignIn({ navigation }) {
-  const { login, loading, biometricUserId, biometricLogin, users, theme } = useData();
+  const { login, loading, biometricUserId, biometricLogin, users, resetAllData, theme } = useData();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const handleClearLocalData = () => {
+    Alert.alert(
+      'Clear Local Data',
+      'This removes all locally stored accounts and content on this device. Remote accounts are not affected.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await resetAllData?.();
+              setIdentifier('');
+              setPassword('');
+              Alert.alert('Cleared', 'Local data has been cleared.');
+            } catch {
+              Alert.alert('Error', 'Could not clear local data.');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const biometricUserLabel = (() => {
     if (!biometricUserId) return null;
@@ -94,9 +118,10 @@ export default function SignIn({ navigation }) {
       <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
         <Text style={[styles.link, { color: theme.link }]}>Need an account? Sign up</Text>
       </TouchableOpacity>
-      <View style={[styles.helperBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-        <Text style={[styles.helperText, { color: theme.textMuted }]}>Demo users: alex/LambDemo#2026! or sam/LambDemo#2026!</Text>
-      </View>
+
+      <TouchableOpacity onPress={handleClearLocalData} disabled={submitting || loading}>
+        <Text style={[styles.link, { color: theme.textSecondary, marginTop: 8 }]}>Clear local data</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -114,6 +139,4 @@ const styles = StyleSheet.create({
   secondaryButton: { backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, padding: 14, borderRadius: 10, alignItems: 'center' },
   secondaryButtonText: { color: '#e5e7f0', fontWeight: '700' },
   link: { color: '#9ab6ff', marginTop: 12, fontWeight: '600' },
-  helperBox: { marginTop: 16, padding: 12, backgroundColor: '#11121a', borderRadius: 10, borderWidth: 1, borderColor: '#1f2738' },
-  helperText: { color: '#9aa1b5', fontSize: 13 },
 });

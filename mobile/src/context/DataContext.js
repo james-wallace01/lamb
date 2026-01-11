@@ -9,6 +9,7 @@ import { firebaseAuth, isFirebaseConfigured } from '../firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { API_URL } from '../config/stripe';
 import NetInfo from '@react-native-community/netinfo';
+import { apiFetch } from '../utils/apiFetch';
 
 // bcryptjs needs secure randomness for salts in React Native.
 // Expo Go doesn't provide WebCrypto by default, so use expo-random.
@@ -51,8 +52,11 @@ const LAST_ACTIVITY_KEY = 'lamb-mobile-last-activity-v1';
 const BIOMETRIC_USER_ID_KEY = 'lamb-mobile-biometric-user-id-v1';
 const BIOMETRIC_SECURE_USER_ID_KEY = 'lamb-mobile-biometric-userid-secure-v1';
 const STORAGE_VERSION = 5;
-const DEFAULT_PROFILE_IMAGE = 'http://192.168.7.112:3000/images/default-avatar.png';
-const DEFAULT_MEDIA_IMAGE = 'http://192.168.7.112:3000/images/collection_default.jpg';
+// Do not hardcode a remote default avatar URL.
+// Avatar fallback is rendered in the UI when profileImage is missing or fails to load.
+const DEFAULT_PROFILE_IMAGE = null;
+const DEFAULT_MEDIA_IMAGE = null;
+const DEFAULT_HERO_IMAGE = require('../../assets/default-hero.jpg');
 
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 const TRIAL_DAYS = 14;
@@ -62,6 +66,7 @@ const PASSWORD_MAX_LENGTH = 72; // bcrypt truncates beyond 72 bytes
 const BCRYPT_ROUNDS = 10;
 
 const NAME_MAX_LENGTH = 50;
+const ITEM_TITLE_MAX_LENGTH = 35;
 const USERNAME_MIN_LENGTH = 3;
 const USERNAME_MAX_LENGTH = 20;
 const EMAIL_MAX_LENGTH = 254;
@@ -121,6 +126,8 @@ const validatePasswordStrength = (password, { username, email } = {}) => {
 
   return { ok: true };
 };
+
+const clampItemTitle = (value) => String(value || '').slice(0, ITEM_TITLE_MAX_LENGTH);
 
 const hasDisallowedControlChars = (value) => {
   const raw = (value || '').toString();
@@ -275,13 +282,6 @@ const hydrateUsersWithPasswordHashes = async (inputUsers) => {
       continue;
     }
 
-    // Ensure demo users always have a hash.
-    const demo = DEMO_USERS.find((d) => d.id === next.id);
-    if (demo?.passwordHash) {
-      next.passwordHash = demo.passwordHash;
-      await setPasswordHashInSecureStore(next.id, demo.passwordHash);
-    }
-
     out.push(next);
   }
 
@@ -345,86 +345,50 @@ const SUBSCRIPTION_TIERS = {
   }
 };
 
-const withProfileImage = (user) => user && (user.profileImage ? user : { ...user, profileImage: DEFAULT_PROFILE_IMAGE });
+const withProfileImage = (user) => user;
+
+const hasMembershipStillActive = (user) => {
+  const tier = user?.subscription?.tier;
+  if (!tier) return false;
+  const renewalDate = user?.subscription?.renewalDate;
+  if (typeof renewalDate === 'number') {
+    if (Date.now() >= renewalDate) return false;
+  }
+  return true;
+};
+
+// Product rule: if the user cancels, lock access immediately.
+const hasMembershipAccess = (user) => {
+  if (!hasMembershipStillActive(user)) return false;
+  if (user?.subscription?.cancelAtPeriodEnd === true) return false;
+  return true;
+};
+
+const hasActiveMembership = (user) => {
+  // Back-compat: treat "active" as "still active until period end".
+  return hasMembershipStillActive(user);
+};
 const withMedia = (item) => {
   if (!item) return item;
   const images = Array.isArray(item.images) ? item.images.filter(Boolean).slice(0, 4) : [];
-  const heroImage = item.heroImage || images[0] || DEFAULT_MEDIA_IMAGE;
+  const heroImage = item.heroImage && images.includes(item.heroImage)
+    ? item.heroImage
+    : images[0] || null;
   return { ...item, images, heroImage };
 };
 
 const migrateData = (data) => {
   if (!data) return data;
   const migrated = { ...data };
-  migrated.vaults = (data.vaults || []).map(v => withMedia(v.name === 'Family Vault' ? { ...v, name: 'Example Vault' } : v));
-  migrated.collections = (data.collections || []).map(c => withMedia(c.name === 'Watches' ? { ...c, name: 'Example Collection' } : c));
-  migrated.assets = (data.assets || []).map(a => withMedia(a.title === 'Speedmaster' ? { ...a, title: 'Example Asset' } : a));
+  migrated.vaults = (data.vaults || []).map((v) => withMedia(v));
+  migrated.collections = (data.collections || []).map((c) => withMedia(c));
+  migrated.assets = (data.assets || []).map((a) => withMedia(a));
   migrated.users = (data.users || []).map(u => withProfileImage(u));
   migrated.currentUser = withoutPasswordSecrets(withProfileImage(data.currentUser));
   return migrated;
 };
 
-const DEMO_USERS = [
-  {
-    id: 'u_demo_alex',
-    firstName: 'Alex',
-    lastName: 'Morgan',
-    email: 'alex@example.com',
-    username: 'alex',
-    passwordHash: hashPassword('LambDemo#2026!'),
-    profileImage: DEFAULT_PROFILE_IMAGE,
-    subscription: {
-      tier: 'BASIC',
-      startDate: 0,
-      renewalDate: 4102444800000,
-      stripeSubscriptionId: null,
-      stripeCustomerId: null,
-      cancelAtPeriodEnd: false,
-    },
-  },
-  {
-    id: 'u_demo_sam',
-    firstName: 'Sam',
-    lastName: 'Taylor',
-    email: 'sam@example.com',
-    username: 'sam',
-    passwordHash: hashPassword('LambDemo#2026!'),
-    profileImage: DEFAULT_PROFILE_IMAGE,
-    subscription: {
-      tier: 'PREMIUM',
-      startDate: 0,
-      renewalDate: 4102444800000,
-      stripeSubscriptionId: null,
-      stripeCustomerId: null,
-      cancelAtPeriodEnd: false,
-    },
-  },
-];
-
-const ensureDemoUsers = (existingUsers) => {
-  const base = Array.isArray(existingUsers) ? existingUsers : [];
-  const hasUser = (candidate) =>
-    base.some(
-      (u) =>
-        u?.id === candidate.id ||
-        (u?.username && candidate.username && u.username.toLowerCase() === candidate.username.toLowerCase()) ||
-        (u?.email && candidate.email && u.email.toLowerCase() === candidate.email.toLowerCase())
-    );
-
-  const additions = DEMO_USERS.filter((u) => !hasUser(u));
-  const merged = base.map((u) => {
-    const demo = DEMO_USERS.find((d) => d.id === u?.id);
-    if (!demo) return u;
-
-    // Ensure demo users are hardened even if older data exists locally.
-    const next = { ...u, ...demo };
-    delete next.password;
-    return next;
-  });
-
-  if (additions.length === 0) return merged;
-  return [...merged, ...additions.map(withProfileImage)];
-};
+const normalizeUsersArray = (input) => (Array.isArray(input) ? input : []);
 
 const seedUsers = [];
 
@@ -447,6 +411,12 @@ export function DataProvider({ children }) {
   const [assets, setAssets] = useState([]);
   const [lastActivityAt, setLastActivityAt] = useState(Date.now());
   const lastActivityWriteAtRef = useRef(0);
+  const lastSubscriptionSyncAtRef = useRef(0);
+
+  const membershipRequiredResult = useMemo(
+    () => ({ ok: false, message: 'Active membership required. Please renew your membership to continue.' }),
+    []
+  );
 
   const recordActivity = () => {
     if (!currentUser) return;
@@ -464,6 +434,9 @@ export function DataProvider({ children }) {
     []
   );
 
+  const membershipActive = hasActiveMembership(currentUser);
+  const membershipAccess = hasMembershipAccess(currentUser);
+
   const wrapOnline = (fn) =>
     (...args) => {
       if (backendReachable === false) return offlineResult;
@@ -473,6 +446,20 @@ export function DataProvider({ children }) {
   const wrapOnlineAsync = (fn) =>
     async (...args) => {
       if (backendReachable === false) return offlineResult;
+      return await fn(...args);
+    };
+
+  const wrapOnlineAndMembership = (fn) =>
+    (...args) => {
+      if (backendReachable === false) return offlineResult;
+      if (!membershipAccess) return membershipRequiredResult;
+      return fn(...args);
+    };
+
+  const wrapOnlineAndMembershipAsync = (fn) =>
+    async (...args) => {
+      if (backendReachable === false) return offlineResult;
+      if (!membershipAccess) return membershipRequiredResult;
       return await fn(...args);
     };
 
@@ -492,6 +479,76 @@ export function DataProvider({ children }) {
       return { ok: false };
     } finally {
       clearTimeout(timeoutId);
+    }
+  };
+
+  const applySubscriptionSync = (subscription) => {
+    if (!currentUser || !subscription) return;
+
+    const nextSub = {
+      ...(currentUser.subscription || {}),
+      tier: subscription.tier || currentUser.subscription?.tier,
+      stripeSubscriptionId: subscription.id || currentUser.subscription?.stripeSubscriptionId,
+      stripeCustomerId: subscription.customer || currentUser.subscription?.stripeCustomerId,
+      cancelAtPeriodEnd: !!subscription.cancelAtPeriodEnd,
+      startDate:
+        typeof subscription.currentPeriodStartMs === 'number'
+          ? subscription.currentPeriodStartMs
+          : currentUser.subscription?.startDate,
+      renewalDate:
+        typeof subscription.currentPeriodEndMs === 'number'
+          ? subscription.currentPeriodEndMs
+          : currentUser.subscription?.renewalDate,
+    };
+
+    const prevSub = currentUser.subscription || {};
+    const changed =
+      prevSub.tier !== nextSub.tier ||
+      prevSub.stripeSubscriptionId !== nextSub.stripeSubscriptionId ||
+      prevSub.stripeCustomerId !== nextSub.stripeCustomerId ||
+      prevSub.cancelAtPeriodEnd !== nextSub.cancelAtPeriodEnd ||
+      prevSub.startDate !== nextSub.startDate ||
+      prevSub.renewalDate !== nextSub.renewalDate;
+
+    if (!changed) return;
+
+    const updatedUser = { ...currentUser, subscription: nextSub };
+    setCurrentUser(updatedUser);
+    setUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updatedUser : u)));
+  };
+
+  const syncSubscriptionFromServer = async () => {
+    if (!currentUser?.subscription) return { ok: true, skipped: true };
+    if (backendReachable === false) return { ok: false, message: 'Offline' };
+
+    const subscriptionId = currentUser.subscription?.stripeSubscriptionId || null;
+    const customerId = currentUser.subscription?.stripeCustomerId || null;
+    if (!subscriptionId && !customerId) return { ok: true, skipped: true };
+
+    // Throttle to avoid spamming the backend.
+    const now = Date.now();
+    if (now - lastSubscriptionSyncAtRef.current < 15000) return { ok: true, skipped: true };
+    lastSubscriptionSyncAtRef.current = now;
+
+    try {
+      const resp = await apiFetch(`${API_URL}/subscription-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscriptionId, customerId }),
+      });
+
+      const json = await resp.json().catch(() => null);
+      if (!resp.ok) {
+        return { ok: false, message: json?.error || 'Subscription sync failed' };
+      }
+
+      if (json?.subscription) {
+        applySubscriptionSync(json.subscription);
+      }
+
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: error?.message || 'Subscription sync failed' };
     }
   };
 
@@ -517,8 +574,7 @@ export function DataProvider({ children }) {
       if (!stored) return { ok: false, message: 'No stored data' };
 
       const migrated = migrateData(stored);
-      const nextUsers = ensureDemoUsers(migrated.users || []);
-      const hydratedUsers = await hydrateUsersWithPasswordHashes(nextUsers);
+      const hydratedUsers = await hydrateUsersWithPasswordHashes(normalizeUsersArray(migrated.users));
 
       setUsers(hydratedUsers);
 
@@ -577,8 +633,7 @@ export function DataProvider({ children }) {
         const stored = await getItem(DATA_KEY, null);
         if (stored && stored.version === STORAGE_VERSION) {
           const migrated = migrateData(stored);
-          const nextUsers = ensureDemoUsers(migrated.users || []);
-          const hydratedUsers = await hydrateUsersWithPasswordHashes(nextUsers);
+          const hydratedUsers = await hydrateUsersWithPasswordHashes(normalizeUsersArray(migrated.users));
           setUsers(hydratedUsers);
           setCurrentUser(migrated.currentUser || null);
           setVaults(migrated.vaults || []);
@@ -586,20 +641,42 @@ export function DataProvider({ children }) {
           setAssets(migrated.assets || []);
           await setItem(DATA_KEY, { ...migrated, users: hydratedUsers.map(withoutPasswordForStorage), version: STORAGE_VERSION });
         } else {
-          const seedData = { users: seedUsers, vaults: seedVaults, collections: seedCollections, assets: seedAssets, currentUser: null };
+          // Start with an empty local state (no seeded users or content).
+          const seedData = { users: [], vaults: [], collections: [], assets: [], currentUser: null };
           const migratedSeed = migrateData(seedData);
-          const nextUsers = ensureDemoUsers(migratedSeed.users);
-          const hydratedUsers = await hydrateUsersWithPasswordHashes(nextUsers);
+          const hydratedUsers = await hydrateUsersWithPasswordHashes(normalizeUsersArray(migratedSeed.users));
           setUsers(hydratedUsers);
           setCurrentUser(migratedSeed.currentUser);
           setVaults(migratedSeed.vaults);
           setCollections(migratedSeed.collections);
           setAssets(migratedSeed.assets);
-          await setItem(DATA_KEY, { version: STORAGE_VERSION, users: hydratedUsers.map(withoutPasswordForStorage), currentUser: migratedSeed.currentUser, vaults: migratedSeed.vaults, collections: migratedSeed.collections, assets: migratedSeed.assets });
+          await setItem(DATA_KEY, {
+            version: STORAGE_VERSION,
+            users: hydratedUsers.map(withoutPasswordForStorage),
+            currentUser: migratedSeed.currentUser,
+            vaults: migratedSeed.vaults,
+            collections: migratedSeed.collections,
+            assets: migratedSeed.assets,
+          });
+        }
+
+        // Best-effort: sync subscription state from the server.
+        // This keeps cancelAtPeriodEnd/renewalDate aligned with Stripe.
+        try {
+          await syncSubscriptionFromServer();
+        } catch {
+          // ignore
         }
         setLoading(false);
       })();
     }, []);
+
+    useEffect(() => {
+      if (loading) return;
+      if (!currentUser) return;
+      // Keep membership state in sync with Stripe when online.
+      syncSubscriptionFromServer();
+    }, [loading, currentUser?.id, currentUser?.subscription?.stripeSubscriptionId, currentUser?.subscription?.stripeCustomerId, backendReachable]);
 
     useEffect(() => {
       // Near-instant offline detection: if the device loses internet, immediately block writes.
@@ -768,7 +845,7 @@ export function DataProvider({ children }) {
     }
   };
 
-  // Reset all data - useful for testing
+  // Reset all local data - useful for testing
   const resetAllData = async () => {
     try {
       const ids = (users || []).map((u) => u?.id).filter(Boolean);
@@ -778,6 +855,16 @@ export function DataProvider({ children }) {
       setVaults([]);
       setCollections([]);
       setAssets([]);
+      await removeItem(LAST_ACTIVITY_KEY);
+      await removeItem(BIOMETRIC_USER_ID_KEY);
+      try {
+        await SecureStore.deleteItemAsync(BIOMETRIC_SECURE_USER_ID_KEY);
+      } catch {
+        // ignore
+      }
+      if (isFirebaseAuthEnabled()) {
+        await signOut(firebaseAuth).catch(() => {});
+      }
       await removeItem(DATA_KEY);
       console.log('All data cleared successfully');
       return { ok: true, message: 'All data cleared' };
@@ -828,7 +915,7 @@ const register = async ({ firstName, lastName, email, username, password, subscr
         username: un.value,
         prefersDarkMode: DEFAULT_DARK_MODE_ENABLED,
         passwordHash,
-        profileImage: DEFAULT_PROFILE_IMAGE,
+        profileImage: null,
         firebaseUid: firebaseAuth?.currentUser?.uid || null,
         subscription: {
           tier: subscriptionTier,
@@ -893,7 +980,7 @@ const register = async ({ firstName, lastName, email, username, password, subscr
         return { ok: false, message: 'Email already taken' };
       }
 
-        const merged = withProfileImage({ ...currentUser, ...nextPatch });
+      const merged = withProfileImage({ ...currentUser, ...nextPatch });
       setCurrentUser(merged);
       setUsers(prev => prev.map(u => u.id === currentUser.id ? merged : u));
       return { ok: true };
@@ -970,14 +1057,14 @@ const register = async ({ firstName, lastName, email, username, password, subscr
       const normalizedImages = Array.isArray(images) ? images.filter(Boolean).slice(0, 4) : [];
       const vault = withMedia({
         id: `v${Date.now()}`,
-        name: name || 'Untitled',
+        name: clampItemTitle((name || 'Untitled').trim()),
         ownerId: currentUser.id,
         sharedWith: [],
         createdAt,
         viewedAt: createdAt,
         editedAt: createdAt,
         images: normalizedImages,
-        heroImage: heroImage || normalizedImages[0] || DEFAULT_MEDIA_IMAGE,
+        heroImage: heroImage || normalizedImages[0] || null,
       });
       setVaults(prev => [vault, ...prev]);
       return { ok: true, vault };
@@ -1002,14 +1089,14 @@ const register = async ({ firstName, lastName, email, username, password, subscr
       const collection = withMedia({
         id: `c${Date.now()}`,
         vaultId,
-        name: name || 'Untitled',
+        name: clampItemTitle((name || 'Untitled').trim()),
         ownerId: currentUser.id,
         sharedWith: [],
         createdAt,
         viewedAt: createdAt,
         editedAt: createdAt,
         images: normalizedImages,
-        heroImage: heroImage || normalizedImages[0] || DEFAULT_MEDIA_IMAGE,
+        heroImage: heroImage || normalizedImages[0] || null,
       });
       setCollections(prev => [collection, ...prev]);
       return { ok: true, collection };
@@ -1035,7 +1122,7 @@ const register = async ({ firstName, lastName, email, username, password, subscr
         id: `a${Date.now()}`,
         vaultId,
         collectionId,
-        title: title || 'Untitled',
+        title: clampItemTitle((title || 'Untitled').trim()),
         type: type || '',
         category: category || '',
         ownerId: currentUser.id,
@@ -1045,7 +1132,7 @@ const register = async ({ firstName, lastName, email, username, password, subscr
         editedAt: createdAt,
         quantity: 1,
         images: normalizedImages,
-        heroImage: heroImage || normalizedImages[0] || DEFAULT_MEDIA_IMAGE,
+        heroImage: heroImage || normalizedImages[0] || null,
       });
       setAssets(prev => [asset, ...prev]);
       return { ok: true, asset };
@@ -1199,7 +1286,11 @@ const register = async ({ firstName, lastName, email, username, password, subscr
     });
     if (!caps.canEdit) return { ok: false, message: 'No permission to edit vault' };
     const editedAt = Date.now();
-    setVaults(prev => prev.map(v => v.id === vaultId ? withMedia({ ...v, ...patch, editedAt }) : v));
+    const nextPatch = { ...(patch || {}) };
+    if (Object.prototype.hasOwnProperty.call(nextPatch, 'name')) {
+      nextPatch.name = clampItemTitle(String(nextPatch.name || '').trim());
+    }
+    setVaults(prev => prev.map(v => v.id === vaultId ? withMedia({ ...v, ...nextPatch, editedAt }) : v));
     return { ok: true };
   };
 
@@ -1211,7 +1302,11 @@ const register = async ({ firstName, lastName, email, username, password, subscr
     });
     if (!caps.canEdit) return { ok: false, message: 'No permission to edit collection' };
     const editedAt = Date.now();
-    setCollections(prev => prev.map(c => c.id === collectionId ? withMedia({ ...c, ...patch, editedAt }) : c));
+    const nextPatch = { ...(patch || {}) };
+    if (Object.prototype.hasOwnProperty.call(nextPatch, 'name')) {
+      nextPatch.name = clampItemTitle(String(nextPatch.name || '').trim());
+    }
+    setCollections(prev => prev.map(c => c.id === collectionId ? withMedia({ ...c, ...nextPatch, editedAt }) : c));
     return { ok: true };
   };
 
@@ -1220,7 +1315,11 @@ const register = async ({ firstName, lastName, email, username, password, subscr
     const caps = getAssetCapabilities({ role: getRoleForAsset(assetId, currentUser.id) });
     if (!caps.canEdit) return { ok: false, message: 'No permission to edit asset' };
     const editedAt = Date.now();
-    setAssets(prev => prev.map(a => a.id === assetId ? withMedia({ ...a, ...patch, editedAt }) : a));
+    const nextPatch = { ...(patch || {}) };
+    if (Object.prototype.hasOwnProperty.call(nextPatch, 'title')) {
+      nextPatch.title = clampItemTitle(String(nextPatch.title || '').trim());
+    }
+    setAssets(prev => prev.map(a => a.id === assetId ? withMedia({ ...a, ...nextPatch, editedAt }) : a));
     return { ok: true };
   };
 
@@ -1440,8 +1539,11 @@ const register = async ({ firstName, lastName, email, username, password, subscr
     users,
     currentUser,
     setCurrentUser,
+    membershipActive,
+    membershipAccess,
     isDarkMode: (currentUser?.prefersDarkMode ?? DEFAULT_DARK_MODE_ENABLED) !== false,
     theme: getTheme(currentUser?.prefersDarkMode ?? DEFAULT_DARK_MODE_ENABLED),
+    defaultHeroImage: DEFAULT_HERO_IMAGE,
     setDarkModeEnabled,
     biometricUserId,
     biometricEnabledForCurrentUser: !!(currentUser?.id && biometricUserId === currentUser.id),
@@ -1449,6 +1551,7 @@ const register = async ({ firstName, lastName, email, username, password, subscr
     disableBiometricSignIn,
     biometricLogin,
     refreshData,
+    syncSubscriptionFromServer,
     recordActivity,
     enforceSessionTimeout,
     subscriptionTiers: SUBSCRIPTION_TIERS,
@@ -1469,46 +1572,49 @@ const register = async ({ firstName, lastName, email, username, password, subscr
     deleteAccount: wrapOnlineAsync(deleteAccount),
 
     // Subscription
-    updateSubscription: wrapOnlineAsync(updateSubscription),
-    setCancelAtPeriodEnd: wrapOnlineAsync(setCancelAtPeriodEnd),
+    // Subscription management must remain available even when access is locked.
+    updateSubscription: wrapOnline(updateSubscription),
+    setCancelAtPeriodEnd: wrapOnline(setCancelAtPeriodEnd),
     validatePassword,
 
     // Mutations (online-only)
-    addVault: wrapOnline(addVault),
-    addCollection: wrapOnline(addCollection),
-    addAsset: wrapOnline(addAsset),
-    updateVault: wrapOnline(updateVault),
-    updateCollection: wrapOnline(updateCollection),
-    updateAsset: wrapOnline(updateAsset),
-    moveCollection: wrapOnline(moveCollection),
-    moveAsset: wrapOnline(moveAsset),
-    deleteVault: wrapOnline(deleteVault),
-    deleteCollection: wrapOnline(deleteCollection),
-    deleteAsset: wrapOnline(deleteAsset),
+    addVault: wrapOnlineAndMembership(addVault),
+    addCollection: wrapOnlineAndMembership(addCollection),
+    addAsset: wrapOnlineAndMembership(addAsset),
+    updateVault: wrapOnlineAndMembership(updateVault),
+    updateCollection: wrapOnlineAndMembership(updateCollection),
+    updateAsset: wrapOnlineAndMembership(updateAsset),
+    moveCollection: wrapOnlineAndMembership(moveCollection),
+    moveAsset: wrapOnlineAndMembership(moveAsset),
+    deleteVault: wrapOnlineAndMembership(deleteVault),
+    deleteCollection: wrapOnlineAndMembership(deleteCollection),
+    deleteAsset: wrapOnlineAndMembership(deleteAsset),
 
     // Sharing (online-only)
-    shareVault: wrapOnlineAsync(shareVault),
-    shareCollection: wrapOnlineAsync(shareCollection),
-    shareAsset: wrapOnlineAsync(shareAsset),
-    updateVaultShare: wrapOnlineAsync(updateVaultShare),
-    updateCollectionShare: wrapOnlineAsync(updateCollectionShare),
-    updateAssetShare: wrapOnlineAsync(updateAssetShare),
+    shareVault: wrapOnlineAndMembershipAsync(shareVault),
+    shareCollection: wrapOnlineAndMembershipAsync(shareCollection),
+    shareAsset: wrapOnlineAndMembershipAsync(shareAsset),
+    updateVaultShare: wrapOnlineAndMembershipAsync(updateVaultShare),
+    updateCollectionShare: wrapOnlineAndMembershipAsync(updateCollectionShare),
+    updateAssetShare: wrapOnlineAndMembershipAsync(updateAssetShare),
+    // Revoking shares is allowed without membership.
     removeVaultShare: wrapOnlineAsync(removeVaultShare),
     removeCollectionShare: wrapOnlineAsync(removeCollectionShare),
     removeAssetShare: wrapOnlineAsync(removeAssetShare),
     getRoleForVault,
     getRoleForCollection,
     getRoleForAsset,
-      canCreateCollectionsInVault,
-      canCreateAssetsInCollection,
-      updateSubscription,
-      calculateProration,
-      getFeaturesComparison,
-      convertPrice,
-      getCurrencyInfo,
+    canCreateCollectionsInVault,
+    canCreateAssetsInCollection,
+    calculateProration,
+    getFeaturesComparison,
+    convertPrice,
+    getCurrencyInfo,
   }), [
     loading,
     backendReachable,
+    membershipActive,
+    membershipAccess,
     users,
     currentUser,
     biometricUserId,
@@ -1516,6 +1622,7 @@ const register = async ({ firstName, lastName, email, username, password, subscr
     collections,
     assets,
     offlineResult,
+    membershipRequiredResult,
   ]);
 
   return (

@@ -87,6 +87,38 @@ Once configured, you can hit:
 Any future expiration date (e.g., 12/34)
 Any 3-digit CVC
 
+## Remote Data Wipe (DANGEROUS)
+
+This repo includes a CLI script to wipe *remote* account data in the configured services (Stripe + Firebase Auth).
+
+It is **dry-run by default** and requires explicit confirmations to actually delete anything.
+
+### What it deletes
+- **Stripe:** cancels all subscriptions, deletes all customers (for the Stripe account configured by `STRIPE_SECRET_KEY`)
+- **Firebase Auth:** deletes all Firebase Auth users in the Firebase project configured for Admin SDK
+
+### Dry run
+```bash
+cd backend
+npm run wipe-remote
+```
+
+### Execute (test mode Stripe recommended)
+```bash
+cd backend
+REMOTE_WIPE_CONFIRM=DELETE_ALL_REMOTE_DATA \
+ALLOW_FIREBASE_WIPE=true \
+npm run wipe-remote -- --execute
+```
+
+### Notes
+- The script **refuses to wipe Stripe live keys** unless you also set:
+  - `ALLOW_LIVE_STRIPE_WIPE=true`
+  - `LIVE_STRIPE_WIPE_CONFIRM=I_KNOW_THIS_IS_LIVE`
+- You can limit scope/size:
+  - `--scope stripe|firebase|all` (default `all`)
+  - `--limit N`
+
 ## Production Deployment
 
 ### Backend Hosting Options:

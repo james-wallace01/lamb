@@ -3,6 +3,7 @@
 // Run: node server.js
 
 const express = require('express');
+const path = require('path');
 const cors = require('cors');
 require('dotenv').config();
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
@@ -11,6 +12,9 @@ const { initFirebaseAdmin, firebaseEnabled, requireFirebaseAuth } = require('./f
 
 const app = express();
 app.use(cors());
+
+// Serve branded static images (used for default hero images on mobile).
+app.use('/images', express.static(path.join(__dirname, '..', 'public', 'images')));
 
 const PORT = process.env.PORT || 3001;
 
@@ -499,6 +503,88 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Server-side subscription validation/sync.
+// Requires a Firebase ID token and uses Stripe as the source of truth.
+app.post('/subscription-status', requireFirebaseAuth, async (req, res) => {
+  try {
+    if (!isStripeConfigured()) {
+      return res.status(503).json({ error: 'Stripe is not configured on this server' });
+    }
+
+    const { subscriptionId, customerId } = req.body || {};
+    if (!subscriptionId && !customerId) {
+      return res.status(400).json({ error: 'Missing subscriptionId or customerId' });
+    }
+
+    const loadSubscription = async () => {
+      if (subscriptionId) {
+        return await stripe.subscriptions.retrieve(subscriptionId, {
+          expand: ['items.data.price', 'customer'],
+        });
+      }
+
+      // Fallback: pick the most relevant subscription for the customer.
+      const subs = await stripe.subscriptions.list({
+        customer: customerId,
+        status: 'all',
+        limit: 50,
+        expand: ['data.items.data.price'],
+      });
+
+      const ranked = (subs.data || []).slice().sort((a, b) => {
+        const score = (s) => {
+          const status = s?.status;
+          if (status === 'active') return 5;
+          if (status === 'trialing') return 4;
+          if (status === 'past_due') return 3;
+          if (status === 'unpaid') return 2;
+          if (status === 'canceled') return 1;
+          return 0;
+        };
+        const byScore = score(b) - score(a);
+        if (byScore !== 0) return byScore;
+        return (b?.created || 0) - (a?.created || 0);
+      });
+
+      return ranked[0] || null;
+    };
+
+    const subscription = await loadSubscription();
+    if (!subscription) {
+      return res.json({
+        ok: true,
+        subscription: null,
+      });
+    }
+
+    const derivedTier = (() => {
+      const metaTier = subscription?.metadata?.tier;
+      if (metaTier && typeof metaTier === 'string') return metaTier.toUpperCase();
+
+      const priceId = subscription?.items?.data?.[0]?.price?.id || subscription?.items?.data?.[0]?.price;
+      if (!priceId) return null;
+      const match = Object.entries(stripePriceIds || {}).find(([, id]) => id === priceId);
+      return match ? match[0] : null;
+    })();
+
+    res.json({
+      ok: true,
+      subscription: {
+        id: subscription.id,
+        customer: typeof subscription.customer === 'string' ? subscription.customer : subscription.customer?.id,
+        status: subscription.status,
+        tier: derivedTier,
+        cancelAtPeriodEnd: !!subscription.cancel_at_period_end,
+        currentPeriodStartMs: subscription.current_period_start ? subscription.current_period_start * 1000 : null,
+        currentPeriodEndMs: subscription.current_period_end ? subscription.current_period_end * 1000 : null,
+      },
+    });
+  } catch (error) {
+    console.error('Error validating subscription status:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Convenience: Render service root should respond in-browser.
 app.get('/', (req, res) => {
   res.redirect('/health');
@@ -509,85 +595,89 @@ app.get('/me', requireFirebaseAuth, (req, res) => {
   res.json({ uid: req.firebaseUser?.uid, email: req.firebaseUser?.email || null });
 });
 
-// Get all subscriptions for cleanup
-app.get('/all-subscriptions', async (req, res) => {
-  try {
-    const subscriptions = await stripe.subscriptions.list({
-      limit: 100,
-      status: 'all'
-    });
-    
-    res.json({
-      total: subscriptions.data.length,
-      subscriptions: subscriptions.data.map(sub => ({
-        id: sub.id,
-        customer: sub.customer,
-        status: sub.status,
-        current_period_end: new Date(sub.current_period_end * 1000),
-        items: sub.items.data.map(item => ({
-          price: item.price.id,
-          quantity: item.quantity
+// Dangerous cleanup endpoints are disabled by default.
+// Use the CLI script instead: `npm run wipe-remote`.
+if (String(process.env.ENABLE_STRIPE_CLEANUP_ENDPOINTS).toLowerCase() === 'true') {
+  // Get all subscriptions for cleanup
+  app.get('/all-subscriptions', async (req, res) => {
+    try {
+      const subscriptions = await stripe.subscriptions.list({
+        limit: 100,
+        status: 'all'
+      });
+      
+      res.json({
+        total: subscriptions.data.length,
+        subscriptions: subscriptions.data.map(sub => ({
+          id: sub.id,
+          customer: sub.customer,
+          status: sub.status,
+          current_period_end: new Date(sub.current_period_end * 1000),
+          items: sub.items.data.map(item => ({
+            price: item.price.id,
+            quantity: item.quantity
+          }))
         }))
-      }))
-    });
-  } catch (error) {
-    console.error('Error listing subscriptions:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+      });
+    } catch (error) {
+      console.error('Error listing subscriptions:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
 
-// Cancel all test subscriptions
-app.post('/cleanup-subscriptions', async (req, res) => {
-  try {
-    console.log('Starting subscription cleanup...');
-    const subscriptions = await stripe.subscriptions.list({
-      limit: 100,
-      status: 'all'
-    });
-    
-    const canceled = [];
-    const errors = [];
-    
-    for (const sub of subscriptions.data) {
-      try {
-        if (sub.status !== 'canceled') {
-          console.log(`Canceling subscription ${sub.id}...`);
-          await stripe.subscriptions.cancel(sub.id);
-          canceled.push(sub.id);
+  // Cancel all test subscriptions
+  app.post('/cleanup-subscriptions', async (req, res) => {
+    try {
+      console.log('Starting subscription cleanup...');
+      const subscriptions = await stripe.subscriptions.list({
+        limit: 100,
+        status: 'all'
+      });
+      
+      const canceled = [];
+      const errors = [];
+      
+      for (const sub of subscriptions.data) {
+        try {
+          if (sub.status !== 'canceled') {
+            console.log(`Canceling subscription ${sub.id}...`);
+            await stripe.subscriptions.cancel(sub.id);
+            canceled.push(sub.id);
+          }
+        } catch (error) {
+          errors.push({ subscriptionId: sub.id, error: error.message });
         }
-      } catch (error) {
-        errors.push({ subscriptionId: sub.id, error: error.message });
       }
-    }
-    
-    // Delete test customers
-    const customers = await stripe.customers.list({
-      limit: 100
-    });
-    
-    const deletedCustomers = [];
-    for (const customer of customers.data) {
-      try {
-        console.log(`Deleting customer ${customer.id}...`);
-        await stripe.customers.del(customer.id);
-        deletedCustomers.push(customer.id);
-      } catch (error) {
-        // Some customers may have active subscriptions, that's okay
-        console.log(`Could not delete customer ${customer.id}: ${error.message}`);
+      
+      // Delete test customers
+      const customers = await stripe.customers.list({
+        limit: 100
+      });
+      
+      const deletedCustomers = [];
+      for (const customer of customers.data) {
+        try {
+          console.log(`Deleting customer ${customer.id}...`);
+          await stripe.customers.del(customer.id);
+          deletedCustomers.push(customer.id);
+        } catch (error) {
+          // Some customers may have active subscriptions, that's okay
+          console.log(`Could not delete customer ${customer.id}: ${error.message}`);
+        }
       }
+      
+      res.json({
+        message: 'Cleanup completed',
+        canceledSubscriptions: canceled,
+        deletedCustomers: deletedCustomers,
+        errors: errors
+      });
+    } catch (error) {
+      console.error('Error during cleanup:', error);
+      res.status(500).json({ error: error.message });
     }
-    
-    res.json({
-      message: 'Cleanup completed',
-      canceledSubscriptions: canceled,
-      deletedCustomers: deletedCustomers,
-      errors: errors
-    });
-  } catch (error) {
-    console.error('Error during cleanup:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+  });
+}
 
 async function startServer() {
   await initializeStripePrices();

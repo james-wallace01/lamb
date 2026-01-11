@@ -55,8 +55,26 @@ const MainStack = () => {
   );
 };
 
+const LimitedStack = () => {
+  const { theme } = useData();
+  return (
+    <Stack.Navigator
+      initialRouteName="Home"
+      screenOptions={{
+        headerStyle: { backgroundColor: theme.background },
+        headerTintColor: theme.text,
+        headerTitleStyle: { fontWeight: '700' },
+      }}
+    >
+      <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Membership" component={MembershipScreen} options={{ headerShown: false }} />
+    </Stack.Navigator>
+  );
+};
+
 function RootNavigator() {
-  const { currentUser, loading, backendReachable } = useData();
+  const { currentUser, loading, backendReachable, membershipAccess } = useData();
   if (loading) return null;
 
   if (backendReachable === false) {
@@ -76,7 +94,9 @@ function RootNavigator() {
     );
   }
 
-  return currentUser ? <MainStack /> : <AuthStack />;
+  if (!currentUser) return <AuthStack />;
+  if (!membershipAccess) return <LimitedStack />;
+  return <MainStack />;
 }
 
 function ThemedStatusBar() {

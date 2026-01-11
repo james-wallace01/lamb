@@ -211,7 +211,7 @@ export default function SubscriptionManager() {
       } else {
         // For downgrades, schedule the change for the next billing cycle
         if (currentUser.subscription.stripeSubscriptionId) {
-          const response = await fetch(`${API_URL}/schedule-subscription-change`, {
+          const response = await apiFetch(`${API_URL}/schedule-subscription-change`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

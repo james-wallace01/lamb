@@ -4,10 +4,22 @@ import { useData } from '../context/DataContext';
 import ShareModal from '../components/ShareModal';
 import LambHeader from '../components/LambHeader';
 
+const getInitials = (user) => {
+  const first = (user?.firstName || '').toString().trim();
+  const last = (user?.lastName || '').toString().trim();
+  const a = first ? first[0] : '';
+  const b = last ? last[0] : '';
+  const initials = `${a}${b}`.toUpperCase();
+  return initials || '?';
+};
+
 export default function Home({ navigation }) {
-  const { loading, vaults, currentUser, addVault, logout, refreshData, theme } = useData();
+  const { loading, vaults, currentUser, addVault, logout, refreshData, theme, membershipAccess } = useData();
   const [newVaultName, setNewVaultName] = useState('');
+
+  const limit35 = (value = '') => String(value).slice(0, 35);
   const [shareVaultId, setShareVaultId] = useState(null);
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const scrollRef = useRef(null);
   const [mySectionY, setMySectionY] = useState(0);
   const [sharedSectionY, setSharedSectionY] = useState(0);
@@ -28,6 +40,65 @@ export default function Home({ navigation }) {
       setRefreshing(false);
     }
   };
+
+  if (!membershipAccess) {
+    return (
+      <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
+        <ScrollView
+          contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
+          bounces
+          alwaysBounceVertical
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.isDark ? '#fff' : '#111827'} progressViewOffset={24} />}
+        >
+          <LambHeader />
+          <View style={styles.headerRow}>
+            <Text style={[styles.title, { color: theme.text }]}>Home</Text>
+            <View style={styles.headerActions}>
+              <TouchableOpacity onPress={() => navigation.navigate('Profile')} activeOpacity={0.8}>
+                {!avatarFailed && currentUser?.profileImage ? (
+                  <Image source={{ uri: currentUser.profileImage }} style={styles.avatar} onError={() => setAvatarFailed(true)} />
+                ) : (
+                  <View
+                    style={[
+                      styles.avatar,
+                      {
+                        backgroundColor: theme.primary,
+                        borderColor: theme.primary,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderWidth: 1,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.avatarFallbackText, { color: '#fff' }]}>{getInitials(currentUser)}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface }]} onPress={logout}>
+                <Text style={[styles.secondaryText, { color: theme.textSecondary }]}>Sign out</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}> 
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Membership required</Text>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Your membership isn’t active. You can manage your membership, update your profile, and revoke sharing.</Text>
+          </View>
+
+          <View style={styles.quickRow}>
+            <TouchableOpacity style={[styles.quickCard, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => navigation.navigate('Membership')}>
+              <Text style={[styles.quickTitle, { color: theme.text }]}>Membership</Text>
+              <Text style={[styles.quickMeta, { color: theme.textMuted }]}>Renew or manage</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.quickCard, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => navigation.navigate('Profile')}>
+              <Text style={[styles.quickTitle, { color: theme.text }]}>Profile</Text>
+              <Text style={[styles.quickMeta, { color: theme.textMuted }]}>Account</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
 
   const myVaults = useMemo(() => vaults.filter((v) => v.ownerId === currentUser?.id), [vaults, currentUser]);
   const sharedVaults = useMemo(() => vaults.filter((v) => v.ownerId !== currentUser?.id && (v.sharedWith || []).some(sw => sw.userId === currentUser?.id)), [vaults, currentUser]);
@@ -70,11 +141,21 @@ export default function Home({ navigation }) {
           <Text style={[styles.title, { color: theme.text }]}>Home</Text>
           <View style={styles.headerActions}>
             <TouchableOpacity onPress={() => navigation.navigate('Profile')} activeOpacity={0.8}>
-              {currentUser?.profileImage ? (
-                <Image source={{ uri: currentUser.profileImage }} style={styles.avatar} />
+              {!avatarFailed && currentUser?.profileImage ? (
+                <Image source={{ uri: currentUser.profileImage }} style={styles.avatar} onError={() => setAvatarFailed(true)} />
               ) : (
-                <View style={[styles.avatar, styles.avatarFallback]}>
-                  <Text style={styles.avatarFallbackText}>?</Text>
+                <View
+                  style={[
+                    styles.avatar,
+                    {
+                      backgroundColor: theme.primary,
+                      borderColor: theme.primary,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    },
+                  ]}
+                >
+                  <Text style={[styles.avatarFallbackText, { color: '#fff' }]}>{getInitials(currentUser)}</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -117,7 +198,7 @@ export default function Home({ navigation }) {
                   placeholder="New vault name"
                   placeholderTextColor={theme.placeholder}
                   value={newVaultName}
-                  onChangeText={setNewVaultName}
+                  onChangeText={(text) => setNewVaultName(limit35(text || ''))}
                 />
                 <TouchableOpacity
                   style={styles.addButton}

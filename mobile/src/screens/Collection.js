@@ -9,12 +9,12 @@ import { getCollectionCapabilities } from '../policies/capabilities';
 
 export default function Collection({ navigation, route }) {
   const { collectionId } = route.params || {};
-  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData, theme } = useData();
+  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData, theme, defaultHeroImage } = useData();
   const [newTitle, setNewTitle] = useState('');
   const [shareVisible, setShareVisible] = useState(false);
   const [shareTargetType, setShareTargetType] = useState(null);
   const [shareTargetId, setShareTargetId] = useState(null);
-  const [moveVaultId, setMoveVaultId] = useState(collection?.vaultId || null);
+  const [moveVaultId, setMoveVaultId] = useState(null);
   const [showMoveBox, setShowMoveBox] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
@@ -38,12 +38,19 @@ export default function Collection({ navigation, route }) {
       setRefreshing(false);
     }
   };
-  const draftPreviewImages = editDraft.heroImage
+  const draftPreviewImages = editDraft.heroImage && (editDraft.images || []).includes(editDraft.heroImage)
     ? [editDraft.heroImage, ...(editDraft.images || []).filter((img) => img !== editDraft.heroImage)]
     : editDraft.images || [];
   const limit20 = (value = '') => value.slice(0, 20);
+  const limit35 = (value = '') => String(value).slice(0, 35);
 
   const collection = useMemo(() => collections.find((c) => c.id === collectionId), [collectionId, collections]);
+
+  useEffect(() => {
+    if (moveVaultId != null) return;
+    if (!collection?.vaultId) return;
+    setMoveVaultId(collection.vaultId);
+  }, [collection?.vaultId, moveVaultId]);
   const collectionAssets = useMemo(() => assets.filter((a) => a.collectionId === collectionId), [assets, collectionId]);
   const role = getRoleForCollection(collectionId, currentUser?.id);
   const accessType = collection?.ownerId === currentUser?.id
@@ -59,12 +66,15 @@ export default function Collection({ navigation, route }) {
   const canDelete = caps.canDelete;
   const ownerVaults = vaults.filter(v => v.ownerId === collection?.ownerId);
   const collectionImages = collection?.images || [];
-  const heroImage = collection?.heroImage || 'https://via.placeholder.com/900x600?text=Image';
-  const previewImages = heroImage ? [heroImage, ...collectionImages.filter((img) => img !== heroImage)] : collectionImages;
+  const storedHeroImage = collection?.heroImage || null;
+  const heroImage = storedHeroImage || defaultHeroImage;
+  const previewImages = heroImage ? [heroImage, ...collectionImages.filter((img) => img !== storedHeroImage)] : collectionImages;
+
+  const toImageSource = (value) => (typeof value === 'number' ? value : { uri: value });
 
   const ensureHero = (images, currentHero) => {
     if (currentHero && images.includes(currentHero)) return currentHero;
-    return images[0] || 'https://via.placeholder.com/900x600?text=Image';
+    return images[0] || null;
   };
 
   const handleAddImages = async () => {
@@ -131,9 +141,9 @@ export default function Collection({ navigation, route }) {
       description: collection?.description || '',
       manager: collection?.manager || '',
       images: trimToFour(collectionImages),
-      heroImage: ensureHero(collectionImages, heroImage),
+      heroImage: ensureHero(collectionImages, storedHeroImage),
     });
-  }, [collectionId, collection?.name, collection?.description, collection?.manager, heroImage, collectionImages.join(',')]);
+  }, [collectionId, collection?.name, collection?.description, collection?.manager, storedHeroImage, collectionImages.join(',')]);
 
   const addImagesToDraft = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -210,7 +220,7 @@ export default function Collection({ navigation, route }) {
     const images = trimToFour(editDraft.images || []);
     const hero = ensureHero(images, editDraft.heroImage);
     updateCollection(collectionId, {
-      name: limit20((editDraft.name || '').trim() || collection.name || ''),
+      name: limit35((editDraft.name || '').trim() || collection.name || ''),
       description: (editDraft.description || '').trim(),
       manager: (editDraft.manager || '').trim(),
       images,
@@ -321,7 +331,7 @@ export default function Collection({ navigation, route }) {
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow}>
           {previewImages.length === 0 ? (
-            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No images yet.</Text>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No images yet. A default hero image will be used.</Text>
           ) : (
             previewImages.map((img) => {
               const isHeroImg = heroImage === img;
@@ -332,7 +342,7 @@ export default function Collection({ navigation, route }) {
                         <Text style={styles.heroBadgeText}>★</Text>
                       </View>
                     )}
-                  <Image source={{ uri: img }} style={styles.thumb} />
+                  <Image source={toImageSource(img)} style={styles.thumb} />
                 </TouchableOpacity>
               );
             })
@@ -347,13 +357,13 @@ export default function Collection({ navigation, route }) {
           placeholderTextColor={theme.placeholder}
           value={newTitle}
           editable={canCreate}
-          onChangeText={(text) => setNewTitle(limit20(text))}
+          onChangeText={(text) => setNewTitle(limit35(text))}
         />
         <TouchableOpacity
           style={[styles.addButton, !canCreate && styles.buttonDisabled]}
           onPress={() => {
             if (!canCreate) return Alert.alert('No permission to add assets');
-              const title = limit20(newTitle.trim());
+              const title = limit35(newTitle.trim());
               if (!title) return;
               addAsset({ vaultId: collection?.vaultId, collectionId, title });
             setNewTitle('');
@@ -439,7 +449,7 @@ export default function Collection({ navigation, route }) {
                 placeholder="Collection title"
                 placeholderTextColor={theme.placeholder}
                   value={editDraft.name}
-                  onChangeText={(name) => setEditDraft((prev) => ({ ...prev, name: limit20(name) }))}
+                  onChangeText={(name) => setEditDraft((prev) => ({ ...prev, name: limit35(name) }))}
               />
 
               <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Manager</Text>
@@ -470,7 +480,7 @@ export default function Collection({ navigation, route }) {
                   </View>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow}>
                     {draftPreviewImages.length === 0 ? (
-                      <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No images yet.</Text>
+                      <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No images yet. A default hero image will be used.</Text>
                     ) : (
                       draftPreviewImages.map((img) => {
                         const isHeroImg = editDraft.heroImage === img;
@@ -481,7 +491,7 @@ export default function Collection({ navigation, route }) {
                                 <Text style={styles.heroBadgeText}>★</Text>
                               </View>
                             )}
-                            <Image source={{ uri: img }} style={styles.thumb} />
+                            <Image source={toImageSource(img)} style={styles.thumb} />
                             <TouchableOpacity style={styles.removeImageBtn} disabled={!canEdit} onPress={() => removeDraftImage(img)}>
                               <Text style={styles.removeImageBtnText}>✕</Text>
                             </TouchableOpacity>
@@ -596,7 +606,7 @@ export default function Collection({ navigation, route }) {
         <View style={styles.modalOverlay}>
           <TouchableOpacity style={[styles.modalCard, { padding: 0 }]} activeOpacity={1} onPress={() => setPreviewImage(null)}>
             {previewImage ? (
-              <Image source={{ uri: previewImage }} style={{ width: '100%', height: 360, borderRadius: 12 }} resizeMode="contain" />
+              <Image source={toImageSource(previewImage)} style={{ width: '100%', height: 360, borderRadius: 12 }} resizeMode="contain" />
             ) : null}
           </TouchableOpacity>
         </View>
