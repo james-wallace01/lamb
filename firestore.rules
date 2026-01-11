@@ -1,0 +1,15 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Starter template.
+    // Replace with your real data model + role checks.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

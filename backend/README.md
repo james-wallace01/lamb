@@ -34,6 +34,40 @@ npm start
 
 Server will run on http://localhost:3001
 
+## Firebase (optional)
+
+This backend can optionally use Firebase Admin to verify Firebase ID tokens.
+
+### 1) Create a Firebase project
+- Firebase Console → create/select your project
+- Project settings → Service accounts → generate a new private key (JSON)
+
+### 2) Provide credentials to the backend
+Choose ONE option in [backend/.env](backend/.env):
+
+- **Option A (recommended locally):** point to the service account JSON file
+  - Set `GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/serviceAccountKey.json`
+
+- **Option B:** paste credentials as JSON or base64(JSON)
+  - Set `FIREBASE_SERVICE_ACCOUNT_JSON=...`
+
+- **Option C:** split env vars
+  - `FIREBASE_PROJECT_ID=...`
+  - `FIREBASE_CLIENT_EMAIL=...`
+  - `FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"`
+
+### 3) (Optional) Require Firebase auth for Stripe endpoints
+Set:
+```
+REQUIRE_FIREBASE_AUTH=true
+```
+
+When enabled, the backend expects an `Authorization: Bearer <Firebase_ID_Token>` header.
+
+### 4) Test Firebase token verification
+Once configured, you can hit:
+- `GET /me` with `Authorization: Bearer <token>` to verify the server is validating tokens.
+
 ### 5. Test the Integration
 1. Start the mobile app: `cd mobile && npm run ios`
 2. Sign up with a new account

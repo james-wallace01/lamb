@@ -5,6 +5,7 @@ import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
 import { API_URL } from '../config/stripe';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
+import { apiFetch } from '../utils/apiFetch';
 
 export default function ChooseSubscription({ navigation, route }) {
   const { subscriptionTiers, convertPrice, theme } = useData();
@@ -21,7 +22,7 @@ export default function ChooseSubscription({ navigation, route }) {
   const initializePaymentSheet = async (tier) => {
     try {
       // Collect valid payment info first (no charge yet)
-      const response = await fetch(`${API_URL}/create-subscription`, {
+      const response = await apiFetch(`${API_URL}/create-subscription`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -100,7 +101,7 @@ export default function ChooseSubscription({ navigation, route }) {
     }
 
     // Start 14-day free trial subscription (payment method is on file)
-    const startResponse = await fetch(`${API_URL}/start-trial-subscription`, {
+    const startResponse = await apiFetch(`${API_URL}/start-trial-subscription`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

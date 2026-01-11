@@ -6,12 +6,21 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const { initFirebaseAdmin, firebaseEnabled, requireFirebaseAuth } = require('./firebaseAdmin');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 3001;
+
+// Optional Firebase Admin initialization (used for verifying Firebase ID tokens)
+initFirebaseAdmin();
+
+const maybeRequireFirebaseAuth = (req, res, next) => {
+  if (String(process.env.REQUIRE_FIREBASE_AUTH).toLowerCase() !== 'true') return next();
+  return requireFirebaseAuth(req, res, next);
+};
 
 // Price amounts in cents
 const PRICE_MAP = {
@@ -77,7 +86,7 @@ async function getOrCreateCustomer(email, name) {
   return await stripe.customers.create({ email, name });
 }
 
-app.post('/create-subscription', async (req, res) => {
+app.post('/create-subscription', maybeRequireFirebaseAuth, async (req, res) => {
   try {
     const { email, name, subscriptionTier } = req.body;
     const customer = await getOrCreateCustomer(email, name);
@@ -110,7 +119,7 @@ app.post('/create-subscription', async (req, res) => {
   }
 });
 
-app.post('/start-trial-subscription', async (req, res) => {
+app.post('/start-trial-subscription', maybeRequireFirebaseAuth, async (req, res) => {
   try {
     const { customerId, subscriptionTier, setupIntentId } = req.body;
     if (!customerId || !subscriptionTier || !setupIntentId) {
@@ -146,7 +155,7 @@ app.post('/start-trial-subscription', async (req, res) => {
   }
 });
 
-app.post('/update-subscription', async (req, res) => {
+app.post('/update-subscription', maybeRequireFirebaseAuth, async (req, res) => {
   try {
     const { subscriptionId, newSubscriptionTier } = req.body;
     console.log(`Updating subscription ${subscriptionId} to ${newSubscriptionTier}`);
@@ -344,7 +353,7 @@ app.post('/schedule-subscription-change', async (req, res) => {
   }
 });
 
-app.post('/cancel-subscription', async (req, res) => {
+app.post('/cancel-subscription', maybeRequireFirebaseAuth, async (req, res) => {
   try {
     const { subscriptionId, immediate } = req.body;
     if (immediate) {
@@ -366,7 +375,7 @@ app.post('/cancel-subscription', async (req, res) => {
   }
 });
 
-app.post('/create-payment-intent', async (req, res) => {
+app.post('/create-payment-intent', maybeRequireFirebaseAuth, async (req, res) => {
   try {
     const { amount, currency, email, subscriptionTier } = req.body;
     const customer = await getOrCreateCustomer(email, 'LAMB User');
@@ -395,7 +404,12 @@ app.post('/create-payment-intent', async (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', stripePrices: stripePriceIds });
+  res.json({ status: 'ok', stripePrices: stripePriceIds, firebase: firebaseEnabled() ? 'enabled' : 'disabled' });
+});
+
+// Simple endpoint to validate Firebase auth wiring.
+app.get('/me', requireFirebaseAuth, (req, res) => {
+  res.json({ uid: req.firebaseUser?.uid, email: req.firebaseUser?.email || null });
 });
 
 // Get all subscriptions for cleanup

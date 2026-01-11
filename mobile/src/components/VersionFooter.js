@@ -6,6 +6,7 @@ import appConfig from '../../app.json';
 import versionInfo from '../../../public/version.json';
 import { API_URL } from '../config/stripe';
 import { useData } from '../context/DataContext';
+import { apiFetch } from '../utils/apiFetch';
 
 const version = versionInfo?.version || '';
 const iosBuildNumber = appConfig?.expo?.ios?.buildNumber || '';
@@ -43,7 +44,7 @@ export default function VersionFooter() {
       const controller = new AbortController();
       const t = setTimeout(() => controller.abort(), 3500);
       try {
-        const res = await fetch(`${API_URL}/health`, {
+        const res = await apiFetch(`${API_URL}/health`, {
           method: 'GET',
           signal: controller.signal,
           headers: { Accept: 'application/json' },

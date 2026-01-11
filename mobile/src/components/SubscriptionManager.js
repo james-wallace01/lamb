@@ -3,6 +3,7 @@ import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, Modal } fr
 import { useData } from '../context/DataContext';
 import { useStripe } from '@stripe/stripe-react-native';
 import { API_URL } from '../config/stripe';
+import { apiFetch } from '../utils/apiFetch';
 
 export default function SubscriptionManager() {
   const {
@@ -37,7 +38,7 @@ export default function SubscriptionManager() {
 
   const initializePaymentSheet = async (tier) => {
     try {
-      const response = await fetch(`${API_URL}/create-payment-intent`, {
+      const response = await apiFetch(`${API_URL}/create-payment-intent`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -107,7 +108,7 @@ export default function SubscriptionManager() {
     try {
       if (confirmData.isUpgrade) {
         // For upgrades, we need to collect payment for the prorated amount
-        const response = await fetch(`${API_URL}/update-subscription`, {
+        const response = await apiFetch(`${API_URL}/update-subscription`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -164,7 +165,7 @@ export default function SubscriptionManager() {
           
           // Verify the payment actually went through
           try {
-            const confirmResponse = await fetch(`${API_URL}/confirm-payment`, {
+            const confirmResponse = await apiFetch(`${API_URL}/confirm-payment`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
