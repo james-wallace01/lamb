@@ -12,9 +12,11 @@ Important:
 - Don’t paste secret keys into chat.
 
 ### 2. Update Mobile App Configuration
-Edit `mobile/src/config/stripe.js`:
-```javascript
-export const STRIPE_PUBLISHABLE_KEY = 'pk_test_YOUR_KEY_HERE';
+The mobile app loads the Stripe publishable key at runtime from the backend (`GET /public-config`).
+
+Set the key on the backend via env var:
+```
+STRIPE_PUBLISHABLE_KEY=pk_test_YOUR_KEY_HERE
 ```
 
 ### 3. Setup Backend Server
@@ -27,6 +29,7 @@ cp .env.example .env
 Edit `.env` file and add your Stripe keys:
 ```
 STRIPE_SECRET_KEY=sk_test_YOUR_KEY_HERE
+STRIPE_PUBLISHABLE_KEY=pk_test_YOUR_KEY_HERE
 STRIPE_WEBHOOK_SECRET=whsec_YOUR_WEBHOOK_SECRET_HERE
 ```
 
@@ -36,7 +39,9 @@ cd backend
 npm start
 ```
 
-Server will run on http://localhost:3001
+Server will run on http://localhost:3001 (for local development).
+
+For production deployments, terminate TLS at the edge and set `ENFORCE_TLS=true` to reject non-HTTPS requests (based on `X-Forwarded-Proto`).
 
 ## Firebase (optional)
 
@@ -139,6 +144,7 @@ This repo includes a Render Blueprint at [render.yaml](render.yaml) that deploys
 ### 2) Set environment variables in Render
 In Render → your service → **Environment**, set:
 - `STRIPE_SECRET_KEY` (test secret key, starts with `sk_test_...`)
+- `STRIPE_PUBLISHABLE_KEY` (publishable key, starts with `pk_test_...`)
 - `STRIPE_WEBHOOK_SECRET` (starts with `whsec_...`)
 - `FIREBASE_SERVICE_ACCOUNT_JSON`
   - Recommended: paste **base64(JSON)** of your Firebase service account key.

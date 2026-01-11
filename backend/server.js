@@ -5,12 +5,39 @@
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const stripe = typeof stripeSecretKey === 'string' && stripeSecretKey.trim() ? require('stripe')(stripeSecretKey.trim()) : null;
 const { initFirebaseAdmin, firebaseEnabled, requireFirebaseAuth } = require('./firebaseAdmin');
 
 const app = express();
+
+app.enable('trust proxy');
+
+const enforceTls = String(process.env.ENFORCE_TLS).toLowerCase() === 'true' || process.env.NODE_ENV === 'production';
+if (enforceTls) {
+  app.use((req, res, next) => {
+    const forwardedProto = String(req.headers['x-forwarded-proto'] || '').toLowerCase();
+    const isSecure = req.secure || forwardedProto === 'https';
+    if (isSecure) return next();
+    return res.status(400).json({ error: 'TLS required' });
+  });
+}
+
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const sensitiveRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 app.use(cors());
 
 // Serve branded static images (used for default hero images on mobile).
@@ -26,13 +53,59 @@ initFirebaseAdmin();
 // If Stripe isn't configured, still allow /health and /me so Firebase auth can be tested.
 app.use((req, res, next) => {
   if (isStripeConfigured()) return next();
-  if (req.path === '/health' || req.path === '/me') return next();
+  if (req.path === '/health' || req.path === '/me' || req.path === '/public-config') return next();
   return res.status(503).json({ error: 'Stripe is not configured on this server' });
 });
 
+app.get('/public-config', (req, res) => {
+  res.json({
+    stripePublishableKey: (process.env.STRIPE_PUBLISHABLE_KEY || '').trim() || null,
+  });
+});
+
 const maybeRequireFirebaseAuth = (req, res, next) => {
-  if (String(process.env.REQUIRE_FIREBASE_AUTH).toLowerCase() !== 'true') return next();
+  const requireAuth = process.env.NODE_ENV === 'production' || String(process.env.REQUIRE_FIREBASE_AUTH).toLowerCase() === 'true';
+  if (!requireAuth) return next();
   return requireFirebaseAuth(req, res, next);
+};
+
+const normalizeEmail = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+
+const assertStripeCustomerOwnedByFirebaseUser = async (customerId, firebaseUser) => {
+  if (!customerId) return { ok: false, status: 400, error: 'Missing customerId' };
+  if (!firebaseUser?.uid) return { ok: false, status: 401, error: 'Missing authenticated user' };
+
+  const customer = await stripe.customers.retrieve(customerId);
+  if (!customer || customer.deleted) return { ok: false, status: 404, error: 'Stripe customer not found' };
+
+  const uid = String(firebaseUser.uid);
+  const tokenEmail = normalizeEmail(firebaseUser.email);
+
+  const metaUid = typeof customer.metadata?.firebaseUid === 'string' ? customer.metadata.firebaseUid : '';
+  const customerEmail = normalizeEmail(customer.email);
+
+  const matchesUid = metaUid && metaUid === uid;
+  const matchesEmail = tokenEmail && customerEmail && tokenEmail === customerEmail;
+
+  if (matchesUid || matchesEmail) {
+    // Best-effort: stamp ownership metadata for future strict checks.
+    if (!matchesUid) {
+      try {
+        await stripe.customers.update(customerId, {
+          metadata: {
+            ...(customer.metadata || {}),
+            firebaseUid: uid,
+            firebaseEmail: tokenEmail || customerEmail || null,
+          },
+        });
+      } catch {
+        // ignore
+      }
+    }
+    return { ok: true, customer };
+  }
+
+  return { ok: false, status: 403, error: 'Forbidden' };
 };
 
 // Stripe webhooks require the raw request body to validate signatures.
@@ -168,17 +241,56 @@ async function initializeStripePrices() {
   }
 }
 
-async function getOrCreateCustomer(email, name) {
-  const customers = await stripe.customers.list({ email, limit: 1 });
-  if (customers.data.length > 0) return customers.data[0];
-  return await stripe.customers.create({ email, name });
+async function getOrCreateCustomer(email, name, firebaseUser) {
+  const normalized = normalizeEmail(email);
+  const customers = await stripe.customers.list({ email: normalized, limit: 1 });
+  if (customers.data.length > 0) {
+    const existing = customers.data[0];
+    // Best-effort: stamp ownership metadata if we can.
+    if (firebaseUser?.uid) {
+      const uid = String(firebaseUser.uid);
+      const metaUid = typeof existing.metadata?.firebaseUid === 'string' ? existing.metadata.firebaseUid : '';
+      if (!metaUid || metaUid !== uid) {
+        try {
+          await stripe.customers.update(existing.id, {
+            metadata: {
+              ...(existing.metadata || {}),
+              firebaseUid: uid,
+              firebaseEmail: normalizeEmail(firebaseUser.email) || normalized || null,
+            },
+          });
+        } catch {
+          // ignore
+        }
+      }
+    }
+    return existing;
+  }
+
+  const metadata = firebaseUser?.uid
+    ? { firebaseUid: String(firebaseUser.uid), firebaseEmail: normalizeEmail(firebaseUser.email) || normalized || null }
+    : undefined;
+
+  return await stripe.customers.create({ email: normalized, name, metadata });
 }
 
 // Signup flow: runs before the user has an ID token, so this endpoint must not require Firebase auth.
-app.post('/create-subscription', async (req, res) => {
+app.post('/create-subscription', maybeRequireFirebaseAuth, authRateLimiter, async (req, res) => {
   try {
-    const { email, name, subscriptionTier } = req.body;
-    const customer = await getOrCreateCustomer(email, name);
+    const tokenEmail = normalizeEmail(req.firebaseUser?.email);
+    const email = tokenEmail || normalizeEmail(req.body?.email);
+    const name = typeof req.body?.name === 'string' && req.body.name.trim() ? req.body.name.trim() : 'LAMB User';
+    const { subscriptionTier } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Missing email' });
+    }
+
+    const customer = await getOrCreateCustomer(email, name, req.firebaseUser);
+    if (req.firebaseUser?.uid) {
+      const ownership = await assertStripeCustomerOwnedByFirebaseUser(customer.id, req.firebaseUser);
+      if (!ownership.ok) return res.status(ownership.status).json({ error: ownership.error });
+    }
     const ephemeralKey = await stripe.ephemeralKeys.create(
       { customer: customer.id },
       { apiVersion: '2024-11-20.acacia' }
@@ -209,14 +321,22 @@ app.post('/create-subscription', async (req, res) => {
 });
 
 // Signup flow: runs before the user has an ID token, so this endpoint must not require Firebase auth.
-app.post('/start-trial-subscription', async (req, res) => {
+app.post('/start-trial-subscription', maybeRequireFirebaseAuth, authRateLimiter, async (req, res) => {
   try {
     const { customerId, subscriptionTier, setupIntentId } = req.body;
     if (!customerId || !subscriptionTier || !setupIntentId) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
+    if (req.firebaseUser?.uid) {
+      const ownership = await assertStripeCustomerOwnedByFirebaseUser(customerId, req.firebaseUser);
+      if (!ownership.ok) return res.status(ownership.status).json({ error: ownership.error });
+    }
+
     const setupIntent = await stripe.setupIntents.retrieve(setupIntentId);
+    if (setupIntent?.customer && String(setupIntent.customer) !== String(customerId)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     const paymentMethodId = setupIntent.payment_method;
     if (!paymentMethodId) {
       return res.status(400).json({ error: 'No payment method found' });
@@ -245,12 +365,18 @@ app.post('/start-trial-subscription', async (req, res) => {
   }
 });
 
-app.post('/update-subscription', maybeRequireFirebaseAuth, async (req, res) => {
+app.post('/update-subscription', maybeRequireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
   try {
     const { subscriptionId, newSubscriptionTier } = req.body;
     console.log(`Updating subscription ${subscriptionId} to ${newSubscriptionTier}`);
     
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+
+    if (req.firebaseUser?.uid) {
+      const customerId = typeof subscription.customer === 'string' ? subscription.customer : subscription.customer?.id;
+      const ownership = await assertStripeCustomerOwnedByFirebaseUser(customerId, req.firebaseUser);
+      if (!ownership.ok) return res.status(ownership.status).json({ error: ownership.error });
+    }
     
     const updatedSubscription = await stripe.subscriptions.update(subscriptionId, {
       items: [{
@@ -322,7 +448,7 @@ app.post('/update-subscription', maybeRequireFirebaseAuth, async (req, res) => {
   }
 });
 
-app.post('/confirm-payment', async (req, res) => {
+app.post('/confirm-payment', maybeRequireFirebaseAuth, authRateLimiter, async (req, res) => {
   try {
     const { invoiceId } = req.body;
     
@@ -330,6 +456,12 @@ app.post('/confirm-payment', async (req, res) => {
     const invoice = await stripe.invoices.retrieve(invoiceId, {
       expand: ['payment_intent']
     });
+
+    if (req.firebaseUser?.uid) {
+      const customerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
+      const ownership = await assertStripeCustomerOwnedByFirebaseUser(customerId, req.firebaseUser);
+      if (!ownership.ok) return res.status(ownership.status).json({ error: ownership.error });
+    }
     
     if (!invoice.payment_intent) {
       return res.json({ success: false, status: 'no_payment' });
@@ -365,7 +497,7 @@ app.post('/confirm-payment', async (req, res) => {
   }
 });
 
-app.post('/confirm-subscription-payment', async (req, res) => {
+app.post('/confirm-subscription-payment', maybeRequireFirebaseAuth, authRateLimiter, async (req, res) => {
   try {
     const { subscriptionId } = req.body;
     
@@ -373,6 +505,12 @@ app.post('/confirm-subscription-payment', async (req, res) => {
     const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
       expand: ['latest_invoice.payment_intent']
     });
+
+    if (req.firebaseUser?.uid) {
+      const customerId = typeof subscription.customer === 'string' ? subscription.customer : subscription.customer?.id;
+      const ownership = await assertStripeCustomerOwnedByFirebaseUser(customerId, req.firebaseUser);
+      if (!ownership.ok) return res.status(ownership.status).json({ error: ownership.error });
+    }
     
     if (!subscription.latest_invoice) {
       return res.json({ success: false, status: 'no_invoice' });
@@ -409,10 +547,16 @@ app.post('/confirm-subscription-payment', async (req, res) => {
   }
 });
 
-app.post('/schedule-subscription-change', async (req, res) => {
+app.post('/schedule-subscription-change', maybeRequireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
   try {
     const { subscriptionId, newSubscriptionTier } = req.body;
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+
+    if (req.firebaseUser?.uid) {
+      const customerId = typeof subscription.customer === 'string' ? subscription.customer : subscription.customer?.id;
+      const ownership = await assertStripeCustomerOwnedByFirebaseUser(customerId, req.firebaseUser);
+      if (!ownership.ok) return res.status(ownership.status).json({ error: ownership.error });
+    }
     
     const schedule = await stripe.subscriptionSchedules.create({
       from_subscription: subscriptionId,
@@ -443,9 +587,17 @@ app.post('/schedule-subscription-change', async (req, res) => {
   }
 });
 
-app.post('/cancel-subscription', maybeRequireFirebaseAuth, async (req, res) => {
+app.post('/cancel-subscription', maybeRequireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
   try {
     const { subscriptionId, immediate } = req.body;
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+
+    if (req.firebaseUser?.uid) {
+      const customerId = typeof subscription.customer === 'string' ? subscription.customer : subscription.customer?.id;
+      const ownership = await assertStripeCustomerOwnedByFirebaseUser(customerId, req.firebaseUser);
+      if (!ownership.ok) return res.status(ownership.status).json({ error: ownership.error });
+    }
+
     if (immediate) {
       const canceled = await stripe.subscriptions.cancel(subscriptionId);
       res.json({ subscriptionId: canceled.id, status: 'canceled' });
@@ -465,10 +617,20 @@ app.post('/cancel-subscription', maybeRequireFirebaseAuth, async (req, res) => {
   }
 });
 
-app.post('/create-payment-intent', maybeRequireFirebaseAuth, async (req, res) => {
+app.post('/create-payment-intent', maybeRequireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
   try {
-    const { amount, currency, email, subscriptionTier } = req.body;
-    const customer = await getOrCreateCustomer(email, 'LAMB User');
+    const { amount, currency, subscriptionTier } = req.body;
+    const tokenEmail = normalizeEmail(req.firebaseUser?.email);
+    const email = tokenEmail || normalizeEmail(req.body?.email);
+    if (!email) {
+      return res.status(400).json({ error: 'Missing email' });
+    }
+
+    const customer = await getOrCreateCustomer(email, 'LAMB User', req.firebaseUser);
+    if (req.firebaseUser?.uid) {
+      const ownership = await assertStripeCustomerOwnedByFirebaseUser(customer.id, req.firebaseUser);
+      if (!ownership.ok) return res.status(ownership.status).json({ error: ownership.error });
+    }
     const ephemeralKey = await stripe.ephemeralKeys.create(
       { customer: customer.id },
       { apiVersion: '2024-11-20.acacia' }
@@ -505,7 +667,7 @@ app.get('/health', (req, res) => {
 
 // Server-side subscription validation/sync.
 // Requires a Firebase ID token and uses Stripe as the source of truth.
-app.post('/subscription-status', requireFirebaseAuth, async (req, res) => {
+app.post('/subscription-status', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
   try {
     if (!isStripeConfigured()) {
       return res.status(503).json({ error: 'Stripe is not configured on this server' });
