@@ -223,7 +223,9 @@ export default function SubscriptionManager() {
           });
 
           if (!response.ok) {
-            throw new Error('Failed to schedule downgrade');
+            const err = await response.json().catch(() => ({}));
+            const msg = err?.error ? String(err.error) : `Failed to schedule downgrade (${response.status})`;
+            throw new Error(msg);
           }
         } else {
           // No Stripe subscription yet (seeded users), just update locally
