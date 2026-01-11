@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, ScrollView, Image } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, ScrollView, Image, Linking } from 'react-native';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
+import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 
 export default function SignUp({ navigation }) {
   const { register, loading, users, theme } = useData();
@@ -87,6 +88,10 @@ export default function SignUp({ navigation }) {
     });
   };
 
+  const openLegalLink = (url) => {
+    Linking.openURL(url).catch(() => {});
+  };
+
   return (
     <ScrollView contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}>
       <LambHeader />
@@ -154,6 +159,20 @@ export default function SignUp({ navigation }) {
       <TouchableOpacity onPress={() => navigation.navigate('SignIn')}>
         <Text style={[styles.link, { color: theme.link }]}>Have an account? Sign in</Text>
       </TouchableOpacity>
+
+      <View style={[styles.legalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+        <Text style={[styles.legalTitle, { color: theme.text }]}>Legal</Text>
+        {LEGAL_LINK_ITEMS.map((item) => (
+          <TouchableOpacity
+            key={item.key}
+            style={styles.legalRow}
+            onPress={() => openLegalLink(item.url)}
+            accessibilityRole="link"
+          >
+            <Text style={[styles.legalLink, { color: theme.link }]}>{item.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
     </ScrollView>
   );
 }
@@ -170,4 +189,8 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: '#fff', fontWeight: '700' },
   link: { color: '#9ab6ff', marginTop: 12, fontWeight: '600', textAlign: 'center', marginBottom: 32 },
+  legalCard: { borderWidth: 1, borderColor: '#1f2738', borderRadius: 12, padding: 16, gap: 8 },
+  legalTitle: { color: '#e5e7f0', fontWeight: '700', fontSize: 14, marginBottom: 2 },
+  legalRow: { paddingVertical: 4 },
+  legalLink: { color: '#9ab6ff', fontWeight: '600' },
 });

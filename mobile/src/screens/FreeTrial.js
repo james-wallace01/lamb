@@ -1,11 +1,16 @@
 import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Linking } from 'react-native';
 import LambHeader from '../components/LambHeader';
 import { useData } from '../context/DataContext';
+import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 
 export default function FreeTrial({ navigation, route }) {
   const { theme } = useData();
   const { firstName, lastName, email, username, password } = route.params || {};
+
+  const openLegalLink = (url) => {
+    Linking.openURL(url).catch(() => {});
+  };
 
   const handleContinue = () => {
     navigation.navigate('ChooseSubscription', {
@@ -39,6 +44,20 @@ export default function FreeTrial({ navigation, route }) {
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={[styles.link, { color: theme.link }]}>Back</Text>
       </TouchableOpacity>
+
+      <View style={[styles.legalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+        <Text style={[styles.legalTitle, { color: theme.text }]}>Legal</Text>
+        {LEGAL_LINK_ITEMS.map((item) => (
+          <TouchableOpacity
+            key={item.key}
+            style={styles.legalRow}
+            onPress={() => openLegalLink(item.url)}
+            accessibilityRole="link"
+          >
+            <Text style={[styles.legalLink, { color: theme.link }]}>{item.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
     </ScrollView>
   );
 }
@@ -90,4 +109,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
+  legalCard: { borderWidth: 1, borderColor: '#1f2738', borderRadius: 12, padding: 16, gap: 8 },
+  legalTitle: { color: '#e5e7f0', fontWeight: '700', fontSize: 14, marginBottom: 2 },
+  legalRow: { paddingVertical: 4 },
+  legalLink: { color: '#9ab6ff', fontWeight: '600' },
 });

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Linking } from 'react-native';
 import { useStripe } from '@stripe/stripe-react-native';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
 import { API_URL } from '../config/stripe';
+import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 
 export default function ChooseSubscription({ navigation, route }) {
   const { subscriptionTiers, convertPrice, theme } = useData();
@@ -12,6 +13,10 @@ export default function ChooseSubscription({ navigation, route }) {
   const [submitting, setSubmitting] = useState(false);
   const { register, loading } = useData();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
+
+  const openLegalLink = (url) => {
+    Linking.openURL(url).catch(() => {});
+  };
 
   const initializePaymentSheet = async (tier) => {
     try {
@@ -191,6 +196,20 @@ export default function ChooseSubscription({ navigation, route }) {
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={[styles.link, { color: theme.link }]}>Back</Text>
       </TouchableOpacity>
+
+      <View style={[styles.legalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+        <Text style={[styles.legalTitle, { color: theme.text }]}>Legal</Text>
+        {LEGAL_LINK_ITEMS.map((item) => (
+          <TouchableOpacity
+            key={item.key}
+            style={styles.legalRow}
+            onPress={() => openLegalLink(item.url)}
+            accessibilityRole="link"
+          >
+            <Text style={[styles.legalLink, { color: theme.link }]}>{item.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
     </ScrollView>
   );
 }
@@ -290,4 +309,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 32,
   },
+  legalCard: { borderWidth: 1, borderColor: '#1f2738', borderRadius: 12, padding: 16, gap: 8 },
+  legalTitle: { color: '#e5e7f0', fontWeight: '700', fontSize: 14, marginBottom: 2 },
+  legalRow: { paddingVertical: 4 },
+  legalLink: { color: '#9ab6ff', fontWeight: '600' },
 });

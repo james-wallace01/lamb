@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, Image, ScrollView, RefreshControl, Platform, Switch } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, Image, ScrollView, RefreshControl, Platform, Switch, Linking } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
 import BackButton from '../components/BackButton';
+import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 
 const DEFAULT_AVATAR = 'https://via.placeholder.com/112?text=Profile';
 
@@ -38,6 +39,10 @@ export default function Profile() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
+
+  const openLegalLink = (url) => {
+    Linking.openURL(url).catch(() => {});
+  };
 
   const netWorth = useMemo(() => {
     if (!currentUser) return 0;
@@ -554,6 +559,20 @@ export default function Profile() {
                 <Text style={[styles.buttonText, styles.deleteButtonText]}>Delete Account</Text>
               </TouchableOpacity>
             </View>
+
+            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Legal</Text>
+              {LEGAL_LINK_ITEMS.map((item) => (
+                <TouchableOpacity
+                  key={item.key}
+                  style={styles.legalRow}
+                  onPress={() => openLegalLink(item.url)}
+                  accessibilityRole="link"
+                >
+                  <Text style={[styles.legalLink, { color: theme.link }]}>{item.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </>
         ) : (
           <Text style={styles.subtitle}>No user loaded.</Text>
@@ -601,5 +620,7 @@ const styles = StyleSheet.create({
   toggleSubtitle: { color: '#9aa1b5', fontSize: 12, marginTop: 2, lineHeight: 16 },
   deleteButton: { backgroundColor: '#3b0f0f', borderColor: '#ef4444', borderWidth: 1 },
   deleteButtonText: { color: '#fecaca' },
+  legalRow: { paddingVertical: 6 },
+  legalLink: { color: '#9ab6ff', fontWeight: '600' },
   spacer: { height: 40 },
 });
