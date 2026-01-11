@@ -108,7 +108,7 @@ const wipeStripe = async () => {
     return;
   }
 
-  console.log(`[stripe] key: ${key.startsWith('sk_live_') ? 'LIVE' : 'TEST'} (${key.slice(0, 10)}…)`);
+  console.log(`[stripe] key: ${key.startsWith('sk_live_') ? 'LIVE' : 'TEST'}`);
 
   // 1) Cancel subscriptions
   console.log('[stripe] listing subscriptions…');
