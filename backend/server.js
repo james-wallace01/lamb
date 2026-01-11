@@ -496,6 +496,11 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Convenience: Render service root should respond in-browser.
+app.get('/', (req, res) => {
+  res.redirect('/health');
+});
+
 // Simple endpoint to validate Firebase auth wiring.
 app.get('/me', requireFirebaseAuth, (req, res) => {
   res.json({ uid: req.firebaseUser?.uid, email: req.firebaseUser?.email || null });
