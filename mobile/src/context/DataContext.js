@@ -7,6 +7,8 @@ import { DEFAULT_DARK_MODE_ENABLED, getTheme } from '../theme';
 import { getAssetCapabilities, getCollectionCapabilities, getVaultCapabilities } from '../policies/capabilities';
 import { firebaseAuth, isFirebaseConfigured } from '../firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { API_URL } from '../config/stripe';
+import NetInfo from '@react-native-community/netinfo';
 
 // bcryptjs needs secure randomness for salts in React Native.
 // Expo Go doesn't provide WebCrypto by default, so use expo-random.
@@ -436,6 +438,7 @@ const DataContext = createContext(null);
 
 export function DataProvider({ children }) {
   const [loading, setLoading] = useState(true);
+  const [backendReachable, setBackendReachable] = useState(null);
   const [users, setUsers] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [biometricUserId, setBiometricUserId] = useState(null);
@@ -454,6 +457,42 @@ export function DataProvider({ children }) {
     if (now - lastActivityWriteAtRef.current < 15000) return;
     lastActivityWriteAtRef.current = now;
     setItem(LAST_ACTIVITY_KEY, now);
+  };
+
+  const offlineResult = useMemo(
+    () => ({ ok: false, message: 'Internet connection required. Please reconnect and try again.' }),
+    []
+  );
+
+  const wrapOnline = (fn) =>
+    (...args) => {
+      if (backendReachable === false) return offlineResult;
+      return fn(...args);
+    };
+
+  const wrapOnlineAsync = (fn) =>
+    async (...args) => {
+      if (backendReachable === false) return offlineResult;
+      return await fn(...args);
+    };
+
+  const checkBackend = async () => {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId = setTimeout(() => controller?.abort?.(), 8000);
+    try {
+      const res = await fetch(`${API_URL}/health`, {
+        method: 'GET',
+        signal: controller?.signal,
+        headers: { Accept: 'application/json' },
+      });
+      setBackendReachable(!!res.ok);
+      return { ok: !!res.ok };
+    } catch {
+      setBackendReachable(false);
+      return { ok: false };
+    } finally {
+      clearTimeout(timeoutId);
+    }
   };
 
   const enforceSessionTimeout = async () => {
@@ -512,6 +551,9 @@ export function DataProvider({ children }) {
 
     useEffect(() => {
       (async () => {
+        // Enforce online-only behavior by verifying the staging backend is reachable.
+        await checkBackend();
+
         await removeItem('lamb-mobile-data-v1'); // clean legacy
         await removeItem('lamb-mobile-data-v2'); // clean previous version
 
@@ -557,6 +599,30 @@ export function DataProvider({ children }) {
         }
         setLoading(false);
       })();
+    }, []);
+
+    useEffect(() => {
+      // Near-instant offline detection: if the device loses internet, immediately block writes.
+      const unsub = NetInfo.addEventListener((state) => {
+        const internetReachable = state.isInternetReachable;
+        const online = !!state.isConnected && internetReachable !== false;
+        if (!online) {
+          setBackendReachable(false);
+          return;
+        }
+        // When coming back online, verify the backend is reachable.
+        checkBackend();
+      });
+
+      // Lightweight backend liveness check (covers "internet is up but backend is down").
+      const id = setInterval(() => {
+        checkBackend();
+      }, 10 * 1000);
+
+      return () => {
+        unsub?.();
+        clearInterval(id);
+      };
     }, []);
 
     useEffect(() => {
@@ -1369,6 +1435,8 @@ const register = async ({ firstName, lastName, email, username, password, subscr
 
   const value = useMemo(() => ({
     loading,
+    backendReachable,
+    checkBackend,
     users,
     currentUser,
     setCurrentUser,
@@ -1390,36 +1458,44 @@ const register = async ({ firstName, lastName, email, username, password, subscr
     setVaults,
     setCollections,
     setAssets,
-    login,
+    // Read-only / session ops
+    login: wrapOnlineAsync(login),
     logout,
     resetAllData,
-    register,
-    updateCurrentUser,
-    updateSubscription,
-    setCancelAtPeriodEnd,
+    // Auth / profile
+    register: wrapOnlineAsync(register),
+    updateCurrentUser: wrapOnline(updateCurrentUser),
+    resetPassword: wrapOnlineAsync(resetPassword),
+    deleteAccount: wrapOnlineAsync(deleteAccount),
+
+    // Subscription
+    updateSubscription: wrapOnlineAsync(updateSubscription),
+    setCancelAtPeriodEnd: wrapOnlineAsync(setCancelAtPeriodEnd),
     validatePassword,
-    resetPassword,
-    deleteAccount,
-    addVault,
-    addCollection,
-    addAsset,
-    updateVault,
-    updateCollection,
-    shareVault,
-    shareCollection,
-    shareAsset,
-    updateVaultShare,
-    updateCollectionShare,
-    updateAssetShare,
-    removeVaultShare,
-    removeCollectionShare,
-    removeAssetShare,
-    updateAsset,
-    moveCollection,
-    moveAsset,
-    deleteVault,
-    deleteCollection,
-    deleteAsset,
+
+    // Mutations (online-only)
+    addVault: wrapOnline(addVault),
+    addCollection: wrapOnline(addCollection),
+    addAsset: wrapOnline(addAsset),
+    updateVault: wrapOnline(updateVault),
+    updateCollection: wrapOnline(updateCollection),
+    updateAsset: wrapOnline(updateAsset),
+    moveCollection: wrapOnline(moveCollection),
+    moveAsset: wrapOnline(moveAsset),
+    deleteVault: wrapOnline(deleteVault),
+    deleteCollection: wrapOnline(deleteCollection),
+    deleteAsset: wrapOnline(deleteAsset),
+
+    // Sharing (online-only)
+    shareVault: wrapOnlineAsync(shareVault),
+    shareCollection: wrapOnlineAsync(shareCollection),
+    shareAsset: wrapOnlineAsync(shareAsset),
+    updateVaultShare: wrapOnlineAsync(updateVaultShare),
+    updateCollectionShare: wrapOnlineAsync(updateCollectionShare),
+    updateAssetShare: wrapOnlineAsync(updateAssetShare),
+    removeVaultShare: wrapOnlineAsync(removeVaultShare),
+    removeCollectionShare: wrapOnlineAsync(removeCollectionShare),
+    removeAssetShare: wrapOnlineAsync(removeAssetShare),
     getRoleForVault,
     getRoleForCollection,
     getRoleForAsset,
@@ -1430,7 +1506,17 @@ const register = async ({ firstName, lastName, email, username, password, subscr
       getFeaturesComparison,
       convertPrice,
       getCurrencyInfo,
-  }), [loading, users, currentUser, biometricUserId, vaults, collections, assets]);
+  }), [
+    loading,
+    backendReachable,
+    users,
+    currentUser,
+    biometricUserId,
+    vaults,
+    collections,
+    assets,
+    offlineResult,
+  ]);
 
   return (
     <DataContext.Provider value={value}>

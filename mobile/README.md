@@ -13,8 +13,20 @@ npm install
 ```
 
 ## Run
-- iOS Simulator: `npm run ios`
-- Web (for quick checks): `npm run web`
+
+## Backend environment (local vs staging)
+
+The app reads these Expo public environment variables:
+- `EXPO_PUBLIC_LAMB_API_URL`
+- `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` (optional; defaults to the repo's test key)
+
+For convenience, see [mobile/.env.example](mobile/.env.example).
+
+Examples:
+- Staging (Render):
+	- `EXPO_PUBLIC_LAMB_API_URL=https://lamb-backend-staging.onrender.com`
+- Local (LAN):
+	- `EXPO_PUBLIC_LAMB_API_URL=http://192.168.7.112:3001`
 
 ## Testing/Health
 - Expo doctor: `npx expo-doctor`
