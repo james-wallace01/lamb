@@ -72,33 +72,6 @@ const maybeRequireFirebaseAuth = (req, res, next) => {
 
 const normalizeEmail = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
 
-// Email availability check used by the signup UI (runs before the user is authenticated).
-// Note: This endpoint intentionally reveals whether an email exists. Keep the rate limit tight.
-app.post('/email-available', authRateLimiter, async (req, res) => {
-  try {
-    const email = normalizeEmail(req.body?.email);
-    if (!email) return res.status(400).json({ error: 'Missing email' });
-    if (!firebaseEnabled()) {
-      return res.status(503).json({ error: 'Firebase is not configured on this server' });
-    }
-
-    try {
-      await firebaseAdmin.auth().getUserByEmail(email);
-      return res.json({ available: false });
-    } catch (err) {
-      const code = err?.code ? String(err.code) : '';
-      if (code === 'auth/user-not-found') {
-        return res.json({ available: true });
-      }
-      console.error('Email availability check failed:', err?.message || err);
-      return res.status(500).json({ error: 'Email check failed' });
-    }
-  } catch (error) {
-    console.error('Email availability endpoint error:', error);
-    return res.status(500).json({ error: 'Email check failed' });
-  }
-});
-
 const assertStripeCustomerOwnedByFirebaseUser = async (customerId, firebaseUser) => {
   if (!customerId) return { ok: false, status: 400, error: 'Missing customerId' };
   if (!firebaseUser?.uid) return { ok: false, status: 401, error: 'Missing authenticated user' };
@@ -205,6 +178,33 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
 
 // JSON parser for all non-webhook routes.
 app.use(express.json());
+
+// Email availability check used by the signup UI (runs before the user is authenticated).
+// Note: This endpoint intentionally reveals whether an email exists. Keep the rate limit tight.
+app.post('/email-available', authRateLimiter, async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    if (!email) return res.status(400).json({ error: 'Missing email' });
+    if (!firebaseEnabled()) {
+      return res.status(503).json({ error: 'Firebase is not configured on this server' });
+    }
+
+    try {
+      await firebaseAdmin.auth().getUserByEmail(email);
+      return res.json({ available: false });
+    } catch (err) {
+      const code = err?.code ? String(err.code) : '';
+      if (code === 'auth/user-not-found') {
+        return res.json({ available: true });
+      }
+      console.error('Email availability check failed:', err?.message || err);
+      return res.status(500).json({ error: 'Email check failed' });
+    }
+  } catch (error) {
+    console.error('Email availability endpoint error:', error);
+    return res.status(500).json({ error: 'Email check failed' });
+  }
+});
 
 // Price amounts in cents
 const PRICE_MAP = {
