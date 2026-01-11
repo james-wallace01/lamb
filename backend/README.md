@@ -43,6 +43,17 @@ Server will run on http://localhost:3001 (for local development).
 
 For production deployments, terminate TLS at the edge and set `ENFORCE_TLS=true` to reject non-HTTPS requests (based on `X-Forwarded-Proto`).
 
+## CORS (browser access)
+
+This API is primarily consumed by the native mobile app (which is not restricted by browser CORS).
+
+- In production, if you do **not** set `CORS_ORIGINS`, the server will **block any request that includes an `Origin` header**. This prevents arbitrary websites from calling your API in a browser context.
+- If you *do* need browser access, set `CORS_ORIGINS` to a comma-separated list of allowed origins.
+
+Example:
+
+`CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com`
+
 ## Firebase (optional)
 
 This backend can optionally use Firebase Admin to verify Firebase ID tokens.

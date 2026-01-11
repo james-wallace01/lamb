@@ -5,6 +5,7 @@
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
+const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
@@ -14,7 +15,19 @@ const firebaseAdmin = require('firebase-admin');
 
 const app = express();
 
+app.disable('x-powered-by');
+
 app.enable('trust proxy');
+
+// Basic security headers (API-safe defaults).
+app.use(
+  helmet({
+    // This is an API server; we don't need CSP here and it can cause confusion.
+    contentSecurityPolicy: false,
+  })
+);
+
+const isProd = process.env.NODE_ENV === 'production';
 
 const enforceTls = String(process.env.ENFORCE_TLS).toLowerCase() === 'true' || process.env.NODE_ENV === 'production';
 if (enforceTls) {
@@ -48,7 +61,45 @@ const sensitiveRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-app.use(cors());
+
+// CORS is a browser security feature; native mobile clients are not restricted by it.
+// In production, if no allowlist is configured, explicitly block requests that include an Origin header.
+// This prevents arbitrary websites from calling the API in a browser context.
+const corsAllowlist = String(process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+if (isProd && corsAllowlist.length === 0) {
+  app.use((req, res, next) => {
+    if (req.headers.origin) {
+      return res.status(403).json({ error: 'CORS forbidden' });
+    }
+    return next();
+  });
+} else {
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        // Allow non-browser requests (no Origin header).
+        if (!origin) return callback(null, true);
+
+        // If no allowlist is set (typical dev), allow all origins.
+        if (!isProd && corsAllowlist.length === 0) return callback(null, true);
+
+        // Production (or configured dev): allow only explicit origins.
+        if (corsAllowlist.includes(origin)) return callback(null, true);
+
+        return callback(null, false);
+      },
+      methods: ['GET', 'POST', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+      credentials: false,
+      maxAge: 86400,
+      optionsSuccessStatus: 204,
+    })
+  );
+}
 
 // Serve branded static images (used for default hero images on mobile).
 app.use('/images', express.static(path.join(__dirname, '..', 'public', 'images')));
@@ -120,7 +171,7 @@ const assertStripeCustomerOwnedByFirebaseUser = async (customerId, firebaseUser)
 
 // Stripe webhooks require the raw request body to validate signatures.
 // This MUST be registered before express.json().
-app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), (req, res) => {
   if (!isStripeConfigured()) {
     return res.status(503).json({ error: 'Stripe is not configured on this server' });
   }
@@ -186,7 +237,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
 });
 
 // JSON parser for all non-webhook routes.
-app.use(express.json());
+app.use(express.json({ limit: '200kb' }));
 
 // Email availability check used by the signup UI (runs before the user is authenticated).
 // Note: This endpoint intentionally reveals whether an email exists. Keep the rate limit tight.
