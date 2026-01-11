@@ -78,13 +78,33 @@ export default function SignUp({ navigation }) {
     const v = normalizeEmail(emailValue);
     if (!v || emailError) return { ok: true, taken: false };
 
+    const withTimeout = async (promise, timeoutMs, timeoutMessage) => {
+      let timeoutId;
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+      });
+      try {
+        return await Promise.race([promise, timeoutPromise]);
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+      }
+    };
+
     // Prefer server-side lookup for reliability (Firebase Admin).
     try {
-      const resp = await apiFetch(`${API_URL}/email-available`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: v }),
-      });
+      const controller = new AbortController();
+      const abortId = setTimeout(() => controller.abort(), 4000);
+      let resp;
+      try {
+        resp = await apiFetch(`${API_URL}/email-available`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: v }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(abortId);
+      }
       if (resp.ok) {
         const json = await resp.json().catch(() => null);
         if (json && json.available === false) return { ok: true, taken: true };
@@ -97,7 +117,11 @@ export default function SignUp({ navigation }) {
 
     if (!isFirebaseConfigured() || !firebaseAuth) return { ok: true, taken: false };
     try {
-      const methods = await fetchSignInMethodsForEmail(firebaseAuth, v);
+      const methods = await withTimeout(
+        fetchSignInMethodsForEmail(firebaseAuth, v),
+        4000,
+        'Email check timed out'
+      );
       const taken = Array.isArray(methods) && methods.length > 0;
       return { ok: true, taken };
     } catch (e) {
