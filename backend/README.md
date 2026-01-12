@@ -135,6 +135,106 @@ npm run wipe-remote -- --execute
   - `--scope stripe|firebase|all` (default `all`)
   - `--limit N`
 
+## Firestore Vault Model Migration (DANGEROUS)
+
+This repo includes a one-time admin script that migrates legacy vault sharing + per-user subscriptions into the canonical Firestore model:
+
+- `/vaults/{vaultId}/memberships/{uid}` becomes the sole source of truth for roles (`OWNER | DELEGATE`).
+- `vault.activeOwnerId` is normalized (exactly one active owner).
+- Legacy `users/{uid}.subscription` is moved to `/vaultSubscriptions/{primaryVaultId}` where `primaryVaultId` is the earliest-created vault owned by that user.
+
+The script is **dry-run by default**.
+
+### Prereqs
+- Firebase Admin credentials must be configured (see the **Firebase (optional)** section above).
+
+### Dry run
+```bash
+cd backend
+npm run migrate-vault-model
+```
+
+### Execute
+```bash
+cd backend
+MIGRATE_CONFIRM=I_UNDERSTAND npm run migrate-vault-model -- --execute
+```
+
+### Options
+- `--scope vaults|memberships|subscriptions|all` (default `all`)
+- `--limit N`
+
+### Notes
+- When executing, the script will also clear legacy `vault.sharedWith` arrays to avoid dual sources of truth.
+- Run this against a backup / test project first.
+
+## Deploy Firestore Rules
+
+Canonical authorization is enforced by Firestore Security Rules in the repo root at [firestore.rules](../firestore.rules).
+
+To deploy rules, use the Firebase CLI from the repo root (recommended):
+
+```bash
+npm i -g firebase-tools
+firebase login
+firebase use <your-project-id>
+firebase deploy --only firestore:rules
+```
+
+If you prefer to run without a global install:
+
+```bash
+npx firebase-tools login
+npx firebase-tools use <your-project-id>
+npx firebase-tools deploy --only firestore:rules
+```
+
+## Paid Owner Invitations
+
+The backend exposes a minimal invitation flow that writes canonical Firestore docs:
+
+- `POST /vaults/:vaultId/invitations` (Firebase auth required)
+  - Owner-only, paid-vault only
+  - Body: `{ "email": "invitee@example.com" }`
+  - Returns an invite `code`
+
+- `GET /vaults/:vaultId/invitations` (Firebase auth required)
+  - Owner-only, paid-vault only
+  - Returns up to 50 most recent invitations
+
+- `POST /invitations/accept` (Firebase auth required)
+  - Body: `{ "code": "<invite code>" }`
+  - Creates `/vaults/{vaultId}/memberships/{uid}` as `DELEGATE` and marks the invitation accepted
+
+## Hard Ops (Owner-only)
+
+Some operations cannot be safely performed client-side due to Firestore rule constraints (e.g. recursive deletion) or cross-vault moves.
+
+- `POST /vaults/:vaultId/delete` (Firebase auth required)
+  - Owner-only
+  - Body: `{ "confirm": "DELETE" }`
+  - Recursively deletes subcollections (`assets`, `collections`, `memberships`, `permissionGrants`, `invitations`, `auditEvents`) and then deletes the vault doc.
+
+- `POST /vaults/:vaultId/assets/:assetId/move` (Firebase auth required)
+  - Owner-only on BOTH source and destination vaults
+  - Body: `{ "targetVaultId": "...", "targetCollectionId": "..." }`
+  - Copies the asset to the target vault and deletes the source asset.
+
+- `POST /vaults/:vaultId/collections/:collectionId/move` (Firebase auth required)
+  - Owner-only on BOTH source and destination vaults
+  - Body: `{ "targetVaultId": "..." }`
+  - Copies the collection and moves its assets to the target vault.
+
+## Downgrade cleanup (paid → unpaid)
+
+When a vault transitions from a paid status (`active|trialing|past_due`) to an unpaid status, the backend will automatically clean up paid-only data:
+
+- Revokes active `DELEGATE` memberships
+- Deletes `permissionGrants`
+- Revokes pending invitations
+
+This is triggered during Stripe webhook subscription sync.
+
 ## Production Deployment
 
 ### Backend Hosting Options:

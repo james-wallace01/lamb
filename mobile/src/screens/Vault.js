@@ -9,7 +9,7 @@ import { getVaultCapabilities } from '../policies/capabilities';
 
 export default function Vault({ navigation, route }) {
   const { vaultId } = route.params || {};
-  const { loading, vaults, collections, addCollection, currentUser, getRoleForVault, canCreateCollectionsInVault, users, deleteVault, updateVault, refreshData, theme, defaultHeroImage } = useData();
+  const { loading, vaults, collections, addCollection, currentUser, getRoleForVault, canCreateCollectionsInVault, users, deleteVault, updateVault, refreshData, theme, defaultHeroImage, permissionGrants } = useData();
   const [newName, setNewName] = useState('');
   const [shareVisible, setShareVisible] = useState(false);
   const [shareTargetType, setShareTargetType] = useState(null);
@@ -115,7 +115,12 @@ export default function Vault({ navigation, route }) {
 
     const merged = trimToFour([...vaultImages, ...newImages]);
     const nextHero = ensureHero(merged, heroImage);
-    updateVault(vaultId, { images: merged, heroImage: nextHero });
+    (async () => {
+      const res = await updateVault(vaultId, { images: merged, heroImage: nextHero });
+      if (!res || res.ok === false) {
+        Alert.alert('Update failed', res?.message || 'Unable to update vault images');
+      }
+    })();
 
     if (skipped.length) {
       Alert.alert('Skipped large files', `Images over 30MB were skipped: ${skipped.join(', ')}`);
@@ -125,14 +130,24 @@ export default function Vault({ navigation, route }) {
   const handleSetHero = (img) => {
     if (!vault) return;
     const reordered = trimToFour([img, ...vaultImages.filter((i) => i !== img)]);
-    updateVault(vaultId, { images: reordered, heroImage: img });
+    (async () => {
+      const res = await updateVault(vaultId, { images: reordered, heroImage: img });
+      if (!res || res.ok === false) {
+        Alert.alert('Update failed', res?.message || 'Unable to update vault hero image');
+      }
+    })();
   };
 
   const handleRemoveImage = (img) => {
     if (!vault) return;
     const remaining = vaultImages.filter((i) => i !== img);
     const nextHero = ensureHero(remaining, heroImage === img ? remaining[0] : heroImage);
-    updateVault(vaultId, { images: remaining, heroImage: nextHero });
+    (async () => {
+      const res = await updateVault(vaultId, { images: remaining, heroImage: nextHero });
+      if (!res || res.ok === false) {
+        Alert.alert('Update failed', res?.message || 'Unable to remove vault image');
+      }
+    })();
   };
 
   const addImagesToDraft = async () => {
@@ -209,20 +224,37 @@ export default function Vault({ navigation, route }) {
     if (!vault) return;
     const images = trimToFour(editDraft.images || []);
     const hero = ensureHero(images, editDraft.heroImage);
-    updateVault(vaultId, {
-      name: limit35((editDraft.name || '').trim() || vault.name || ''),
-      description: (editDraft.description || '').trim(),
-      manager: (editDraft.manager || '').trim(),
-      images,
-      heroImage: hero,
-    });
-    setEditVisible(false);
+    (async () => {
+      const res = await updateVault(vaultId, {
+        name: limit35((editDraft.name || '').trim() || vault.name || ''),
+        description: (editDraft.description || '').trim(),
+        manager: (editDraft.manager || '').trim(),
+        images,
+        heroImage: hero,
+      });
+      if (!res || res.ok === false) {
+        Alert.alert('Save failed', res?.message || 'Unable to update vault');
+        return;
+      }
+      setEditVisible(false);
+    })();
   };
 
   const openShare = (targetType, targetId) => {
     setShareTargetType(targetType);
     setShareTargetId(targetId);
     setShareVisible(true);
+  };
+
+  const getCollectionShareCount = (collectionId) => {
+    const vId = String(vaultId);
+    const cId = String(collectionId);
+    const ids = new Set(
+      (permissionGrants || [])
+        .filter((g) => g?.vault_id === vId && g?.scope_type === 'COLLECTION' && String(g?.scope_id) === cId)
+        .map((g) => String(g.user_id))
+    );
+    return ids.size;
   };
 
   const renderCollection = ({ item }) => (
@@ -238,7 +270,7 @@ export default function Vault({ navigation, route }) {
         <View>
           <View style={styles.titleRow}>
             <Text style={[styles.cardTitle, { color: theme.text }]}>{item.name}</Text>
-            <View style={[styles.sharedDot, (item.sharedWith || []).length > 0 ? styles.sharedDotOn : styles.sharedDotOff]} />
+            <View style={[styles.sharedDot, canShare && getCollectionShareCount(item.id) > 0 ? styles.sharedDotOn : styles.sharedDotOff]} />
           </View>
           <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>Collection • {new Date(item.createdAt).toLocaleDateString()}</Text>
         </View>
@@ -352,8 +384,14 @@ export default function Vault({ navigation, route }) {
                             text: 'Delete',
                             onPress: () => {
                               setEditVisible(false);
-                              deleteVault(vaultId);
-                              navigation.goBack();
+                              (async () => {
+                                const res = await deleteVault(vaultId);
+                                if (!res || res.ok === false) {
+                                  Alert.alert('Delete failed', res?.message || 'Unable to delete vault');
+                                  return;
+                                }
+                                navigation.goBack();
+                              })();
                             },
                             style: 'destructive',
                           },
@@ -456,8 +494,14 @@ export default function Vault({ navigation, route }) {
                       onPress={() => {
                         if (!canCreate) return Alert.alert('No permission to add collections');
                         if (!newName.trim()) return;
-                        addCollection({ vaultId, name: newName.trim() });
-                        setNewName('');
+                        (async () => {
+                          const res = await addCollection({ vaultId, name: newName.trim() });
+                          if (!res || res.ok === false) {
+                            Alert.alert('Create failed', res?.message || 'Unable to create collection');
+                            return;
+                          }
+                          setNewName('');
+                        })();
                       }}
                     >
                       <Text style={styles.addButtonText}>Add</Text>
@@ -518,8 +562,6 @@ export default function Vault({ navigation, route }) {
       </View>
     </>
   );
-
-                  {vaultCollections.length > 0 ? <View style={styles.separator} /> : null}
 }
 
 const styles = StyleSheet.create({

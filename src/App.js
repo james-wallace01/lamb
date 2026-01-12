@@ -1,4 +1,32 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  updatePassword,
+  updateEmail,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  deleteUser,
+} from 'firebase/auth';
+import {
+  addDoc,
+  collection,
+  collectionGroup,
+  deleteDoc,
+  doc,
+  getDocs,
+  limit,
+  onSnapshot,
+  query,
+  setDoc,
+  updateDoc,
+  where,
+  writeBatch,
+} from 'firebase/firestore';
+import { firebaseAuth, firestore, isFirebaseConfigured } from './firebase';
+import { API_URL, apiFetch } from './utils/apiFetch';
 
 const DEFAULT_AVATAR = "/images/default-avatar.png";
 const DEFAULT_HERO = "/images/collection_default.jpg";
@@ -27,6 +55,21 @@ const PATH_TO_VIEW = {
 
 const viewToPath = (view) => VIEW_TO_PATH[view] || "/";
 const pathToView = (path) => PATH_TO_VIEW[path] || "landing";
+
+const normalizeEmail = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+const normalizeUsername = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+
+function mapFirebaseAuthError(error) {
+  const code = typeof error?.code === 'string' ? error.code : '';
+  if (code === 'auth/invalid-credential') return 'Invalid credentials.';
+  if (code === 'auth/user-not-found') return 'Account not found.';
+  if (code === 'auth/wrong-password') return 'Invalid credentials.';
+  if (code === 'auth/email-already-in-use') return 'Email already in use.';
+  if (code === 'auth/weak-password') return 'Password must be at least 6 characters.';
+  if (code === 'auth/too-many-requests') return 'Too many attempts. Try again later.';
+  if (code === 'auth/requires-recent-login') return 'Please sign in again and retry.';
+  return error?.message ? String(error.message) : 'Authentication failed.';
+}
 
 function safeParse(key, fallback) {
   try {
@@ -125,23 +168,37 @@ function recompressDataUrl(dataUrl, maxWidth = 900, maxHeight = 900, quality = 0
   });
 }
 
-export default function App() {
-  const storedUser = safeParse("currentUser", null);
-  const initialPathView = pathToView(window.location.pathname);
-  const initialView = (() => {
-    if ((initialPathView === "vault" || initialPathView === "profile") && !storedUser) return "login";
-    if (storedUser && (initialPathView === "login" || initialPathView === "landing")) return "home";
-    return initialPathView;
-  })();
+function legacyRoleToPermissions(role, extra = {}) {
+  const r = (role || '').toLowerCase();
+  const perms = { View: true, Create: false, Edit: false, Move: false, Delete: false };
+  if (r === 'editor') {
+    perms.Edit = true;
+  }
+  if (r === 'manager') {
+    perms.Edit = true;
+    perms.Move = true;
+  }
+  if (extra && extra.canCreate) perms.Create = true;
+  return perms;
+}
 
-  const [users, setUsers] = useState(() => safeParse("users", []));
-  const [currentUser, setCurrentUser] = useState(() => storedUser);
-  const [isLoggedIn, setIsLoggedIn] = useState(() => !!storedUser);
-  const [view, setView] = useState(initialView);
+export default function App() {
+  const initialPathView = pathToView(window.location.pathname);
+  const [view, setView] = useState(initialPathView);
   const [previousView, setPreviousView] = useState(null);
-  const [vaults, setVaults] = useState(() => safeParse("vaults", []));
-  const [collections, setCollections] = useState(() => safeParse("collections", []));
-  const [assets, setAssets] = useState(() => safeParse("assets", []));
+
+  const [firebaseUser, setFirebaseUser] = useState(() => firebaseAuth?.currentUser || null);
+  const [currentUser, setCurrentUser] = useState(null); // /users/{uid}
+  const [isLoggedIn, setIsLoggedIn] = useState(() => !!(firebaseAuth && firebaseAuth.currentUser));
+
+  const [users, setUsers] = useState([]); // intentionally empty: Firestore rules do not allow listing /users
+  const [vaults, setVaults] = useState([]);
+  const [collections, setCollections] = useState([]);
+  const [assets, setAssets] = useState([]);
+  const [vaultMemberships, setVaultMemberships] = useState([]);
+  const [permissionGrants, setPermissionGrants] = useState([]);
+
+  const vaultListenerUnsubsRef = useRef(new Map());
 
   const [selectedVaultId, setSelectedVaultId] = useState(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState(null);
@@ -189,28 +246,168 @@ export default function App() {
   const [moveDialog, setMoveDialog] = useState({ show: false, assetId: null, targetVaultId: null, targetCollectionId: null });
   const [collectionMoveDialog, setCollectionMoveDialog] = useState({ show: false, collectionId: null, targetVaultId: null });
   const [managerDialog, setManagerDialog] = useState({ show: false, type: null, id: null, username: "" });
-  const [shareDialog, setShareDialog] = useState({ show: false, type: 'vault', targetId: null, username: "", role: 'viewer', canCreateCollections: false, canCreateAssets: false });
+  const [shareDialog, setShareDialog] = useState({
+    show: false,
+    type: 'vault',
+    targetId: null,
+    username: "",
+    permissions: { View: true, Create: false, Edit: false, Move: false, Delete: false },
+  });
   const [showShareSuggestions, setShowShareSuggestions] = useState(false);
   const [appVersion, setAppVersion] = useState("");
 
-  const ROLES = ['viewer', 'editor', 'manager'];
+  const PERMISSION_KEYS = ["View", "Create", "Edit", "Move", "Delete"];
 
-  const updateUserRole = (userId, newRole) => {
-    if (shareDialog.type === 'vault') {
-      setVaults(prev => prev.map(v => v.id === shareDialog.targetId ? { ...v, sharedWith: (v.sharedWith || []).map(sw => sw.userId === userId ? { ...sw, role: newRole } : sw) } : v));
-    } else if (shareDialog.type === 'collection') {
-      setCollections(prev => prev.map(c => c.id === shareDialog.targetId ? { ...c, sharedWith: (c.sharedWith || []).map(sw => sw.userId === userId ? { ...sw, role: newRole } : sw) } : c));
-    } else if (shareDialog.type === 'asset') {
-      setAssets(prev => prev.map(a => a.id === shareDialog.targetId ? { ...a, sharedWith: (a.sharedWith || []).map(sw => sw.userId === userId ? { ...sw, role: newRole } : sw) } : a));
-    }
-    showAlert(`Updated role to ${newRole}`);
+  const normalizePermissions = (value) => {
+    const base = value && typeof value === 'object' ? value : {};
+    return {
+      View: !!base.View,
+      Create: !!base.Create,
+      Edit: !!base.Edit,
+      Move: !!base.Move,
+      Delete: !!base.Delete,
+    };
   };
 
-  const updateCreatePermission = (userId, field, value) => {
-    if (shareDialog.type === 'vault' && field === 'canCreateCollections') {
-      setVaults(prev => prev.map(v => v.id === shareDialog.targetId ? { ...v, sharedWith: (v.sharedWith || []).map(sw => sw.userId === userId ? { ...sw, [field]: !!value } : sw) } : v));
-    } else if (shareDialog.type === 'collection' && field === 'canCreateAssets') {
-      setCollections(prev => prev.map(c => c.id === shareDialog.targetId ? { ...c, sharedWith: (c.sharedWith || []).map(sw => sw.userId === userId ? { ...sw, [field]: !!value } : sw) } : c));
+  const getVaultOwnerId = (vault) => (vault ? (vault.activeOwnerId || vault.ownerId) : null);
+
+  const getMembershipForVault = (vaultId, userId) => {
+    if (!vaultId || !userId) return null;
+    return vaultMemberships.find((m) => m && m.vault_id === vaultId && m.user_id === userId && m.status !== 'REVOKED') || null;
+  };
+
+  const isOwnerOfVault = (vault) => {
+    if (!vault || !currentUser) return false;
+    return getVaultOwnerId(vault) === currentUser.id;
+  };
+
+  const hasVaultPermission = (vault, key) => {
+    if (!vault || !currentUser) return false;
+    if (isOwnerOfVault(vault)) return true;
+    const membership = getMembershipForVault(vault.id, currentUser.id);
+    const perms = normalizePermissions(membership?.permissions);
+    return !!perms[key];
+  };
+
+  const grantIdForScope = (scopeType, scopeId, uid) => `${scopeType}:${scopeId}:${uid}`;
+  const getGrantForScope = (vaultId, scopeType, scopeId, userId) => {
+    if (!vaultId || !scopeType || !scopeId || !userId) return null;
+    const id = grantIdForScope(scopeType, scopeId, userId);
+    return permissionGrants.find((g) => g && g.vault_id === vaultId && g.id === id) || null;
+  };
+
+  const hasCollectionPermission = (collection, key) => {
+    if (!collection || !currentUser) return false;
+    const vault = vaults.find((v) => v.id === collection.vaultId) || null;
+    if (!vault) return false;
+    if (isOwnerOfVault(vault)) return true;
+    // Read access is membership-based in the canonical model.
+    if (key === 'View') return !!getMembershipForVault(vault.id, currentUser.id);
+    const grant = getGrantForScope(vault.id, 'COLLECTION', collection.id, currentUser.id);
+    const grantPerms = normalizePermissions(grant?.permissions);
+    if (grant && grantPerms[key]) return true;
+    return hasVaultPermission(vault, key);
+  };
+
+  const hasAssetPermission = (asset, key) => {
+    if (!asset || !currentUser) return false;
+    const collection = collections.find((c) => c.id === asset.collectionId) || null;
+    if (!collection) return false;
+    const vault = vaults.find((v) => v.id === collection.vaultId) || null;
+    if (!vault) return false;
+    if (isOwnerOfVault(vault)) return true;
+    if (key === 'View') return !!getMembershipForVault(vault.id, currentUser.id);
+    const assetGrant = getGrantForScope(vault.id, 'ASSET', asset.id, currentUser.id);
+    const assetPerms = normalizePermissions(assetGrant?.permissions);
+    if (assetGrant && assetPerms[key]) return true;
+    // Fallback to collection grant for non-asset specific ops.
+    const collectionGrant = getGrantForScope(vault.id, 'COLLECTION', collection.id, currentUser.id);
+    const colPerms = normalizePermissions(collectionGrant?.permissions);
+    if (collectionGrant && colPerms[key]) return true;
+    return hasVaultPermission(vault, key);
+  };
+
+  const upsertVaultMembership = async (vaultId, userId, permissions) => {
+    const now = Date.now();
+    await setDoc(
+      doc(db, 'vaults', String(vaultId), 'memberships', String(userId)),
+      {
+        user_id: String(userId),
+        vault_id: String(vaultId),
+        role: 'DELEGATE',
+        status: 'ACTIVE',
+        permissions: normalizePermissions({ View: true, ...permissions }),
+        assigned_at: now,
+        revoked_at: null,
+      },
+      { merge: true }
+    );
+  };
+
+  const revokeVaultMembership = async (vaultId, userId) => {
+    const now = Date.now();
+    await setDoc(
+      doc(db, 'vaults', String(vaultId), 'memberships', String(userId)),
+      { status: 'REVOKED', revoked_at: now },
+      { merge: true }
+    );
+  };
+
+  const upsertPermissionGrant = async (vaultId, scopeType, scopeId, userId, permissions) => {
+    const id = grantIdForScope(scopeType, scopeId, userId);
+    const now = Date.now();
+    await setDoc(
+      doc(db, 'vaults', String(vaultId), 'permissionGrants', String(id)),
+      {
+        id,
+        vault_id: String(vaultId),
+        user_id: String(userId),
+        scope_type: String(scopeType),
+        scope_id: String(scopeId),
+        permissions: normalizePermissions({ View: true, ...permissions }),
+        assigned_at: now,
+      },
+      { merge: true }
+    );
+  };
+
+  const revokePermissionGrant = async (vaultId, scopeType, scopeId, userId) => {
+    const id = grantIdForScope(scopeType, scopeId, userId);
+    await deleteDoc(doc(db, 'vaults', String(vaultId), 'permissionGrants', String(id)));
+  };
+
+  const updateAccessPermissionForUser = (userId, key, value) => {
+    if (!userId) return;
+    if (!PERMISSION_KEYS.includes(key)) return;
+    if (key === 'View') return; // always true for delegates/grants
+
+    if (shareDialog.type === 'vault') {
+      const vaultId = shareDialog.targetId;
+      const existing = vaultMemberships.find((m) => m && m.vault_id === vaultId && m.user_id === userId) || null;
+      const perms = normalizePermissions(existing?.permissions);
+      upsertVaultMembership(vaultId, userId, { ...perms, [key]: !!value }).catch(() => {});
+      return;
+    }
+
+    if (shareDialog.type === 'collection') {
+      const collection = collections.find((c) => c && c.id === shareDialog.targetId) || null;
+      if (!collection) return;
+      const vaultId = collection.vaultId;
+      const existing = getGrantForScope(vaultId, 'COLLECTION', collection.id, userId);
+      const perms = normalizePermissions(existing?.permissions);
+      upsertPermissionGrant(vaultId, 'COLLECTION', collection.id, userId, { ...perms, [key]: !!value }).catch(() => {});
+      return;
+    }
+
+    if (shareDialog.type === 'asset') {
+      const asset = assets.find((a) => a && a.id === shareDialog.targetId) || null;
+      if (!asset) return;
+      const collection = collections.find((c) => c && c.id === asset.collectionId) || null;
+      if (!collection) return;
+      const vaultId = collection.vaultId;
+      const existing = getGrantForScope(vaultId, 'ASSET', asset.id, userId);
+      const perms = normalizePermissions(existing?.permissions);
+      upsertPermissionGrant(vaultId, 'ASSET', asset.id, userId, { ...perms, [key]: !!value }).catch(() => {});
     }
   };
   const [viewAsset, setViewAsset] = useState(null);
@@ -218,8 +415,16 @@ export default function App() {
   const [imageViewer, setImageViewer] = useState({ show: false, images: [], currentIndex: 0 });
   const [editDialog, setEditDialog] = useState({ show: false, type: null, item: null, name: "", description: "", manager: "", images: [], heroImage: "" });
 
+  // LocalStorage migration removed: Firestore is canonical.
+
   const openShareDialog = (type, target) => {
-    setShareDialog({ show: true, type: type || 'vault', targetId: target?.id || null, username: "", role: 'viewer', canCreateCollections: false, canCreateAssets: false });
+    setShareDialog({
+      show: true,
+      type: type || 'vault',
+      targetId: target?.id || null,
+      username: "",
+      permissions: { View: true, Create: false, Edit: false, Move: false, Delete: false },
+    });
     setShowShareSuggestions(false);
   };
 
@@ -231,68 +436,277 @@ export default function App() {
   const closeManagerDialog = () => setManagerDialog({ show: false, type: null, id: null, username: "" });
 
   const handleManagerConfirm = () => {
-    if (!managerDialog.username) return showAlert("Enter a username or email to assign.");
-    const user = users.find(u => u.username === managerDialog.username || `${u.firstName} ${u.lastName}` === managerDialog.username || u.email === managerDialog.username);
-    if (!user) return showAlert("User not found.");
-    const fullName = (user.firstName || user.lastName) ? `${user.firstName || ""} ${user.lastName || ""}`.trim() : user.username;
-    if (managerDialog.type === 'vault') {
-      setVaults((prev) => prev.map(v => v.id === managerDialog.id ? { ...v, manager: fullName } : v));
-    } else if (managerDialog.type === 'collection') {
-      setCollections((prev) => prev.map(c => c.id === managerDialog.id ? { ...c, manager: fullName } : c));
-    } else if (managerDialog.type === 'asset') {
-      setAssets((prev) => prev.map(a => a.id === managerDialog.id ? { ...a, manager: fullName } : a));
-    }
-    showAlert(`Assigned manager ${fullName}`);
-    closeManagerDialog();
+    const managerName = (managerDialog.username || '').trim();
+    if (!managerName) return showAlert("Enter a manager name.");
+    (async () => {
+      try {
+        if (managerDialog.type === 'vault') {
+          await updateDoc(doc(db, 'vaults', String(managerDialog.id)), { manager: managerName, editedAt: Date.now() });
+        } else if (managerDialog.type === 'collection') {
+          const col = collections.find(c => c && c.id === managerDialog.id) || null;
+          if (!col?.vaultId) throw new Error('Missing vaultId');
+          await updateDoc(doc(db, 'vaults', String(col.vaultId), 'collections', String(col.id)), { manager: managerName, editedAt: Date.now() });
+        } else if (managerDialog.type === 'asset') {
+          const a = assets.find(a => a && a.id === managerDialog.id) || null;
+          const vaultId = a?.vaultId || getVaultForAsset(a)?.id || null;
+          if (!vaultId || !a?.id) throw new Error('Missing vaultId');
+          await updateDoc(doc(db, 'vaults', String(vaultId), 'assets', String(a.id)), { manager: managerName, editedAt: Date.now() });
+        }
+        showAlert(`Assigned manager ${managerName}`);
+        closeManagerDialog();
+      } catch (err) {
+        showAlert(err?.message ? String(err.message) : 'Failed to assign manager.');
+      }
+    })();
   };
 
-  const closeShareDialog = () => { setShareDialog({ show: false, type: 'vault', targetId: null, username: "", role: 'viewer', canCreateCollections: false, canCreateAssets: false }); setShowShareSuggestions(false); };
+  const closeShareDialog = () => {
+    setShareDialog({
+      show: false,
+      type: 'vault',
+      targetId: null,
+      username: "",
+      permissions: { View: true, Create: false, Edit: false, Move: false, Delete: false },
+    });
+    setShowShareSuggestions(false);
+  };
 
   const handleShareConfirm = () => {
-    if (!shareDialog.username) return showAlert("Enter a username to share with.");
-    const user = users.find(u => u.username === shareDialog.username || `${u.firstName} ${u.lastName}` === shareDialog.username || u.email === shareDialog.username);
-    if (!user) return showAlert("User not found.");
-    if (currentUser && user.id === currentUser.id) {
-      showAlert("You cannot share with yourself.");
-      return;
-    }
-    
-    const role = shareDialog.role || 'viewer';
-    const canCreateCollections = !!shareDialog.canCreateCollections;
-    const canCreateAssets = !!shareDialog.canCreateAssets;
-
-    if (shareDialog.type === 'vault') {
-      setVaults((prev) => prev.map(v => {
-        if (v.id !== shareDialog.targetId) return v;
-        const existing = v.sharedWith || [];
-        if (existing.find(s => s.userId === user.id)) return v;
-        return { ...v, sharedWith: [...existing, { userId: user.id, username: user.username, role, canCreateCollections }] };
-      }));
-      showAlert(`Shared vault with ${user.username}`);
-    } else if (shareDialog.type === 'collection') {
-      setCollections((prev) => prev.map(c => {
-        if (c.id !== shareDialog.targetId) return c;
-        const existing = c.sharedWith || [];
-        if (existing.find(s => s.userId === user.id)) return c;
-        return { ...c, sharedWith: [...existing, { userId: user.id, username: user.username, role, canCreateAssets }] };
-      }));
-      showAlert(`Shared collection with ${user.username}`);
-    } else if (shareDialog.type === 'asset') {
-      setAssets((prev) => prev.map(a => {
-        if (a.id !== shareDialog.targetId) return a;
-        const existing = a.sharedWith || [];
-        if (existing.find(s => s.userId === user.id)) return a;
-        return { ...a, sharedWith: [...existing, { userId: user.id, username: user.username, role }] };
-      }));
-      showAlert(`Shared asset with ${user.username}`);
+    const rawTarget = (shareDialog.username || '').trim();
+    if (!rawTarget) {
+      if (shareDialog.type === 'vault') return showAlert("Enter an email address to invite.");
+      return showAlert("Enter a member UID to share with.");
     }
 
-    setShareDialog((d) => ({ ...d, username: "", role: 'viewer' }));
-    setShowShareSuggestions(false);
+    const permissions = normalizePermissions(shareDialog.permissions);
+    (async () => {
+      try {
+        if (shareDialog.type === 'vault') {
+          const vault = vaults.find((v) => v.id === shareDialog.targetId) || null;
+          if (!vault) return;
+          const email = normalizeEmail(rawTarget);
+          if (!email || !email.includes('@')) throw new Error('Enter a valid email address.');
+          if (!API_URL) throw new Error('Missing REACT_APP_API_URL.');
+          await apiFetch(`${API_URL}/vaults/${encodeURIComponent(String(vault.id))}/invitations`, {
+            method: 'POST',
+            body: JSON.stringify({ email }),
+          });
+          showAlert(`Invitation sent to ${email}`);
+        } else if (shareDialog.type === 'collection') {
+          const collection = collections.find((c) => c.id === shareDialog.targetId) || null;
+          if (!collection) return;
+          const userId = String(rawTarget);
+          if (currentUser && userId === currentUser.id) throw new Error('You cannot share with yourself.');
+          if (!getMembershipForVault(String(collection.vaultId), userId)) {
+            throw new Error('User must already be a vault member (enter their UID).');
+          }
+          await upsertPermissionGrant(String(collection.vaultId), 'COLLECTION', String(collection.id), String(userId), permissions);
+          showAlert(`Granted collection access to ${userId}`);
+        } else if (shareDialog.type === 'asset') {
+          const asset = assets.find((a) => a.id === shareDialog.targetId) || null;
+          if (!asset) return;
+          const vaultId = asset.vaultId || getVaultForAsset(asset)?.id || null;
+          if (!vaultId) return;
+          const userId = String(rawTarget);
+          if (currentUser && userId === currentUser.id) throw new Error('You cannot share with yourself.');
+          if (!getMembershipForVault(String(vaultId), userId)) {
+            throw new Error('User must already be a vault member (enter their UID).');
+          }
+          await upsertPermissionGrant(String(vaultId), 'ASSET', String(asset.id), String(userId), permissions);
+          showAlert(`Granted asset access to ${userId}`);
+        }
+
+        setShareDialog((d) => ({ ...d, username: "" }));
+        setShowShareSuggestions(false);
+      } catch (err) {
+        showAlert(err?.message ? String(err.message) : 'Failed to share.');
+      }
+    })();
   };
 
   const [alert, setAlert] = useState("");
   const alertTimeoutRef = useRef(null);
+
+  const db = firestore;
+
+  // Keep view protected routes aligned with Auth state.
+  useEffect(() => {
+    const next = pathToView(window.location.pathname);
+    if ((next === 'vault' || next === 'profile') && !isLoggedIn) {
+      setView('login');
+      return;
+    }
+    setView(next);
+  }, []);
+
+  // Firebase Auth -> current user profile.
+  useEffect(() => {
+    if (!firebaseAuth || !isFirebaseConfigured()) return;
+    const unsub = onAuthStateChanged(firebaseAuth, (user) => {
+      setFirebaseUser(user || null);
+      setIsLoggedIn(!!user);
+      if (!user) {
+        setCurrentUser(null);
+        setVaults([]);
+        setCollections([]);
+        setAssets([]);
+        setVaultMemberships([]);
+        setPermissionGrants([]);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    if (!db || !firebaseUser) return;
+    const unsub = onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
+      const data = snap.exists() ? snap.data() : null;
+      if (!data) {
+        setCurrentUser({
+          id: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          username: firebaseUser.email || '',
+          firstName: '',
+          lastName: '',
+          prefersDarkMode: false,
+        });
+        return;
+      }
+      setCurrentUser({ id: firebaseUser.uid, ...data });
+    });
+    return () => unsub();
+  }, [db, firebaseUser]);
+
+  // NOTE: We intentionally do not subscribe to `/users`.
+  // Firestore rules only allow reading your own `/users/{uid}` doc.
+  useEffect(() => {
+    setUsers([]);
+  }, []);
+
+  // Subscribe to accessible vaults via owned vaults + membership collection group.
+  useEffect(() => {
+    if (!db || !firebaseUser) return;
+    const uid = firebaseUser.uid;
+
+    let ownedVaultIds = [];
+    let memberVaultIds = [];
+    let vaultUnsub = null;
+    let memberUnsub = null;
+
+    const reconcileVaultListeners = () => {
+      const ids = Array.from(new Set([...(ownedVaultIds || []), ...(memberVaultIds || [])].filter(Boolean)));
+
+      // Tear down listeners for removed vaults.
+      for (const [vaultId, unsubs] of vaultListenerUnsubsRef.current.entries()) {
+        if (!ids.includes(vaultId)) {
+          try {
+            (unsubs || []).forEach((fn) => {
+              try { fn(); } catch (e) {}
+            });
+          } finally {
+            vaultListenerUnsubsRef.current.delete(vaultId);
+          }
+        }
+      }
+
+      // Create listeners for new vaults.
+      ids.forEach((vaultId) => {
+        if (vaultListenerUnsubsRef.current.has(vaultId)) return;
+
+        const unsubs = [];
+
+        unsubs.push(
+          onSnapshot(doc(db, 'vaults', vaultId), (snap) => {
+            if (!snap.exists()) {
+              setVaults((prev) => (prev || []).filter((v) => v.id !== vaultId));
+              return;
+            }
+            const v = { id: snap.id, ...snap.data() };
+            setVaults((prev) => {
+              const next = Array.isArray(prev) ? [...prev] : [];
+              const idx = next.findIndex((x) => x && x.id === v.id);
+              if (idx >= 0) next[idx] = { ...next[idx], ...v };
+              else next.push(v);
+              return next;
+            });
+          })
+        );
+
+        unsubs.push(
+          onSnapshot(collection(db, 'vaults', vaultId, 'collections'), (snap) => {
+            const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+            setCollections((prev) => {
+              const keep = (prev || []).filter((c) => c && c.vaultId !== vaultId);
+              return [...keep, ...rows];
+            });
+          })
+        );
+
+        unsubs.push(
+          onSnapshot(collection(db, 'vaults', vaultId, 'assets'), (snap) => {
+            const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+            setAssets((prev) => {
+              const keep = (prev || []).filter((a) => {
+                const aVaultId = a?.vaultId ? String(a.vaultId) : null;
+                if (!aVaultId) return true;
+                return aVaultId !== String(vaultId);
+              });
+              return [...keep, ...rows];
+            });
+          })
+        );
+
+        unsubs.push(
+          onSnapshot(collection(db, 'vaults', vaultId, 'memberships'), (snap) => {
+            const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+            setVaultMemberships((prev) => {
+              const keep = (prev || []).filter((m) => m && m.vault_id !== vaultId);
+              return [...keep, ...rows];
+            });
+          })
+        );
+
+        unsubs.push(
+          onSnapshot(collection(db, 'vaults', vaultId, 'permissionGrants'), (snap) => {
+            const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+            setPermissionGrants((prev) => {
+              const keep = (prev || []).filter((g) => g && g.vault_id !== vaultId);
+              return [...keep, ...rows];
+            });
+          })
+        );
+
+        vaultListenerUnsubsRef.current.set(vaultId, unsubs);
+      });
+    };
+
+    vaultUnsub = onSnapshot(query(collection(db, 'vaults'), where('activeOwnerId', '==', uid)), (snap) => {
+      ownedVaultIds = snap.docs.map((d) => d.id);
+      reconcileVaultListeners();
+    });
+
+    memberUnsub = onSnapshot(
+      query(collectionGroup(db, 'memberships'), where('user_id', '==', uid), where('status', '==', 'ACTIVE')),
+      (snap) => {
+        memberVaultIds = snap.docs.map((d) => d.data()?.vault_id).filter(Boolean);
+        reconcileVaultListeners();
+      }
+    );
+
+    return () => {
+      try { if (vaultUnsub) vaultUnsub(); } catch (e) {}
+      try { if (memberUnsub) memberUnsub(); } catch (e) {}
+      // Tear down all per-vault listeners.
+      for (const [, unsubs] of vaultListenerUnsubsRef.current.entries()) {
+        try {
+          (unsubs || []).forEach((fn) => {
+            try { fn(); } catch (e) {}
+          });
+        } catch (e) {}
+      }
+      vaultListenerUnsubsRef.current.clear();
+    };
+  }, [db, firebaseUser]);
 
   // Tutorial / onboarding state
   const [showTutorial, setShowTutorial] = useState(false);
@@ -409,46 +823,10 @@ export default function App() {
     }, 160);
   };
 
-  // Permission helpers: check role-based permissions
-  const getRoleForVault = (vault) => {
-    if (!vault || !currentUser) return null;
-    if (vault.ownerId === currentUser.id) return "owner";
-    const shared = vault.sharedWith || [];
-    const entry = shared.find(s => s.userId === currentUser.id || s.username === currentUser.username || s.email === currentUser.email);
-    return entry ? entry.role : null;
-  };
-
-  const canCreateCollectionInVault = (vault) => {
-    if (!vault || !currentUser) return false;
-    if (vault.ownerId === currentUser.id) return true;
-    const entry = (vault.sharedWith || []).find(s => s.userId === currentUser.id || s.username === currentUser.username || s.email === currentUser.email);
-    return !!entry?.canCreateCollections;
-  };
-
-  const canCreateAssetInCollection = (collection) => {
-    if (!collection || !currentUser) return false;
-    if (collection.ownerId === currentUser.id) return true;
-    const entry = (collection.sharedWith || []).find(s => s.userId === currentUser.id || s.username === currentUser.username || s.email === currentUser.email);
-    return !!entry?.canCreateAssets;
-  };
-
-  const canEditInVault = (vault) => {
-    if (!vault) return false;
-    const role = getRoleForVault(vault);
-    return role === "owner" || role === "editor" || role === "manager";
-  };
-
-  const canMoveInVault = (vault) => {
-    if (!vault) return false;
-    const role = getRoleForVault(vault);
-    return role === "owner" || role === "manager";
-  };
-
-  const canDeleteInVault = (vault) => {
-    if (!vault) return false;
-    const role = getRoleForVault(vault);
-    return role === "owner";
-  };
+  // Permission helpers (canonical): memberships/grants with View/Create/Edit/Move/Delete
+  const canCreateCollectionInVault = (vault) => hasVaultPermission(vault, 'Create');
+  const canEditVaultDoc = (vault) => isOwnerOfVault(vault);
+  const canDeleteVault = (vault) => isOwnerOfVault(vault);
 
   const getVaultForCollection = (collection) => (collection ? vaults.find(v => v.id === collection.vaultId) || null : null);
   const getVaultForAsset = (asset) => {
@@ -456,18 +834,11 @@ export default function App() {
     return col ? vaults.find(v => v.id === col.vaultId) || null : null;
   };
 
-  const getRoleForCollection = (collection) => {
-    if (!collection || !currentUser) return null;
-    if (collection.ownerId === currentUser.id) return "owner";
-    const entry = (collection.sharedWith || []).find(s => s.userId === currentUser.id || s.username === currentUser.username || s.email === currentUser.email);
-    return entry ? entry.role : null;
-  };
-
-  const getRoleForAsset = (asset) => {
-    if (!asset || !currentUser) return null;
-    if (asset.ownerId === currentUser.id) return "owner";
-    const entry = (asset.sharedWith || []).find(s => s.userId === currentUser.id || s.username === currentUser.username || s.email === currentUser.email);
-    return entry ? entry.role : null;
+  const canCreateAssetInCollection = (collection) => {
+    if (!collection) return false;
+    const vault = getVaultForCollection(collection);
+    if (!vault) return false;
+    return hasCollectionPermission(collection, 'Create') || hasVaultPermission(vault, 'Create');
   };
 
   const skipTutorial = () => {
@@ -493,75 +864,7 @@ export default function App() {
     return value.replace(/,/g, "");
   };
 
-  const ensureDefaultVaultForUser = (user) => {
-    if (!user) return null;
-    // If the user previously deleted their default example vault, don't recreate it.
-    try {
-      const deletedFlag = localStorage.getItem(`defaultVaultDeleted_${user.id}`);
-      if (deletedFlag === "true") return null;
-    } catch (e) {
-      // ignore storage errors
-    }
-
-    // Check if default vault already exists
-    const existingVault = vaults.find((v) => v.ownerId === user.id && v.isDefault);
-    if (existingVault) return existingVault;
-
-    // Create vault
-    const vaultId = Date.now();
-    const vault = {
-      id: vaultId,
-      ownerId: user.id,
-      name: "Example Vault",
-      description: "Your first vault for organizing collections",
-      isPrivate: true,
-      isDefault: true,
-      createdAt: user.createdAt || new Date().toISOString(),
-      lastViewed: user.createdAt || new Date().toISOString(),
-      lastEditedBy: user.username,
-      heroImage: DEFAULT_HERO,
-      images: [],
-    };
-    setVaults((prev) => [vault, ...prev]);
-
-    // Create collection
-    const collectionId = vaultId + 1;
-    const collection = {
-      id: collectionId,
-      ownerId: user.id,
-      vaultId: vaultId,
-      name: "Example Collection",
-      description: "Your first collection for storing assets",
-      isPrivate: true,
-      isDefault: true,
-      createdAt: user.createdAt || new Date().toISOString(),
-      lastViewed: user.createdAt || new Date().toISOString(),
-      lastEditedBy: user.username,
-      heroImage: DEFAULT_HERO,
-      images: [],
-    };
-    setCollections((prev) => [collection, ...prev]);
-
-    // Create asset
-    const asset = {
-      id: vaultId + 2,
-      ownerId: user.id,
-      collectionId: collectionId,
-      title: "Example Asset",
-      type: "Collectables",
-      category: "Art",
-      description: "This is an example asset to get you started",
-      value: 1000,
-      heroImage: DEFAULT_HERO,
-      images: [],
-      createdAt: user.createdAt || new Date().toISOString(),
-      lastViewed: user.createdAt || new Date().toISOString(),
-      lastEditedBy: user.username,
-    };
-    setAssets((prev) => [asset, ...prev]);
-
-    return vault;
-  };
+  const ensureDefaultVaultForUser = () => null;
 
   const openEditVault = (vault) => setEditDialog({ show: true, type: "vault", item: vault, name: vault.name, description: vault.description || "", manager: vault.manager || "", images: vault.images || [], heroImage: vault.heroImage || "" });
   const openEditCollection = (collection) => setEditDialog({ show: true, type: "collection", item: collection, name: collection.name, description: collection.description || "", manager: collection.manager || "", images: collection.images || [], heroImage: collection.heroImage || "" });
@@ -573,44 +876,57 @@ export default function App() {
       showAlert("Name is required.");
       return;
     }
-    if (editDialog.type === "vault" && editDialog.item) {
-      // enforce vault-level edit permission
-      const vault = editDialog.item;
-      const permOk = (vault.ownerId === currentUser?.id) || canEditInVault(vault);
-      if (!permOk) {
-        showAlert("You don't have permission to edit this vault.");
+    (async () => {
+      try {
+        if (editDialog.type === "vault" && editDialog.item) {
+          // enforce vault-level edit permission
+          const vault = editDialog.item;
+          if (!canEditVaultDoc(vault)) {
+            showAlert("You don't have permission to edit this vault.");
+            closeEditDialog();
+            return;
+          }
+          const description = (editDialog.description || "").trim();
+          const manager = (editDialog.manager || "").trim();
+          const images = trimToFour(editDialog.images || []);
+          const heroImage = editDialog.heroImage || images[0] || DEFAULT_HERO;
+          await updateDoc(doc(db, 'vaults', String(vault.id)), {
+            name,
+            description,
+            manager,
+            images,
+            heroImage,
+            editedAt: Date.now(),
+          });
+        }
+
+        if (editDialog.type === "collection" && editDialog.item) {
+          if (!hasCollectionPermission(editDialog.item, 'Edit')) {
+            showAlert("You don't have permission to edit this collection.");
+            closeEditDialog();
+            return;
+          }
+          const c = editDialog.item;
+          const description = (editDialog.description || "").trim();
+          const manager = (editDialog.manager || "").trim();
+          const images = trimToFour(editDialog.images || []);
+          const heroImage = editDialog.heroImage || images[0] || DEFAULT_HERO;
+          await updateDoc(doc(db, 'vaults', String(c.vaultId), 'collections', String(c.id)), {
+            name,
+            description,
+            manager,
+            images,
+            heroImage,
+            editedAt: Date.now(),
+          });
+        }
+
         closeEditDialog();
-        return;
+        showAlert("Updated.");
+      } catch (err) {
+        showAlert(err?.message ? String(err.message) : 'Failed to update.');
       }
-      const description = (editDialog.description || "").trim();
-      const manager = (editDialog.manager || "").trim();
-      const images = trimToFour(editDialog.images || []);
-      const heroImage = editDialog.heroImage || images[0] || DEFAULT_HERO;
-      setVaults((prev) => prev.map((v) => (v.id === editDialog.item.id ? { ...v, name, description, manager, images, heroImage, lastEditedBy: currentUser?.username || 'Unknown' } : v)));
-      if (selectedVaultId === editDialog.item.id) {
-        setSelectedVaultId(editDialog.item.id);
-      }
-    }
-    if (editDialog.type === "collection" && editDialog.item) {
-      // enforce collection-level edit permission via vault
-      const vault = getVaultForCollection(editDialog.item);
-      const permOk = (editDialog.item.ownerId === currentUser?.id) || (vault && (vault.ownerId === currentUser?.id || canEditInVault(vault)));
-      if (!permOk) {
-        showAlert("You don't have permission to edit this collection.");
-        closeEditDialog();
-        return;
-      }
-      const description = (editDialog.description || "").trim();
-      const manager = (editDialog.manager || "").trim();
-      const images = trimToFour(editDialog.images || []);
-      const heroImage = editDialog.heroImage || images[0] || DEFAULT_HERO;
-      setCollections((prev) => prev.map((c) => (c.id === editDialog.item.id ? { ...c, name, description, manager, images, heroImage, lastEditedBy: currentUser?.username || 'Unknown' } : c)));
-      if (selectedCollectionId === editDialog.item.id) {
-        setSelectedCollectionId(editDialog.item.id);
-      }
-    }
-    closeEditDialog();
-    showAlert("Updated.");
+    })();
   };
 
   useEffect(() => () => {
@@ -697,9 +1013,12 @@ export default function App() {
     navigateTo("home");
   };
 
-  const logout = () => {
-    setIsLoggedIn(false);
-    setCurrentUser(null);
+  const logout = async () => {
+    try {
+      if (firebaseAuth) await signOut(firebaseAuth);
+    } catch (e) {
+      // ignore
+    }
     setSelectedVaultId(null);
     setSelectedCollectionId(null);
     setShowVaultForm(false);
@@ -708,28 +1027,148 @@ export default function App() {
     navigateTo("landing", { replace: true });
   };
 
-  const handleLogin = (e) => {
-    e.preventDefault();
-    const username = loginForm.username.trim();
-    const password = loginForm.password.trim();
-    const user = users.find((u) => u.username === username && u.password === password);
-    if (!user) {
-      showAlert("Invalid credentials.");
-      return;
-    }
-    setCurrentUser(user);
-    setIsLoggedIn(true);
-    ensureDefaultVaultForUser(user);
-    setSelectedVaultId(null);
-    setSelectedCollectionId(null);
-    setShowVaultForm(false);
-    setShowCollectionForm(false);
-    setShowAssetForm(false);
-    navigateTo("home");
+  const createExampleDataForUser = async ({ uid, username }) => {
+    if (!db || !uid) return null;
+
+    // If the user previously deleted their default example vault, don't recreate it.
+    try {
+      const deletedFlag = localStorage.getItem(`defaultVaultDeleted_${uid}`);
+      if (deletedFlag === "true") return null;
+    } catch (e) {}
+
+    // Only create if the user has no owned vaults.
+    const ownedSnap = await getDocs(query(collection(db, 'vaults'), where('activeOwnerId', '==', String(uid)), limit(1)));
+    if (!ownedSnap.empty) return ownedSnap.docs[0].id;
+
+    const now = Date.now();
+    const vaultId = `v${Date.now()}`;
+    const collectionId = `c${Date.now() + 1}`;
+    const assetId = `a${Date.now() + 2}`;
+
+    const batch = writeBatch(db);
+
+    batch.set(
+      doc(db, 'vaults', vaultId),
+      {
+        id: vaultId,
+        name: 'Example Vault',
+        description: 'Your first vault for organizing collections',
+        activeOwnerId: String(uid),
+        ownerId: String(uid),
+        createdBy: String(uid),
+        createdAt: now,
+        viewedAt: now,
+        editedAt: now,
+        isDefault: true,
+        images: [],
+        heroImage: DEFAULT_HERO,
+      },
+      { merge: true }
+    );
+    batch.set(
+      doc(db, 'vaults', vaultId, 'memberships', String(uid)),
+      {
+        user_id: String(uid),
+        vault_id: vaultId,
+        role: 'OWNER',
+        permissions: null,
+        status: 'ACTIVE',
+        assigned_at: now,
+        revoked_at: null,
+      },
+      { merge: true }
+    );
+
+    batch.set(
+      doc(db, 'vaults', vaultId, 'collections', collectionId),
+      {
+        id: collectionId,
+        ownerId: String(uid),
+        createdBy: String(uid),
+        vaultId,
+        name: 'Example Collection',
+        description: 'Your first collection for storing assets',
+        isDefault: true,
+        createdAt: now,
+        viewedAt: now,
+        editedAt: now,
+        images: [],
+        heroImage: DEFAULT_HERO,
+      },
+      { merge: true }
+    );
+
+    batch.set(
+      doc(db, 'vaults', vaultId, 'assets', assetId),
+      {
+        id: assetId,
+        ownerId: String(uid),
+        createdBy: String(uid),
+        vaultId,
+        collectionId,
+        title: 'Example Asset',
+        type: 'Asset',
+        category: 'Example',
+        description: 'This is an example asset to get you started',
+        manager: username || '',
+        quantity: 1,
+        value: 1000,
+        createdAt: now,
+        viewedAt: now,
+        editedAt: now,
+        images: [],
+        heroImage: DEFAULT_HERO,
+      },
+      { merge: true }
+    );
+
+    await batch.commit();
+    return vaultId;
   };
 
-  const handleRegister = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
+    if (!isFirebaseConfigured()) {
+      showAlert('Firebase is not configured. Set REACT_APP_FIREBASE_* env vars.');
+      return;
+    }
+    const identifier = (loginForm.username || '').trim();
+    const password = (loginForm.password || '').trim();
+    if (!identifier || !password) {
+      showAlert('Please enter your email/username and password.');
+      return;
+    }
+
+    let email = identifier;
+    if (!identifier.includes('@')) {
+      const match = (users || []).find((u) => normalizeUsername(u?.username) === normalizeUsername(identifier));
+      if (!match?.email) {
+        showAlert('Enter your email to sign in.');
+        return;
+      }
+      email = match.email;
+    }
+
+    try {
+      await signInWithEmailAndPassword(firebaseAuth, normalizeEmail(email), password);
+      setSelectedVaultId(null);
+      setSelectedCollectionId(null);
+      setShowVaultForm(false);
+      setShowCollectionForm(false);
+      setShowAssetForm(false);
+      navigateTo('home');
+    } catch (error) {
+      showAlert(mapFirebaseAuthError(error));
+    }
+  };
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    if (!isFirebaseConfigured()) {
+      showAlert('Firebase is not configured. Set REACT_APP_FIREBASE_* env vars.');
+      return;
+    }
+
     const firstName = registerForm.firstName.trim();
     const lastName = registerForm.lastName.trim();
     const email = registerForm.email.trim();
@@ -744,53 +1183,47 @@ export default function App() {
       showAlert("Enter a valid email.");
       return;
     }
-    if (users.some((u) => u.username === username)) {
-      showAlert("Username already taken.");
-      return;
-    }
-    if (users.some((u) => u.email === email)) {
-      showAlert("Email already in use.");
-      return;
-    }
 
-    const newUser = { id: Date.now(), firstName, lastName, email, username, password, profileImage: registerForm.profileImage || DEFAULT_AVATAR, createdAt: new Date().toISOString() };
-    const updatedUsers = [...users, newUser];
-    setUsers(updatedUsers);
-    setCurrentUser(newUser);
-    setIsLoggedIn(true);
-    ensureDefaultVaultForUser(newUser);
-    setSelectedVaultId(null);
-    setSelectedCollectionId(null);
-    setShowVaultForm(false);
-    setShowCollectionForm(false);
-    setShowAssetForm(false);
-    navigateTo("home");
-    setRegisterForm(initialRegisterForm);
+    // Firestore rules only allow reading your own /users/{uid} doc; we cannot
+    // reliably pre-check username/email uniqueness here.
+
+    try {
+      const cred = await createUserWithEmailAndPassword(firebaseAuth, normalizeEmail(email), password);
+      const uid = String(cred?.user?.uid || '');
+      if (!uid) {
+        showAlert('Registration failed.');
+        return;
+      }
+
+      const now = Date.now();
+      await setDoc(
+        doc(db, 'users', uid),
+        {
+          user_id: uid,
+          email: normalizeEmail(email),
+          username,
+          firstName,
+          lastName,
+          prefersDarkMode: false,
+          profileImage: registerForm.profileImage || DEFAULT_AVATAR,
+          createdAt: now,
+        },
+        { merge: true }
+      );
+
+      await createExampleDataForUser({ uid, username });
+
+      setSelectedVaultId(null);
+      setSelectedCollectionId(null);
+      setShowVaultForm(false);
+      setShowCollectionForm(false);
+      setShowAssetForm(false);
+      navigateTo('home');
+      setRegisterForm(initialRegisterForm);
+    } catch (error) {
+      showAlert(mapFirebaseAuthError(error));
+    }
   };
-
-  useEffect(() => {
-    localStorage.setItem("users", JSON.stringify(users));
-  }, [users]);
-
-  useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem("currentUser", JSON.stringify(currentUser));
-    } else {
-      localStorage.removeItem("currentUser");
-    }
-  }, [currentUser]);
-
-  useEffect(() => {
-    localStorage.setItem("vaults", JSON.stringify(vaults));
-  }, [vaults]);
-
-  useEffect(() => {
-    localStorage.setItem("collections", JSON.stringify(collections));
-  }, [collections]);
-
-  useEffect(() => {
-    safeSetItem("assets", JSON.stringify(assets));
-  }, [assets]);
 
     useEffect(() => {
       let isMounted = true;
@@ -812,46 +1245,6 @@ export default function App() {
         isMounted = false;
       };
     }, []);
-
-  // One-time migration to recompress stored images to smaller size/quality to save storage
-  useEffect(() => {
-    const migrate = async () => {
-      const migratedFlag = localStorage.getItem("assetsCompressedV1");
-      if (migratedFlag === "true") return;
-      if (!assets || assets.length === 0) {
-        localStorage.setItem("assetsCompressedV1", "true");
-        return;
-      }
-      try {
-        const updated = [];
-        for (const asset of assets) {
-          const images = asset.images || [];
-          const newImages = [];
-          for (const img of images) {
-            try {
-              const recompressed = await recompressDataUrl(img);
-              newImages.push(recompressed || img);
-            } catch (err) {
-              newImages.push(img);
-            }
-          }
-          const hero = asset.heroImage && images.includes(asset.heroImage)
-            ? newImages[images.indexOf(asset.heroImage)] || newImages[0] || asset.heroImage
-            : newImages[0] || asset.heroImage;
-          updated.push({ ...asset, images: newImages, heroImage: hero });
-        }
-        setAssets(updated);
-        localStorage.setItem("assetsCompressedV1", "true");
-      } catch (err) {
-        console.warn("Asset recompression failed", err);
-      }
-    };
-    migrate();
-  }, []);
-
-  useEffect(() => {
-    if (isLoggedIn && currentUser) ensureDefaultVaultForUser(currentUser);
-  }, [isLoggedIn, currentUser]);
 
   // Start tutorial for users who haven't seen it yet — only when viewing Vaults
   useEffect(() => {
@@ -906,7 +1299,7 @@ export default function App() {
       setIsEditingProfile(false);
       setIsChangingPassword(false);
 
-      const defaultVault = vaults.find((v) => v.ownerId === currentUser.id && v.isDefault);
+      const defaultVault = vaults.find((v) => getVaultOwnerId(v) === currentUser.id && v.isDefault);
       if (defaultVault && !selectedVaultId) {
         setSelectedVaultId(defaultVault.id);
       }
@@ -927,7 +1320,7 @@ export default function App() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, [isLoggedIn]);
 
-  const handleAddVault = () => {
+  const handleAddVault = async () => {
     // Block vault creation while viewing shared vaults
     if (sharedMode) {
       showAlert("You can't create a vault while viewing a shared vault.");
@@ -937,64 +1330,58 @@ export default function App() {
       showAlert("Vault name is required.");
       return false;
     }
-    if (!currentUser) return false;
+    if (!currentUser || !firebaseUser?.uid) return false;
     const images = trimToFour(newVault.images || []);
     const heroImage = newVault.heroImage || images[0] || DEFAULT_HERO;
-    // If we're in shared mode and an owner has been chosen, create the vault under that owner.
-    // Only allow this if the current user has been granted 'create' permission by that owner.
-    const ownerId = (sharedMode && sharedOwnerId) ? sharedOwnerId : currentUser.id;
 
-    if (ownerId !== currentUser.id) {
-      // Gather all shared entries from the chosen owner's existing vaults
-      const ownerVaults = vaults.filter(v => v.ownerId === ownerId);
-      const sharedEntries = ownerVaults.flatMap(v => (v.sharedWith || []).map(s => ({ ...s, vaultId: v.id })));
-      const entry = sharedEntries.find(s => s.userId === currentUser.id || s.username === currentUser.username || s.email === currentUser.email);
-      if (!entry) {
-        showAlert("You don't have permission to create a vault for that user.");
-        return false;
-      }
-      // Use the role from the owner's existing share entry when sharing the new vault back
-      const sharedRole = entry.role || "viewer";
-      const vault = {
-        id: Date.now(),
-        ownerId: ownerId,
-        name: newVault.name.trim(),
-        description: newVault.description.trim(),
-        manager: (newVault.manager || "").trim(),
-        isPrivate: true,
-        isDefault: false,
-        createdAt: new Date().toISOString(),
-        lastViewed: new Date().toISOString(),
-        lastEditedBy: currentUser.username,
-        heroImage,
-        images,
-        sharedWith: [{ userId: currentUser.id, username: currentUser.username, permission: sharedPermission, includeContents: true }]
-      };
-      setVaults((prev) => [vault, ...prev]);
+    try {
+      const now = Date.now();
+      const uid = String(firebaseUser.uid);
+      const vaultId = `v${Date.now()}`;
+      const batch = writeBatch(db);
+      batch.set(
+        doc(db, 'vaults', vaultId),
+        {
+          id: vaultId,
+          name: newVault.name.trim(),
+          description: newVault.description.trim(),
+          manager: (newVault.manager || '').trim(),
+          activeOwnerId: uid,
+          ownerId: uid,
+          createdBy: uid,
+          createdAt: now,
+          viewedAt: now,
+          editedAt: now,
+          isDefault: false,
+          images,
+          heroImage,
+        },
+        { merge: true }
+      );
+      batch.set(
+        doc(db, 'vaults', vaultId, 'memberships', uid),
+        {
+          user_id: uid,
+          vault_id: vaultId,
+          role: 'OWNER',
+          permissions: null,
+          status: 'ACTIVE',
+          assigned_at: now,
+          revoked_at: null,
+        },
+        { merge: true }
+      );
+      await batch.commit();
       setNewVault(initialVaultState);
+      setSelectedVaultId(vaultId);
       return true;
+    } catch (err) {
+      showAlert(err?.message ? String(err.message) : 'Failed to create vault.');
+      return false;
     }
-    
-    const vault = {
-      id: Date.now(),
-      ownerId: currentUser.id,
-      name: newVault.name.trim(),
-      description: newVault.description.trim(),
-      manager: (newVault.manager || "").trim(),
-      isPrivate: true,
-      isDefault: false,
-      createdAt: new Date().toISOString(),
-      lastViewed: new Date().toISOString(),
-      lastEditedBy: currentUser.username,
-      heroImage,
-      images
-    };
-    setVaults((prev) => [vault, ...prev]);
-    setNewVault(initialVaultState);
-    return true;
   };
 
-  const handleAddCollection = () => {
+  const handleAddCollection = async () => {
     if (!selectedVaultId) {
       showAlert("Select a vault first.");
       return false;
@@ -1003,30 +1390,53 @@ export default function App() {
       showAlert("Collection name is required.");
       return false;
     }
-    if (!currentUser) return false;
+    if (!currentUser || !firebaseUser?.uid) return false;
     const images = trimToFour(newCollection.images || []);
     const heroImage = newCollection.heroImage || images[0] || DEFAULT_HERO;
     
     
     
-    const vault = vaults.find(v => v.id === selectedVaultId);
-    const ownerId = (vault && vault.ownerId) ? vault.ownerId : ((sharedMode && sharedOwnerId) ? sharedOwnerId : currentUser.id);
-
-    if (ownerId !== currentUser.id) {
-      // Require explicit create permission on the target vault
-      if (!canCreateCollectionInVault(vault)) {
-        showAlert("You don't have permission to create a collection in this vault.");
-        return false;
-      }
+    const vault = vaults.find(v => v.id === selectedVaultId) || null;
+    if (!vault) {
+      showAlert("Select a vault first.");
+      return false;
+    }
+    if (!canCreateCollectionInVault(vault)) {
+      showAlert("You don't have permission to create a collection in this vault.");
+      return false;
     }
 
-    const baseCollection = { id: Date.now(), ownerId: ownerId, vaultId: selectedVaultId, name: newCollection.name.trim(), description: newCollection.description.trim(), manager: (newCollection.manager || "").trim(), isPrivate: true, isDefault: false, createdAt: new Date().toISOString(), lastViewed: new Date().toISOString(), lastEditedBy: currentUser.username, heroImage, images };
-    const collection = (ownerId === currentUser.id)
-      ? baseCollection
-      : { ...baseCollection, sharedWith: [{ userId: currentUser.id, username: currentUser.username, role: 'manager' }] };
-    setCollections((prev) => [collection, ...prev]);
-    setNewCollection(initialCollectionState);
-    return true;
+    const ownerId = getVaultOwnerId(vault);
+    try {
+      const now = Date.now();
+      const uid = String(firebaseUser.uid);
+      const collectionId = `c${Date.now()}`;
+      await setDoc(
+        doc(db, 'vaults', String(selectedVaultId), 'collections', collectionId),
+        {
+          id: collectionId,
+          vaultId: String(selectedVaultId),
+          ownerId: ownerId ? String(ownerId) : uid,
+          createdBy: uid,
+          name: newCollection.name.trim(),
+          description: newCollection.description.trim(),
+          manager: (newCollection.manager || '').trim(),
+          isDefault: false,
+          createdAt: now,
+          viewedAt: now,
+          editedAt: now,
+          images,
+          heroImage,
+        },
+        { merge: true }
+      );
+      setNewCollection(initialCollectionState);
+      setSelectedCollectionId(collectionId);
+      return true;
+    } catch (err) {
+      showAlert(err?.message ? String(err.message) : 'Failed to create collection.');
+      return false;
+    }
   };
 
   const handleAddAsset = async () => {
@@ -1054,114 +1464,168 @@ export default function App() {
     const images = trimToFour(newAsset.images || []);
     const heroImage = newAsset.heroImage || images[0] || DEFAULT_HERO;
 
-    const collection = collections.find(c => c.id === selectedCollectionId);
-    const ownerId = (collection && collection.ownerId) ? collection.ownerId : ((sharedMode && sharedOwnerId) ? sharedOwnerId : currentUser.id);
-
-    if (ownerId !== currentUser.id) {
-      // Require explicit create permission on the target collection
-      if (!canCreateAssetInCollection(collection)) {
-        showAlert("You don't have permission to create an asset in this collection.");
-        return false;
-      }
+    const collection = collections.find(c => c.id === selectedCollectionId) || null;
+    if (!collection) return false;
+    if (!canCreateAssetInCollection(collection)) {
+      showAlert("You don't have permission to create an asset in this collection.");
+      return false;
     }
+    const vault = getVaultForCollection(collection);
+    const ownerId = getVaultOwnerId(vault);
 
-    const baseAsset = { 
-      id: Date.now(), 
-      ownerId: ownerId, 
-      collectionId: selectedCollectionId, 
-      title: newAsset.title.trim(), 
-      type: newAsset.type.trim(),
-      category: newAsset.category.trim(), 
-      description: newAsset.description.trim(), 
-      manager: (newAsset.manager || "").trim(),
-      value: parseFloat(newAsset.value) || 0,
-      estimatedValue: parseFloat(newAsset.estimatedValue) || 0,
-      rrp: parseFloat(newAsset.rrp) || 0,
-      purchasePrice: parseFloat(newAsset.purchasePrice) || 0,
-      quantity: parseInt(newAsset.quantity) || 1,
-      heroImage,
-      images,
-      createdAt: new Date().toISOString(),
-      lastViewed: new Date().toISOString(),
-      lastEditedBy: currentUser.username
-    };
-    const asset = (ownerId === currentUser.id)
-      ? baseAsset
-      : { ...baseAsset, sharedWith: [{ userId: currentUser.id, username: currentUser.username, role: 'manager', canCreateAssets: true }] };
-    setAssets((prev) => [asset, ...prev]);
-    setNewAsset(initialAssetState);
-    return true;
+    try {
+      const now = Date.now();
+      const uid = String(firebaseUser.uid);
+      const vaultId = String(collection.vaultId);
+      const assetId = `a${Date.now()}`;
+
+      await setDoc(
+        doc(db, 'vaults', vaultId, 'assets', assetId),
+        {
+          id: assetId,
+          vaultId,
+          ownerId: ownerId ? String(ownerId) : uid,
+          createdBy: uid,
+          collectionId: String(selectedCollectionId),
+          title: newAsset.title.trim(),
+          type: newAsset.type.trim(),
+          category: newAsset.category.trim(),
+          description: newAsset.description.trim(),
+          manager: (newAsset.manager || '').trim(),
+          value: parseFloat(newAsset.value) || 0,
+          estimatedValue: parseFloat(newAsset.estimatedValue) || 0,
+          rrp: parseFloat(newAsset.rrp) || 0,
+          purchasePrice: parseFloat(newAsset.purchasePrice) || 0,
+          quantity: parseInt(newAsset.quantity) || 1,
+          images,
+          heroImage,
+          createdAt: now,
+          viewedAt: now,
+          editedAt: now,
+        },
+        { merge: true }
+      );
+
+      setNewAsset(initialAssetState);
+      return true;
+    } catch (err) {
+      showAlert(err?.message ? String(err.message) : 'Failed to create asset.');
+      return false;
+    }
   };
 
-  const updateAssetQuantity = (id, qty) => {
+  const updateAssetQuantity = async (id, qty) => {
     const n = parseInt(qty) || 1;
-    setAssets((prev) => prev.map((a) => (a.id === id ? { ...a, quantity: n } : a)));
-    if (viewAsset && viewAsset.id === id) {
-      setViewAsset((v) => ({ ...v, quantity: n }));
-      setViewAssetDraft((d) => ({ ...d, quantity: n }));
+    const asset = (assets || []).find((a) => a && a.id === id) || null;
+    if (!asset) return;
+    if (!hasAssetPermission(asset, 'Edit')) {
+      showAlert("You don't have permission to edit this asset.");
+      return;
+    }
+    const vaultId = asset.vaultId || getVaultForAsset(asset)?.id || null;
+    if (!vaultId) return;
+
+    try {
+      await updateDoc(doc(db, 'vaults', String(vaultId), 'assets', String(id)), { quantity: n, editedAt: Date.now() });
+    } catch (err) {
+      showAlert(err?.message ? String(err.message) : 'Failed to update quantity.');
     }
   };
 
   const handleDeleteAsset = (id) => {
     const asset = assets.find(a => a.id === id);
     if (!asset) return;
+    if (!hasAssetPermission(asset, 'Delete')) {
+      showAlert("You don't have permission to delete this asset.");
+      return;
+    }
     
     setConfirmDialog({
       show: true,
       title: "Delete Asset",
       message: `Are you sure you want to delete "${asset.title}"? This action cannot be undone.`,
-      onConfirm: () => {
-        setAssets((prev) => prev.filter((a) => a.id !== id));
-        setConfirmDialog({ show: false, title: "", message: "", onConfirm: null });
+      onConfirm: async () => {
+        try {
+          const vaultId = asset.vaultId || getVaultForAsset(asset)?.id || null;
+          if (!vaultId) throw new Error('Missing vaultId');
+          await deleteDoc(doc(db, 'vaults', String(vaultId), 'assets', String(id)));
+        } catch (err) {
+          showAlert(err?.message ? String(err.message) : 'Failed to delete asset.');
+        } finally {
+          setConfirmDialog({ show: false, title: "", message: "", onConfirm: null });
+        }
       }
     });
   };
 
   const handleDeleteVault = (vault) => {
+    if (!canDeleteVault(vault)) {
+      showAlert("You don't have permission to delete this vault.");
+      return;
+    }
     setConfirmDialog({
       show: true,
       title: "Delete Vault",
       message: `Are you sure you want to delete "${vault.name}"? This will also delete all collections and assets within it.`,
-      onConfirm: () => {
-        const collectionsToDelete = collections.filter(c => c.vaultId === vault.id);
-        const collectionIds = collectionsToDelete.map(c => c.id);
-        
-        setAssets((prev) => prev.filter((a) => !collectionIds.includes(a.collectionId)));
-        setCollections((prev) => prev.filter((c) => c.vaultId !== vault.id));
-        setVaults((prev) => prev.filter((v) => v.id !== vault.id));
-        // If the user deleted their default/example vault, remember this so we don't recreate it on login
+      onConfirm: async () => {
         try {
-          if (vault.isDefault && vault.ownerId) {
-            localStorage.setItem(`defaultVaultDeleted_${vault.ownerId}`, "true");
+          if (!API_URL) throw new Error('Missing API URL');
+          await apiFetch(`/vaults/${encodeURIComponent(String(vault.id))}/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirm: 'DELETE' }),
+          });
+          // If the user deleted their default/example vault, remember this so we don't recreate it on register.
+          try {
+            const ownerId = getVaultOwnerId(vault);
+            if (vault.isDefault && ownerId) {
+              localStorage.setItem(`defaultVaultDeleted_${String(ownerId)}`, "true");
+            }
+          } catch (e) {}
+          if (selectedVaultId === vault.id) {
+            setSelectedVaultId(null);
+            setSelectedCollectionId(null);
           }
-        } catch (e) {
-          // ignore storage errors
+        } catch (err) {
+          showAlert(err?.message ? String(err.message) : 'Failed to delete vault.');
+        } finally {
+          setConfirmDialog({ show: false, title: "", message: "", onConfirm: null });
         }
-        
-        if (selectedVaultId === vault.id) {
-          setSelectedVaultId(null);
-          setSelectedCollectionId(null);
-        }
-        
-        setConfirmDialog({ show: false, title: "", message: "", onConfirm: null });
       }
     });
   };
 
   const handleDeleteCollection = (collection) => {
+    if (!hasCollectionPermission(collection, 'Delete')) {
+      showAlert("You don't have permission to delete this collection.");
+      return;
+    }
     setConfirmDialog({
       show: true,
       title: "Delete Collection",
       message: `Are you sure you want to delete "${collection.name}"? This will also delete all assets within it.`,
-      onConfirm: () => {
-        setAssets((prev) => prev.filter((a) => a.collectionId !== collection.id));
-        setCollections((prev) => prev.filter((c) => c.id !== collection.id));
-        
-        if (selectedCollectionId === collection.id) {
-          setSelectedCollectionId(null);
+      onConfirm: async () => {
+        try {
+          const vaultId = collection.vaultId;
+          if (!vaultId) throw new Error('Missing vaultId');
+
+          // Delete assets within collection (paged; avoid 500 doc batch limit).
+          while (true) {
+            const snap = await getDocs(query(collection(db, 'vaults', String(vaultId), 'assets'), where('collectionId', '==', String(collection.id)), limit(400)));
+            if (snap.empty) break;
+            const batch = writeBatch(db);
+            snap.docs.forEach((d) => batch.delete(d.ref));
+            await batch.commit();
+            if (snap.size < 400) break;
+          }
+
+          await deleteDoc(doc(db, 'vaults', String(vaultId), 'collections', String(collection.id)));
+          if (selectedCollectionId === collection.id) setSelectedCollectionId(null);
+        } catch (err) {
+          showAlert(err?.message ? String(err.message) : 'Failed to delete collection.');
+        } finally {
+          setConfirmDialog({ show: false, title: "", message: "", onConfirm: null });
         }
-        
-        setConfirmDialog({ show: false, title: "", message: "", onConfirm: null });
       }
     });
   };
@@ -1174,15 +1638,43 @@ export default function App() {
 
   const closeMoveDialog = () => setMoveDialog({ show: false, assetId: null, targetVaultId: null, targetCollectionId: null });
 
-  const handleMoveConfirm = () => {
+  const handleMoveConfirm = async () => {
     const targetId = moveDialog.targetCollectionId;
     if (!targetId) {
       showAlert("Select a collection to move to.");
       return;
     }
-    setAssets((prev) => prev.map((a) => (a.id === moveDialog.assetId ? { ...a, collectionId: targetId, lastEditedBy: currentUser?.username || 'Unknown' } : a)));
-    closeMoveDialog();
-    showAlert("Asset moved.");
+    const asset = (assets || []).find((a) => a && a.id === moveDialog.assetId) || null;
+    if (!asset) return;
+    if (!hasAssetPermission(asset, 'Move')) {
+      showAlert("You don't have permission to move this asset.");
+      return;
+    }
+
+    try {
+      const sourceVaultId = String(moveDialog.sourceVaultId || asset.vaultId || '');
+      const targetVaultId = String(moveDialog.targetVaultId || '');
+      const targetCollectionId = String(targetId);
+      if (!sourceVaultId || !targetVaultId || !targetCollectionId) throw new Error('Missing move parameters');
+
+      if (sourceVaultId === targetVaultId) {
+        await updateDoc(doc(db, 'vaults', sourceVaultId, 'assets', String(asset.id)), {
+          collectionId: targetCollectionId,
+          editedAt: Date.now(),
+        });
+      } else {
+        await apiFetch(`/vaults/${encodeURIComponent(sourceVaultId)}/assets/${encodeURIComponent(String(asset.id))}/move`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetVaultId, targetCollectionId }),
+        });
+      }
+
+      closeMoveDialog();
+      showAlert('Asset moved.');
+    } catch (err) {
+      showAlert(err?.message ? String(err.message) : 'Failed to move asset.');
+    }
   };
 
   const openCollectionMoveDialog = (collection) => {
@@ -1192,18 +1684,38 @@ export default function App() {
 
   const closeCollectionMoveDialog = () => setCollectionMoveDialog({ show: false, collectionId: null, targetVaultId: null });
 
-  const handleCollectionMoveConfirm = () => {
+  const handleCollectionMoveConfirm = async () => {
     const targetVault = collectionMoveDialog.targetVaultId;
     if (!targetVault) {
       showAlert("Select a vault to move this collection into.");
       return;
     }
-    setCollections((prev) => prev.map((c) => (c.id === collectionMoveDialog.collectionId ? { ...c, vaultId: targetVault, lastEditedBy: currentUser?.username || 'Unknown' } : c)));
-    // if the moved collection is currently selected, switch view to the destination vault
-    setSelectedVaultId(targetVault);
-    setSelectedCollectionId(collectionMoveDialog.collectionId);
-    closeCollectionMoveDialog();
-    showAlert("Collection moved.");
+    const collectionToMove = (collections || []).find((c) => c && c.id === collectionMoveDialog.collectionId) || null;
+    if (!collectionToMove) return;
+    if (!hasCollectionPermission(collectionToMove, 'Move')) {
+      showAlert("You don't have permission to move this collection.");
+      return;
+    }
+    try {
+      const sourceVaultId = String(collectionMoveDialog.sourceVaultId || collectionToMove.vaultId || '');
+      const targetVaultId = String(targetVault);
+      if (!sourceVaultId || !targetVaultId) throw new Error('Missing move parameters');
+      if (sourceVaultId === targetVaultId) {
+        closeCollectionMoveDialog();
+        return;
+      }
+      await apiFetch(`/vaults/${encodeURIComponent(sourceVaultId)}/collections/${encodeURIComponent(String(collectionToMove.id))}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetVaultId }),
+      });
+      setSelectedVaultId(targetVaultId);
+      setSelectedCollectionId(String(collectionToMove.id));
+      closeCollectionMoveDialog();
+      showAlert('Collection moved.');
+    } catch (err) {
+      showAlert(err?.message ? String(err.message) : 'Failed to move collection.');
+    }
   };
 
   const openViewAsset = (asset) => {
@@ -1223,7 +1735,12 @@ export default function App() {
       heroImage: normalized.heroImage || normalized.images[0] || "",
       images: trimToFour(normalized.images || []),
     });
-    setAssets((prev) => prev.map((a) => (a.id === asset.id ? { ...a, lastViewed: new Date().toISOString() } : a)));
+    try {
+      const vaultId = normalized.vaultId || getVaultForAsset(normalized)?.id || null;
+      if (vaultId) {
+        updateDoc(doc(db, 'vaults', String(vaultId), 'assets', String(normalized.id)), { viewedAt: Date.now() }).catch(() => {});
+      }
+    } catch (e) {}
   };
   const closeViewAsset = () => {
     setViewAsset(null);
@@ -1232,10 +1749,7 @@ export default function App() {
 
   const handleUpdateViewAsset = async () => {
     if (!viewAsset) return false;
-    // enforce asset edit permission via vault
-    const vault = getVaultForAsset(viewAsset);
-    const permOk = (viewAsset.ownerId === currentUser?.id) || (vault && (vault.ownerId === currentUser?.id || canEditInVault(vault)));
-    if (!permOk) {
+    if (!hasAssetPermission(viewAsset, 'Edit')) {
       showAlert("You don't have permission to edit this asset.");
       return false;
     }
@@ -1255,33 +1769,36 @@ export default function App() {
     const images = trimToFour(viewAssetDraft.images || []);
     const heroImage = viewAssetDraft.heroImage || images[0] || DEFAULT_HERO;
 
-    setAssets((prev) =>
-      prev.map((a) =>
-        a.id === viewAsset.id
-          ? { ...a, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), manager: (viewAssetDraft.manager || "").trim(), value: parseFloat(viewAssetDraft.value) || 0, estimatedValue: parseFloat(viewAssetDraft.estimatedValue) || 0, rrp: parseFloat(viewAssetDraft.rrp) || 0, purchasePrice: parseFloat(viewAssetDraft.purchasePrice) || 0, quantity: parseInt(viewAssetDraft.quantity) || 1, heroImage, images, lastEditedBy: currentUser?.username || 'Unknown' }
-          : a
-      )
-    );
-
-    setViewAsset({ ...viewAsset, title: viewAssetDraft.title.trim(), type: viewAssetDraft.type.trim(), category: viewAssetDraft.category.trim(), description: viewAssetDraft.description.trim(), manager: (viewAssetDraft.manager || "").trim(), value: parseFloat(viewAssetDraft.value) || 0, estimatedValue: parseFloat(viewAssetDraft.estimatedValue) || 0, rrp: parseFloat(viewAssetDraft.rrp) || 0, purchasePrice: parseFloat(viewAssetDraft.purchasePrice) || 0, quantity: parseInt(viewAssetDraft.quantity) || 1, heroImage, images, lastEditedBy: currentUser?.username || 'Unknown' });
-    showAlert("Asset updated.");
-    return true;
+    try {
+      const vaultId = viewAsset.vaultId || getVaultForAsset(viewAsset)?.id || null;
+      if (!vaultId) throw new Error('Missing vaultId');
+      await updateDoc(doc(db, 'vaults', String(vaultId), 'assets', String(viewAsset.id)), {
+        title: viewAssetDraft.title.trim(),
+        type: viewAssetDraft.type.trim(),
+        category: viewAssetDraft.category.trim(),
+        description: viewAssetDraft.description.trim(),
+        manager: (viewAssetDraft.manager || '').trim(),
+        value: parseFloat(viewAssetDraft.value) || 0,
+        estimatedValue: parseFloat(viewAssetDraft.estimatedValue) || 0,
+        rrp: parseFloat(viewAssetDraft.rrp) || 0,
+        purchasePrice: parseFloat(viewAssetDraft.purchasePrice) || 0,
+        quantity: parseInt(viewAssetDraft.quantity) || 1,
+        heroImage,
+        images,
+        editedAt: Date.now(),
+      });
+      showAlert('Asset updated.');
+      return true;
+    } catch (err) {
+      showAlert(err?.message ? String(err.message) : 'Failed to update asset.');
+      return false;
+    }
   };
 
   const handleClearData = () => {
-    localStorage.clear();
-    setUsers([]);
-    setAssets([]);
-    setVaults([]);
-    setCollections([]);
-    setSelectedVaultId(null);
-    setSelectedCollectionId(null);
-    setShowVaultForm(false);
-    setShowCollectionForm(false);
-    setShowAssetForm(false);
-    setCurrentUser(null);
-    setIsLoggedIn(false);
-    navigateTo("landing", { replace: true });
+    // Firestore is canonical; keep this as a local reset + sign-out.
+    try { localStorage.clear(); } catch (e) {}
+    logout();
     setLoginForm({ username: "", password: "" });
     setRegisterForm({ firstName: "", lastName: "", email: "", username: "", password: "", profileImage: DEFAULT_AVATAR });
   };
@@ -1302,19 +1819,22 @@ export default function App() {
     if (email && !email.includes("@")) errors.email = "Enter a valid email.";
     if (!username) errors.username = "Username is required.";
 
-    const emailTaken = users.some((u) => u.id !== currentUser.id && u.email === email);
-    const usernameTaken = users.some((u) => u.id !== currentUser.id && u.username === username);
-    if (emailTaken) errors.email = "Email already in use.";
-    if (usernameTaken) errors.username = "Username already in use.";
+    // Firestore rules only allow reading your own /users/{uid} doc; we cannot
+    // reliably pre-check username/email uniqueness here.
+
+    const authEmail = firebaseAuth?.currentUser?.email ? String(firebaseAuth.currentUser.email) : '';
+    const wantsEmailChange = authEmail && normalizeEmail(email) !== normalizeEmail(authEmail);
 
     // Validate password change if user is changing password
     if (isChangingPassword) {
       if (!profileForm.currentPassword) errors.currentPassword = "Current password is required.";
-      if (profileForm.currentPassword && profileForm.currentPassword !== currentUser.password) errors.currentPassword = "Current password is incorrect.";
       if (!profileForm.newPassword) errors.newPassword = "New password is required.";
       if (profileForm.newPassword && profileForm.newPassword.length < 6) errors.newPassword = "Password must be at least 6 characters.";
       if (!profileForm.confirmPassword) errors.confirmPassword = "Please confirm your new password.";
       if (profileForm.newPassword && profileForm.confirmPassword && profileForm.newPassword !== profileForm.confirmPassword) errors.confirmPassword = "Passwords do not match.";
+    }
+    if (wantsEmailChange && !profileForm.currentPassword) {
+      errors.currentPassword = "Current password is required to change email.";
     }
 
     if (Object.keys(errors).length > 0) {
@@ -1322,19 +1842,40 @@ export default function App() {
       return;
     }
 
-    const updatedUser = { ...currentUser, firstName, lastName, email, username };
-    // Update password if user is changing it
-    if (isChangingPassword && profileForm.newPassword) {
-      updatedUser.password = profileForm.newPassword;
-    }
+    (async () => {
+      try {
+        if (!firebaseAuth?.currentUser) throw new Error('Not signed in');
+        const uid = String(firebaseAuth.currentUser.uid);
 
-    setUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updatedUser : u)));
-    setCurrentUser(updatedUser);
-    setProfileErrors({});
-    setIsEditingProfile(false);
-    setIsChangingPassword(false);
-    setProfileForm({ ...profileForm, currentPassword: "", newPassword: "", confirmPassword: "" });
-    showAlert(isChangingPassword && profileForm.newPassword ? "Profile and password updated." : "Profile updated.");
+        if ((isChangingPassword || wantsEmailChange) && profileForm.currentPassword) {
+          const cred = EmailAuthProvider.credential(String(firebaseAuth.currentUser.email || ''), String(profileForm.currentPassword));
+          await reauthenticateWithCredential(firebaseAuth.currentUser, cred);
+        }
+
+        if (wantsEmailChange) {
+          await updateEmail(firebaseAuth.currentUser, normalizeEmail(email));
+        }
+
+        if (isChangingPassword && profileForm.newPassword) {
+          await updatePassword(firebaseAuth.currentUser, String(profileForm.newPassword));
+        }
+
+        await updateDoc(doc(db, 'users', uid), {
+          firstName,
+          lastName,
+          email: normalizeEmail(email),
+          username,
+        });
+
+        setProfileErrors({});
+        setIsEditingProfile(false);
+        setIsChangingPassword(false);
+        setProfileForm({ ...profileForm, currentPassword: "", newPassword: "", confirmPassword: "" });
+        showAlert(isChangingPassword && profileForm.newPassword ? "Profile and password updated." : "Profile updated.");
+      } catch (err) {
+        showAlert(err?.message ? String(err.message) : 'Failed to update profile.');
+      }
+    })();
   };
 
   const handleProfileImageUpload = async (e) => {
@@ -1349,9 +1890,8 @@ export default function App() {
 
     try {
       const resized = await resizeImage(file, 400, 400, 0.8);
-      const updatedUser = { ...currentUser, profileImage: resized };
-      setUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updatedUser : u)));
-      setCurrentUser(updatedUser);
+      if (!firebaseAuth?.currentUser?.uid) throw new Error('Not signed in');
+      await updateDoc(doc(db, 'users', String(firebaseAuth.currentUser.uid)), { profileImage: resized });
       showAlert("Profile picture updated.");
       e.target.value = "";
     } catch (err) {
@@ -1365,13 +1905,33 @@ export default function App() {
       show: true,
       title: "Delete Account",
       message: "Are you sure you want to delete your account? This will permanently delete your profile and all your vaults, collections, and assets. This action cannot be undone.",
-      onConfirm: () => {
-        setUsers((prev) => prev.filter((u) => u.id !== currentUser.id));
-        setVaults((prev) => prev.filter((v) => v.ownerId !== currentUser.id));
-        setCollections((prev) => prev.filter((c) => c.ownerId !== currentUser.id));
-        setAssets((prev) => prev.filter((a) => a.ownerId !== currentUser.id));
-        setConfirmDialog({ show: false, title: "", message: "", onConfirm: null });
-        logout();
+      onConfirm: async () => {
+        try {
+          const uid = firebaseAuth?.currentUser?.uid ? String(firebaseAuth.currentUser.uid) : null;
+          if (!uid) throw new Error('Not signed in');
+
+          // Delete owned vaults via backend hard-op.
+          const owned = (vaults || []).filter((v) => String(getVaultOwnerId(v) || '') === uid);
+          for (const v of owned) {
+            try {
+              await apiFetch(`/vaults/${encodeURIComponent(String(v.id))}/delete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ confirm: 'DELETE' }),
+              });
+            } catch (e) {
+              // keep going
+            }
+          }
+
+          await deleteDoc(doc(db, 'users', uid)).catch(() => {});
+          await deleteUser(firebaseAuth.currentUser);
+          setConfirmDialog({ show: false, title: "", message: "", onConfirm: null });
+          await logout();
+        } catch (err) {
+          showAlert(mapFirebaseAuthError(err));
+          setConfirmDialog({ show: false, title: "", message: "", onConfirm: null });
+        }
       }
     });
   };
@@ -1381,7 +1941,9 @@ export default function App() {
     setSelectedCollectionId(null);
     setShowCollectionForm(false);
     setShowAssetForm(false);
-    setVaults((prev) => prev.map((v) => (v.id === vaultId ? { ...v, lastViewed: new Date().toISOString() } : v)));
+    try {
+      updateDoc(doc(db, 'vaults', String(vaultId)), { viewedAt: Date.now() }).catch(() => {});
+    } catch (e) {}
   };
 
   const handleSelectCollection = (collectionId) => {
@@ -1391,7 +1953,11 @@ export default function App() {
       setSelectedVaultId(col.vaultId);
     }
     setShowAssetForm(false);
-    setCollections((prev) => prev.map((c) => (c.id === collectionId ? { ...c, lastViewed: new Date().toISOString() } : c)));
+    try {
+      if (col?.vaultId) {
+        updateDoc(doc(db, 'vaults', String(col.vaultId), 'collections', String(collectionId)), { viewedAt: Date.now() }).catch(() => {});
+      }
+    } catch (e) {}
     // During tutorial, advance to the asset highlight after user clicks a collection
     if (showTutorial && tutorialStep === 1) {
       // show the explanatory panel that the view switched
@@ -1516,13 +2082,13 @@ export default function App() {
 
   // Helper function to calculate total net worth for a user
   const getUserNetWorth = (userId) => {
-    const userVaultList = vaults.filter(v => v.ownerId === userId);
+    const userVaultList = vaults.filter(v => String(getVaultOwnerId(v) || '') === String(userId));
     const userCollectionIds = userVaultList.flatMap(v => collections.filter(c => c.vaultId === v.id).map(c => c.id));
     const userAssets = assets.filter(a => userCollectionIds.includes(a.collectionId));
     return userAssets.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
   };
 
-  const userVaults = currentUser ? vaults.filter((v) => v.ownerId === currentUser.id) : [];
+  const userVaults = currentUser ? vaults.filter((v) => getVaultOwnerId(v) === currentUser.id) : [];
   const filteredVaults = userVaults.filter((v) => v.name.toLowerCase().includes(normalizeFilter(vaultFilter)));
   console.log(`Current vaultSort: "${vaultSort}", Filtered vaults count: ${filteredVaults.length}`);
   const sortedVaults = [...filteredVaults].sort((a, b) => {
@@ -1549,7 +2115,7 @@ export default function App() {
   // see collections created by collaborators inside their vaults).
   const userCollections = currentUser ? collections.filter((c) => {
     const vault = vaults.find(v => v.id === c.vaultId);
-    return vault && vault.ownerId === currentUser.id && (!selectedVaultId || c.vaultId === selectedVaultId);
+    return vault && String(getVaultOwnerId(vault) || '') === String(currentUser.id) && (!selectedVaultId || c.vaultId === selectedVaultId);
   }) : [];
   const filteredCollections = userCollections.filter((c) => c.name.toLowerCase().includes(normalizeFilter(collectionFilter)));
   const sortedCollections = [...filteredCollections].sort((a, b) => {
@@ -1578,13 +2144,14 @@ export default function App() {
     return new Date(b.createdAt) - new Date(a.createdAt); // default newest
   });
 
-  // Datasets for Shared mode (items shared with current user)
-  // Only include vaults that were shared to the current user by another owner
-  const sharedVaultsList = currentUser ? vaults.filter(v => (
-    (v.sharedWith || []).some(s => s.userId === currentUser.id) && // shared to me
-    v.ownerId !== currentUser.id && // not my own vault
-    (!sharedOwnerId || v.ownerId === sharedOwnerId)
-  )) : [];
+  // Datasets for Shared mode (vaults where I have a DELEGATE membership)
+  const sharedVaultsList = currentUser ? vaults.filter((v) => {
+    const ownerId = getVaultOwnerId(v);
+    if (!ownerId || ownerId === currentUser.id) return false;
+    if (sharedOwnerId && ownerId !== sharedOwnerId) return false;
+    const m = getMembershipForVault(v.id, currentUser.id);
+    return !!m;
+  }) : [];
   const filteredSharedVaults = sharedVaultsList.filter((v) => v.name.toLowerCase().includes(normalizeFilter(vaultFilter)));
   const sortedSharedVaults = [...filteredSharedVaults].sort((a, b) => {
     if (vaultSort === "name") return a.name.localeCompare(b.name);
@@ -1595,12 +2162,14 @@ export default function App() {
     return sortByDefaultThenDate(a, b);
   });
 
-  // Only include collections where the user is directly shared (not inherited from vault)
-  // Exclude collections owned by the current user (they are the owner's own items)
-  const sharedCollectionsList = currentUser ? collections.filter(c => {
-    if (c.ownerId === currentUser.id) return false; // skip own collections
-    const sharedDirectly = (c.sharedWith || []).some(s => s.userId === currentUser.id);
-    return sharedDirectly;
+  // In the canonical model, active members can read all collections in the vault.
+  const sharedCollectionsList = currentUser ? collections.filter((c) => {
+    const vault = vaults.find((v) => v.id === c.vaultId) || null;
+    if (!vault) return false;
+    const ownerId = getVaultOwnerId(vault);
+    if (!ownerId || ownerId === currentUser.id) return false;
+    if (!getMembershipForVault(vault.id, currentUser.id)) return false;
+    return true;
   }) : [];
   const filteredSharedCollections = sharedCollectionsList.filter((c) => c.name.toLowerCase().includes(normalizeFilter(collectionFilter)) && (!selectedVaultId || c.vaultId === selectedVaultId));
   const sortedSharedCollections = [...filteredSharedCollections].sort((a, b) => {
@@ -1615,13 +2184,16 @@ export default function App() {
   const selectedSharedVault = sharedVaultsList.find((v) => v.id === selectedVaultId) || null;
   const selectedSharedCollection = sharedCollectionsList.find((c) => c.id === selectedCollectionId) || null;
 
-  // Only include assets where the user is directly shared (not inherited from collection or vault)
-  const sharedAssetsList = currentUser && selectedSharedCollection ? assets.filter(a => {
+  // In the canonical model, active members can read all assets in the vault.
+  const sharedAssetsList = currentUser && selectedSharedCollection ? assets.filter((a) => {
     if (a.collectionId !== selectedSharedCollection.id) return false;
-    if (a.ownerId === currentUser.id) return false;
-    // Only asset directly shared
-    const assetShared = (a.sharedWith || []).some(s => s.userId === currentUser.id);
-    return assetShared;
+    const collection = collections.find((c) => c.id === a.collectionId) || null;
+    if (!collection) return false;
+    const vault = vaults.find((v) => v.id === collection.vaultId) || null;
+    if (!vault) return false;
+    const ownerId = getVaultOwnerId(vault);
+    if (!ownerId || ownerId === currentUser.id) return false;
+    return !!getMembershipForVault(vault.id, currentUser.id);
   }) : [];
   const filteredSharedAssets = sharedAssetsList.filter((a) => {
     const term = normalizeFilter(assetFilter);
@@ -1651,11 +2223,10 @@ export default function App() {
     const hero = collection.heroImage || DEFAULT_HERO;
     const collectionImages = collection.images || [];
     const vault = getVaultForCollection(collection) || displaySelectedVault;
-    const colRole = getRoleForCollection(collection);
-    const canEdit = (collection.ownerId === currentUser?.id) || colRole === 'editor' || colRole === 'manager';
-    const canDelete = (collection.ownerId === currentUser?.id);
-    const canMove = (collection.ownerId === currentUser?.id) || colRole === 'manager';
-    const isOwner = vault && vault.ownerId === currentUser?.id;
+    const canEdit = hasCollectionPermission(collection, 'Edit');
+    const canDelete = hasCollectionPermission(collection, 'Delete');
+    const canMove = hasCollectionPermission(collection, 'Move');
+    const isOwner = vault && isOwnerOfVault(vault);
 
     return (
       <div key={collection.id} data-tut={idx === 0 ? "collection-frame" : undefined} className={`relative overflow-hidden p-3 rounded border ${collection.id === selectedCollectionId ? "border-blue-700 bg-blue-950/40" : "border-neutral-800 bg-neutral-950"} flex flex-col justify-between h-48`}>
@@ -1664,14 +2235,14 @@ export default function App() {
             <div className="flex-shrink-0">
               <img src={hero} alt={collection.name} className="w-24 h-24 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(collectionImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
               {sharedMode && (
-                <p className="mt-2 text-xs text-neutral-300">Your role: {(() => { const r = getRoleForCollection(collection); return r === 'owner' ? 'Owner' : r ? r.charAt(0).toUpperCase() + r.slice(1) : 'Viewer'; })()}</p>
+                <p className="mt-2 text-xs text-neutral-300">Access: Delegate</p>
               )}
             </div>
             <div className="flex-1 flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <p className="font-semibold">{collection.name}</p>
-                  {collection.sharedWith && collection.sharedWith.length > 0 ? (
+                  {permissionGrants.some((g) => g && g.scope_type === 'COLLECTION' && g.scope_id === collection.id) ? (
                     <svg className="w-4 h-4 text-green-700" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.5 1.1 2.51 2.75 2.97 4.45h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
                     </svg>
@@ -1741,15 +2312,15 @@ export default function App() {
   );
 
   // compute permission booleans used by modals
-  const assetCanEdit = viewAsset ? ((viewAsset.ownerId === currentUser?.id) || (getVaultForAsset(viewAsset) && (getVaultForAsset(viewAsset).ownerId === currentUser?.id || canEditInVault(getVaultForAsset(viewAsset)))) || ['editor', 'manager'].includes(getRoleForAsset(viewAsset))) : true;
+  const assetCanEdit = viewAsset ? hasAssetPermission(viewAsset, 'Edit') : true;
   const editCanEdit = (editDialog && editDialog.show && editDialog.item) ? (() => {
     if (editDialog.type === "vault") {
       const vault = editDialog.item;
-      return (vault.ownerId === currentUser?.id) || canEditInVault(vault);
+      return canEditVaultDoc(vault);
     }
     if (editDialog.type === "collection") {
       const vault = getVaultForCollection(editDialog.item);
-      return (editDialog.item.ownerId === currentUser?.id) || (vault && (vault.ownerId === currentUser?.id || canEditInVault(vault)));
+      return hasCollectionPermission(editDialog.item, 'Edit');
     }
     return true;
   })() : true;
@@ -2067,7 +2638,8 @@ export default function App() {
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 {(() => {
-                  const ownerIds = Array.from(new Set(vaults.filter(v => (v.sharedWith || []).some(s => s.userId === currentUser.id)).map(v => v.ownerId)));
+                  const memberVaultIds = Array.from(new Set((vaultMemberships || []).filter(m => m && m.user_id === currentUser.id && m.status !== 'REVOKED').map(m => m.vault_id)));
+                  const ownerIds = Array.from(new Set(memberVaultIds.map(vId => getVaultOwnerId(vaults.find(v => v && v.id === vId))).filter(Boolean)));
                   if (ownerIds.length === 0) return (<p className="text-neutral-500">No users have shared vaults with you.</p>);
                   const owners = ownerIds.map(id => users.find(u => u.id === id)).filter(Boolean);
                   return owners.map((owner) => (
@@ -2100,7 +2672,8 @@ export default function App() {
                   <h3 className="text-lg font-semibold mb-2">Shared By Me</h3>
                   <div className="space-y-3">
                     {(() => {
-                      const sharedByMe = vaults.filter(v => v.ownerId === currentUser.id && (v.sharedWith || []).length > 0);
+                      const owned = vaults.filter(v => getVaultOwnerId(v) === currentUser.id);
+                      const sharedByMe = owned.filter(v => (vaultMemberships || []).some(m => m && m.vault_id === v.id && m.status !== 'REVOKED'));
                       if (sharedByMe.length === 0) {
                         return (
                           <div className="p-3 rounded border border-neutral-800 bg-neutral-950/30 flex items-center justify-between">
@@ -2117,7 +2690,7 @@ export default function App() {
                         <div key={v.id} className="p-3 rounded border border-neutral-800 bg-neutral-950/30 flex items-center justify-between">
                           <div>
                             <div className="font-medium">{v.name}</div>
-                            <div className="text-xs text-neutral-400">{(v.sharedWith || []).length} users</div>
+                            <div className="text-xs text-neutral-400">{(vaultMemberships || []).filter(m => m && m.vault_id === v.id && m.status !== 'REVOKED').length} users</div>
                           </div>
                             <div className="flex gap-2">
                             <button className="px-2 py-1 rounded bg-blue-600 text-white text-xs" onClick={() => { openShareDialog('vault', v); }}>Manage</button>
@@ -2132,7 +2705,11 @@ export default function App() {
                   <h3 className="text-lg font-semibold mb-2">Shared With Me</h3>
                   <div className="space-y-3">
                     {(() => {
-                      const sharedWithMe = vaults.filter(v => (v.sharedWith || []).some(s => s.userId === currentUser.id));
+                      const sharedWithMe = vaults.filter((v) => {
+                        const ownerId = getVaultOwnerId(v);
+                        if (!ownerId || ownerId === currentUser.id) return false;
+                        return !!getMembershipForVault(v.id, currentUser.id);
+                      });
                       if (sharedWithMe.length === 0) {
                         return (
                           <div className="p-3 rounded border border-neutral-800 bg-neutral-950/30 flex items-center justify-between">
@@ -2146,15 +2723,12 @@ export default function App() {
                         );
                       }
                       return sharedWithMe.map((v) => {
-                        const share = (v.sharedWith || []).find(s => s.userId === currentUser.id);
-                        const owner = users.find(u => u.id === v.ownerId) || { username: 'Unknown' };
-                        const role = getRoleForVault(v);
-                        const effective = role === 'owner' ? 'Owner' : role ? role.charAt(0).toUpperCase() + role.slice(1) : 'Viewer';
+                        const owner = users.find(u => u.id === getVaultOwnerId(v)) || { username: 'Unknown' };
                         return (
                           <div key={v.id} className="p-3 rounded border border-neutral-800 bg-neutral-950/30 flex items-center justify-between">
                             <div>
                               <div className="font-medium">{v.name}</div>
-                              <div className="text-xs text-neutral-400">Shared by {owner.username} · {effective}</div>
+                              <div className="text-xs text-neutral-400">Shared by {owner.username} · Delegate</div>
                             </div>
                             <div className="flex gap-2">
                               <button className="px-2 py-1 rounded bg-blue-600 text-white text-xs" onClick={() => { handleSelectVault(v.id); }}>Open</button>
@@ -2378,14 +2952,14 @@ export default function App() {
                                   <div className="flex-shrink-0">
                                     <img src={hero} alt={vault.name} className="w-24 h-24 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={(e) => { e.stopPropagation(); openImageViewer(vaultImages, 0); }} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
                                     {sharedMode && (
-                                      <p className="mt-2 text-xs text-neutral-300">Your role: {(() => { const r = getRoleForVault(vault); return r === 'owner' ? 'Owner' : r ? r.charAt(0).toUpperCase() + r.slice(1) : 'Viewer'; })()}</p>
+                                      <p className="mt-2 text-xs text-neutral-300">Access: Delegate</p>
                                     )}
                                   </div>
                                   <div className="flex-1 flex items-start justify-between">
                                     <div className="flex-1">
                                       <div className="flex items-center gap-2">
                                         <p className="font-semibold">{vault.name}</p>
-                                        {vault.sharedWith && vault.sharedWith.length > 0 ? (
+                                        {(vaultMemberships || []).some((m) => m && m.vault_id === vault.id && m.status !== 'REVOKED') ? (
                                           <svg className="w-4 h-4 text-green-700" fill="currentColor" viewBox="0 0 24 24">
                                             <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.5 1.1 2.51 2.75 2.97 4.45h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
                                           </svg>
@@ -2403,7 +2977,7 @@ export default function App() {
                                       <p>Created {new Date(vault.createdAt).toLocaleDateString()}</p>
                                       {vault.lastViewed && <p className="mt-0.5">Viewed {new Date(vault.lastViewed).toLocaleDateString()}</p>}
                                       {vault.lastEditedBy && <p className="mt-0.5">Edited by {(() => { const editor = users.find(u => u.username === vault.lastEditedBy) || {}; return editor.firstName ? `${editor.firstName} ${editor.lastName}` : (editor.username || vault.lastEditedBy); })()}</p>}
-                                      <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === vault.ownerId) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return vault.manager || ownerName; })()} {(() => {
+                                      <p className="mt-0.5">Manager: {(() => { const owner = users.find(u => u.id === getVaultOwnerId(vault)) || {}; const ownerName = owner.firstName ? `${owner.firstName} ${owner.lastName}` : (owner.username || 'Unknown'); return vault.manager || ownerName; })()} {(() => {
                                         // Vault tiles no longer show inline Assign button; manager assignment is available via Edit
                                       })()}</p>
                                       <p className="mt-0.5">Collections: {collectionCount}</p>
@@ -2420,8 +2994,7 @@ export default function App() {
                                 )}
                                 
                                 {(() => {
-                                  const canDel = (vault.ownerId === currentUser?.id) || canDeleteInVault(vault);
-                                  return canDel ? (
+                                  return canDeleteVault(vault) ? (
                                     <button
                                       className="px-2 py-0.5 rounded text-xs bg-red-700 text-white hover:bg-red-800"
                                       onClick={(e) => { e.stopPropagation(); handleDeleteVault(vault); }}
@@ -2579,29 +3152,7 @@ export default function App() {
                           <div>
                             <label className="text-sm text-neutral-400">Manager</label>
                             <div className="relative">
-                              <input autoComplete="off" className="w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="username or email" value={newAsset.manager || ""} onChange={(e) => { setNewAsset((p) => ({ ...p, manager: e.target.value })); setShowShareSuggestions(true); }} onFocus={() => setShowShareSuggestions(true)} />
-                              {newAsset.manager && showShareSuggestions && (
-                                (() => {
-                                  const q = (newAsset.manager || "").toLowerCase();
-                                  const matches = (users || []).filter(u => {
-                                    const full = `${u.firstName || ""} ${u.lastName || ""}`.toLowerCase();
-                                    return (u.username || "").toLowerCase().includes(q) || (u.email || "").toLowerCase().includes(q) || full.includes(q);
-                                  }).slice(0, 6);
-                                  if (matches.length === 0) return null;
-                                  return (
-                                    <div className="absolute left-0 right-0 mt-1 bg-neutral-900 border border-neutral-800 rounded max-h-40 overflow-auto z-30">
-                                        {matches.map((u) => (
-                                        <button key={u.id} type="button" className="w-full text-left px-3 py-2 hover:bg-neutral-800 flex justify-between items-start" onClick={() => { const full = (u.firstName || u.lastName) ? `${u.firstName || ""} ${u.lastName || ""}`.trim() : u.username; setNewAsset((d) => ({ ...d, manager: full })); setShowShareSuggestions(false); }}>
-                                          <div>
-                                            <div className="font-medium">{(u.firstName || u.lastName) ? `${u.firstName} ${u.lastName}` : u.username}</div>
-                                            <div className="text-xs text-neutral-400">{u.email || `${u.firstName || ""} ${u.lastName || ""}`}</div>
-                                          </div>
-                                        </button>
-                                      ))}
-                                    </div>
-                                  );
-                                })()
-                              )}
+                              <input autoComplete="off" className="w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="manager name" value={newAsset.manager || ""} onChange={(e) => { setNewAsset((p) => ({ ...p, manager: e.target.value })); setShowShareSuggestions(false); }} onFocus={() => setShowShareSuggestions(false)} />
                             </div>
                           </div>
                           <div>
@@ -2749,14 +3300,14 @@ export default function App() {
                                   <div className="flex-shrink-0">
                                     <img src={hero} alt={asset.title} className="w-24 h-24 object-cover bg-neutral-800 cursor-pointer hover:opacity-90 transition-opacity rounded" onClick={() => openImageViewer(normalized.images, 0)} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
                                     {sharedMode && (
-                                      <p className="mt-2 text-xs text-neutral-300">Your role: {(() => { const r = getRoleForAsset(asset); return r === 'owner' ? 'Owner' : r ? r.charAt(0).toUpperCase() + r.slice(1) : 'Viewer'; })()}</p>
+                                      <p className="mt-2 text-xs text-neutral-300">Access: Delegate</p>
                                     )}
                                   </div>
                                   <div className="flex-1 flex items-start justify-between">
                                     <div className="flex-1">
                                       <div className="flex items-center gap-2">
                                         <p className="font-semibold">{asset.title}</p>
-                                        {asset.sharedWith && asset.sharedWith.length > 0 ? (
+                                        {permissionGrants.some((g) => g && g.scope_type === 'ASSET' && g.scope_id === asset.id) ? (
                                           <svg className="w-4 h-4 text-green-700" fill="currentColor" viewBox="0 0 24 24">
                                             <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.5 1.1 2.51 2.75 2.97 4.45h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
                                           </svg>
@@ -2785,11 +3336,10 @@ export default function App() {
                                 <div className="flex gap-2 mt-2">
                                   {(() => {
                                     const vault = getVaultForAsset(asset) || getVaultForCollection(displaySelectedCollection) || displaySelectedVault;
-                                    const assetRole = getRoleForAsset(asset);
-                                    const canEdit = (asset.ownerId === currentUser?.id) || assetRole === 'editor' || assetRole === 'manager';
-                                    const canDelete = (asset.ownerId === currentUser?.id);
-                                    const canMove = (asset.ownerId === currentUser?.id) || assetRole === 'manager';
-                                    const isOwner = vault && vault.ownerId === currentUser?.id;
+                                    const canEdit = hasAssetPermission(asset, 'Edit');
+                                    const canDelete = hasAssetPermission(asset, 'Delete');
+                                    const canMove = hasAssetPermission(asset, 'Move');
+                                    const isOwner = vault && isOwnerOfVault(vault);
                                     return (
                                       <>
                                         <button
@@ -2883,29 +3433,7 @@ export default function App() {
               <div>
                 <label className="text-sm text-neutral-400">Manager</label>
                 <div className="relative">
-                  <input autoComplete="off" disabled={!assetCanEdit} className={`w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800 ${!assetCanEdit ? 'opacity-60 cursor-not-allowed' : ''}`} placeholder="username or email" value={viewAssetDraft.manager || ""} onChange={(e) => { setViewAssetDraft((p) => ({ ...p, manager: e.target.value })); setShowShareSuggestions(true); }} onFocus={() => setShowShareSuggestions(true)} />
-                  {viewAssetDraft.manager && showShareSuggestions && (
-                    (() => {
-                      const q = (viewAssetDraft.manager || "").toLowerCase();
-                      const matches = (users || []).filter(u => {
-                        const full = `${u.firstName || ""} ${u.lastName || ""}`.toLowerCase();
-                        return (u.username || "").toLowerCase().includes(q) || (u.email || "").toLowerCase().includes(q) || full.includes(q);
-                      }).slice(0, 6);
-                      if (matches.length === 0) return null;
-                      return (
-                        <div className="absolute left-0 right-0 mt-1 bg-neutral-900 border border-neutral-800 rounded max-h-40 overflow-auto z-30">
-                          {matches.map((u) => (
-                            <button key={u.id} type="button" className="w-full text-left px-3 py-2 hover:bg-neutral-800 flex justify-between items-start" onClick={() => { const full = (u.firstName || u.lastName) ? `${u.firstName || ""} ${u.lastName || ""}`.trim() : u.username; setViewAssetDraft((d) => ({ ...d, manager: full })); setShowShareSuggestions(false); }}>
-                              <div>
-                                <div className="font-medium">{(u.firstName || u.lastName) ? `${u.firstName} ${u.lastName}` : u.username}</div>
-                                <div className="text-xs text-neutral-400">{u.email || `${u.firstName || ""} ${u.lastName || ""}`}</div>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      );
-                    })()
-                  )}
+                  <input autoComplete="off" disabled={!assetCanEdit} className={`w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800 ${!assetCanEdit ? 'opacity-60 cursor-not-allowed' : ''}`} placeholder="manager name" value={viewAssetDraft.manager || ""} onChange={(e) => { setViewAssetDraft((p) => ({ ...p, manager: e.target.value })); setShowShareSuggestions(false); }} onFocus={() => setShowShareSuggestions(false)} />
                 </div>
               </div>
               <div>
@@ -3061,16 +3589,16 @@ export default function App() {
               <label className="block text-xs text-neutral-400 mb-1">Select Vault</label>
               <select
                 value={moveDialog.targetVaultId || ""}
-                onChange={(e) => setMoveDialog((d) => ({ ...d, targetVaultId: e.target.value ? parseInt(e.target.value) : null, targetCollectionId: null }))}
+                onChange={(e) => setMoveDialog((d) => ({ ...d, targetVaultId: e.target.value ? String(e.target.value) : null, targetCollectionId: null }))}
                 className="w-full p-2 pr-8 rounded bg-blue-600 text-white cursor-pointer"
                 style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}}
               >
                 <option value="">Select vault</option>
                 {(() => {
                   const movingAsset = assets.find(a => a.id === moveDialog.assetId);
-                  const ownerId = movingAsset ? movingAsset.ownerId : null;
+                  const ownerId = movingAsset ? (movingAsset.ownerId || getVaultOwnerId(getVaultForAsset(movingAsset))) : null;
                   return vaults
-                    .filter(v => (!!ownerId ? v.ownerId === ownerId : true))
+                    .filter(v => (!!ownerId ? String(getVaultOwnerId(v) || '') === String(ownerId) : true))
                     .map((v) => (
                       <option key={v.id} value={v.id}>{v.name}</option>
                     ));
@@ -3081,7 +3609,7 @@ export default function App() {
               <label className="block text-xs text-neutral-400 mb-1">Select Collection</label>
               <select
                 value={moveDialog.targetCollectionId || ""}
-                onChange={(e) => setMoveDialog((d) => ({ ...d, targetCollectionId: e.target.value ? parseInt(e.target.value) : null }))}
+                onChange={(e) => setMoveDialog((d) => ({ ...d, targetCollectionId: e.target.value ? String(e.target.value) : null }))}
                 className="w-full p-2 pr-8 rounded bg-blue-600 text-white cursor-pointer disabled:opacity-50"
                 style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}}
                 disabled={!moveDialog.targetVaultId}
@@ -3089,9 +3617,16 @@ export default function App() {
                 <option value="">{moveDialog.targetVaultId ? "Select collection" : "Select a vault first"}</option>
                 {(() => {
                   const movingAsset = assets.find(a => a.id === moveDialog.assetId);
-                  const ownerId = movingAsset ? movingAsset.ownerId : null;
+                  const ownerId = movingAsset ? (movingAsset.ownerId || getVaultOwnerId(getVaultForAsset(movingAsset))) : null;
                   return collections
-                    .filter(c => c.vaultId === moveDialog.targetVaultId && c.id !== (movingAsset?.collectionId) && (!!ownerId ? c.ownerId === ownerId : true))
+                    .filter(c => {
+                      if (c.vaultId !== moveDialog.targetVaultId) return false;
+                      if (c.id === (movingAsset?.collectionId)) return false;
+                      if (!ownerId) return true;
+                      const v = vaults.find(v => v && v.id === c.vaultId) || null;
+                      const o = c.ownerId || getVaultOwnerId(v);
+                      return String(o || '') === String(ownerId);
+                    })
                     .map((c) => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ));
@@ -3118,16 +3653,16 @@ export default function App() {
               <label className="block text-xs text-neutral-400 mb-1">Select Vault</label>
               <select
                 value={collectionMoveDialog.targetVaultId || ""}
-                onChange={(e) => setCollectionMoveDialog((d) => ({ ...d, targetVaultId: e.target.value ? parseInt(e.target.value) : null }))}
+                onChange={(e) => setCollectionMoveDialog((d) => ({ ...d, targetVaultId: e.target.value ? String(e.target.value) : null }))}
                 className="w-full p-2 pr-8 rounded bg-blue-600 text-white cursor-pointer"
                 style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', appearance: 'none'}}
               >
                 <option value="">Select vault</option>
                 {(() => {
                   const movingCollection = collections.find(c => c.id === collectionMoveDialog.collectionId);
-                  const ownerId = movingCollection ? movingCollection.ownerId : null;
+                  const ownerId = movingCollection ? (movingCollection.ownerId || getVaultOwnerId(getVaultForCollection(movingCollection))) : null;
                   return vaults
-                    .filter(v => v.id !== (movingCollection?.vaultId) && (!!ownerId ? v.ownerId === ownerId : true))
+                    .filter(v => v.id !== (movingCollection?.vaultId) && (!!ownerId ? String(getVaultOwnerId(v) || '') === String(ownerId) : true))
                     .map((v) => (
                       <option key={v.id} value={v.id}>{v.name}</option>
                     ));
@@ -3165,97 +3700,35 @@ export default function App() {
               if (shareDialog.type === 'asset') return `Share ${assets.find(a => a.id === shareDialog.targetId)?.title || 'Asset'}`;
               return `Share ${vaults.find(v => v.id === shareDialog.targetId)?.name || 'Vault'}`;
             })()}</h3>
-            <p className="text-sm text-neutral-400 mb-4">Share this vault with another LAMB user by username, email, or full name.</p>
+            <p className="text-sm text-neutral-400 mb-4">{shareDialog.type === 'vault' ? 'Invite by email (they must accept to get access).' : 'Grant access to an existing vault member by UID.'}</p>
             <div className="space-y-3">
               <div>
                 <label className="text-sm text-neutral-400">User</label>
                 <div className="relative">
-                  <input autoComplete="off" className="w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800" placeholder="username or email" value={shareDialog.username} onChange={(e) => { setShareDialog((d) => ({ ...d, username: e.target.value })); setShowShareSuggestions(true); }} onFocus={() => setShowShareSuggestions(true)} />
-                  {shareDialog.username && showShareSuggestions && (
-                    (() => {
-                      const q = shareDialog.username.toLowerCase();
-                      // determine already-shared users depending on dialog type
-                      let sharedIds = [];
-                      if (shareDialog.type === 'vault') {
-                        const currentVault = vaults.find(v => v.id === shareDialog.targetId);
-                        sharedIds = (currentVault?.sharedWith || []).map(s => s.userId);
-                      } else if (shareDialog.type === 'collection') {
-                        const currentCollection = collections.find(c => c.id === shareDialog.targetId);
-                        sharedIds = (currentCollection?.sharedWith || []).map(s => s.userId);
-                      } else if (shareDialog.type === 'asset') {
-                        const currentAsset = assets.find(a => a.id === shareDialog.targetId);
-                        sharedIds = (currentAsset?.sharedWith || []).map(s => s.userId);
-                      }
-                      const selfId = currentUser?.id;
-                      const matches = (users || []).filter(u => {
-                        if (!u) return false;
-                        if (u.id === selfId) return false; // do not suggest yourself as a share target
-                        if (sharedIds.includes(u.id)) return false; // exclude already-shared users for this target
-                        const full = `${u.firstName || ""} ${u.lastName || ""}`.toLowerCase();
-                        return (u.username || "").toLowerCase().includes(q) || (u.email || "").toLowerCase().includes(q) || full.includes(q);
-                      }).slice(0, 6);
-                      if (matches.length === 0) return null;
-                      return (
-                        <div className="absolute left-0 right-0 mt-1 bg-neutral-900 border border-neutral-800 rounded max-h-40 overflow-auto z-30">
-                          {matches.map((u) => (
-                            <button key={u.id} type="button" className="w-full text-left px-3 py-2 hover:bg-neutral-800 flex justify-between items-start" onClick={() => { setShareDialog((d) => ({ ...d, username: u.username })); setShowShareSuggestions(false); }}>
-                              <div>
-                                <div className="font-medium">{u.username}</div>
-                                <div className="text-xs text-neutral-400">{u.email || `${u.firstName || ""} ${u.lastName || ""}`}</div>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      );
-                    })()
-                  )}
+                  <input autoComplete="off" className="w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800" placeholder={shareDialog.type === 'vault' ? 'email address' : 'member UID'} value={shareDialog.username} onChange={(e) => { setShareDialog((d) => ({ ...d, username: e.target.value })); setShowShareSuggestions(false); }} onFocus={() => setShowShareSuggestions(false)} />
                 </div>
               </div>
               <div>
-                <label className="text-sm text-neutral-400">Role</label>
-                <div className="mt-2">
-                  <select
-                    className="w-full p-2 pr-8 rounded bg-neutral-950 border border-neutral-800"
-                    style={{
-                      backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%23fff\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")',
-                      backgroundPosition: 'right 0.5rem center',
-                      backgroundRepeat: 'no-repeat',
-                      backgroundSize: '1.5em 1.5em',
-                      appearance: 'none',
-                      WebkitAppearance: 'none',
-                      MozAppearance: 'none'
-                    }}
-                    value={shareDialog.role}
-                    onChange={(e) => setShareDialog(d => ({ ...d, role: e.target.value }))}
-                  >
-                    <option value="viewer">Reviewer - Review only</option>
-                    <option value="editor">Editor - Review and edit</option>
-                    <option value="manager">
-                      {shareDialog.type === 'vault' 
-                        ? 'Manager - Review, edit, and move' 
-                        : 'Manager - Review, edit, and move'}
-                    </option>
-                  </select>
-                  {shareDialog.type === 'vault' && (
-                    <label className="mt-3 flex items-center gap-2 text-sm text-neutral-300">
-                      <input
-                        type="checkbox"
-                        checked={shareDialog.canCreateCollections}
-                        onChange={(e) => setShareDialog(d => ({ ...d, canCreateCollections: e.target.checked }))}
-                      />
-                      Allow creating collections in this vault
-                    </label>
-                  )}
-                  {shareDialog.type === 'collection' && (
-                    <label className="mt-3 flex items-center gap-2 text-sm text-neutral-300">
-                      <input
-                        type="checkbox"
-                        checked={shareDialog.canCreateAssets}
-                        onChange={(e) => setShareDialog(d => ({ ...d, canCreateAssets: e.target.checked }))}
-                      />
-                      Allow creating assets in this collection
-                    </label>
-                  )}
+                <label className="text-sm text-neutral-400">Delegate permissions</label>
+                <div className="mt-2 flex flex-wrap gap-3">
+                  {PERMISSION_KEYS.map((key) => {
+                    const isView = key === 'View';
+                    const checked = isView ? true : !!shareDialog.permissions?.[key];
+                    return (
+                      <label key={key} className="flex items-center gap-2 text-sm text-neutral-300">
+                        <input
+                          type="checkbox"
+                          disabled={isView}
+                          checked={checked}
+                          onChange={(e) => setShareDialog((d) => ({
+                            ...d,
+                            permissions: { ...(d.permissions || { View: true }), [key]: e.target.checked, View: true },
+                          }))}
+                        />
+                        {key}
+                      </label>
+                    );
+                  })}
                 </div>
                 <div className="mt-3">
                   <h4 className="text-sm font-medium text-neutral-400 mb-2">Current Access</h4>
@@ -3263,14 +3736,17 @@ export default function App() {
                     {(() => {
                       let sharedUsers = [];
                       if (shareDialog.type === 'vault') {
-                        const currentVault = vaults.find(v => v.id === shareDialog.targetId);
-                        sharedUsers = (currentVault?.sharedWith || []);
+                        sharedUsers = (vaultMemberships || [])
+                          .filter(m => m && m.vault_id === shareDialog.targetId && m.status !== 'REVOKED')
+                          .map(m => ({ userId: m.user_id, permissions: m.permissions }));
                       } else if (shareDialog.type === 'collection') {
-                        const currentCollection = collections.find(c => c.id === shareDialog.targetId);
-                        sharedUsers = (currentCollection?.sharedWith || []);
+                        sharedUsers = (permissionGrants || [])
+                          .filter(g => g && g.scope_type === 'COLLECTION' && g.scope_id === shareDialog.targetId)
+                          .map(g => ({ userId: g.user_id, permissions: g.permissions }));
                       } else if (shareDialog.type === 'asset') {
-                        const currentAsset = assets.find(a => a.id === shareDialog.targetId);
-                        sharedUsers = (currentAsset?.sharedWith || []);
+                        sharedUsers = (permissionGrants || [])
+                          .filter(g => g && g.scope_type === 'ASSET' && g.scope_id === shareDialog.targetId)
+                          .map(g => ({ userId: g.user_id, permissions: g.permissions }));
                       }
 
                       if (sharedUsers.length === 0) {
@@ -3278,58 +3754,40 @@ export default function App() {
                       }
 
                       return sharedUsers.map((share) => {
-                        const u = users.find(user => user.id === share.userId) || { username: share.username };
+                        const label = share.userId === currentUser?.id
+                          ? (currentUser?.username || currentUser?.email || 'You')
+                          : (share.userId || 'Unknown');
+                        const perms = normalizePermissions(share.permissions);
                         return (
                           <div key={share.userId} className="bg-neutral-950/40 p-3 rounded flex items-center justify-between">
                             <div>
-                              <div className="text-sm font-medium">{u.username}</div>
-                              <div className="text-xs text-neutral-400">{u.email || (u.firstName ? `${u.firstName} ${u.lastName}` : '')}</div>
+                              <div className="text-sm font-medium">{label}</div>
                             </div>
                             <div className="flex items-center gap-2">
-                              <select
-                                className="text-xs bg-blue-600 hover:bg-blue-700 text-white rounded px-2 py-1 border-none"
-                                value={share.role || 'viewer'}
-                                onChange={(e) => updateUserRole(share.userId, e.target.value)}
-                              >
-                                <option value="viewer">Reviewer - Review only</option>
-                                <option value="editor">Editor - Review and edit</option>
-                                <option value="manager">
-                                  {shareDialog.type === 'vault'
-                                    ? 'Manager - Review, edit, and move'
-                                    : 'Manager - Review, edit, and move'}
-                                </option>
-                              </select>
-                              {shareDialog.type === 'vault' && (
-                                <label className="flex items-center gap-1 text-xs text-neutral-200">
+                              {PERMISSION_KEYS.filter(k => k !== 'View').map((k) => (
+                                <label key={k} className="flex items-center gap-1 text-xs text-neutral-200">
                                   <input
                                     type="checkbox"
-                                    checked={!!share.canCreateCollections}
-                                    onChange={(e) => updateCreatePermission(share.userId, 'canCreateCollections', e.target.checked)}
+                                    checked={!!perms[k]}
+                                    onChange={(e) => updateAccessPermissionForUser(share.userId, k, e.target.checked)}
                                   />
-                                  Can create collections
+                                  {k}
                                 </label>
-                              )}
-                              {shareDialog.type === 'collection' && (
-                                <label className="flex items-center gap-1 text-xs text-neutral-200">
-                                  <input
-                                    type="checkbox"
-                                    checked={!!share.canCreateAssets}
-                                    onChange={(e) => updateCreatePermission(share.userId, 'canCreateAssets', e.target.checked)}
-                                  />
-                                  Can create assets
-                                </label>
-                              )}
+                              ))}
                               <button 
                                 className="text-xs px-2 py-1 bg-red-700 hover:bg-red-800 rounded" 
                                 onClick={() => {
                                   if (shareDialog.type === 'vault') {
-                                    setVaults(prev => prev.map(v => v.id === shareDialog.targetId ? { ...v, sharedWith: (v.sharedWith || []).filter(x => x.userId !== share.userId) } : v));
+                                    revokeVaultMembership(shareDialog.targetId, share.userId);
                                   } else if (shareDialog.type === 'collection') {
-                                    setCollections(prev => prev.map(c => c.id === shareDialog.targetId ? { ...c, sharedWith: (c.sharedWith || []).filter(x => x.userId !== share.userId) } : c));
+                                    const c = collections.find(x => x && x.id === shareDialog.targetId);
+                                    if (c) revokePermissionGrant(c.vaultId, 'COLLECTION', c.id, share.userId);
                                   } else if (shareDialog.type === 'asset') {
-                                    setAssets(prev => prev.map(a => a.id === shareDialog.targetId ? { ...a, sharedWith: (a.sharedWith || []).filter(x => x.userId !== share.userId) } : a));
+                                    const a = assets.find(x => x && x.id === shareDialog.targetId);
+                                    const c = a ? collections.find(x => x && x.id === a.collectionId) : null;
+                                    if (a && c) revokePermissionGrant(c.vaultId, 'ASSET', a.id, share.userId);
                                   }
-                                  showAlert(`Removed ${u.username} access`);
+                                  showAlert(`Removed ${label} access`);
                                 }}
                               >
                                 Remove
@@ -3383,29 +3841,7 @@ export default function App() {
               <div>
                 <label className="text-sm text-neutral-400">Manager</label>
                 <div className="relative">
-                  <input autoComplete="off" disabled={!editCanEdit} className={`w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800 ${!editCanEdit ? 'opacity-60 cursor-not-allowed' : ''}`} placeholder="username or email" value={editDialog.manager} onChange={(e) => { setEditDialog((prev) => ({ ...prev, manager: e.target.value })); setShowShareSuggestions(true); }} onFocus={() => setShowShareSuggestions(true)} />
-                  {editDialog.manager && showShareSuggestions && (
-                    (() => {
-                      const q = (editDialog.manager || "").toLowerCase();
-                      const matches = (users || []).filter(u => {
-                        const full = `${u.firstName || ""} ${u.lastName || ""}`.toLowerCase();
-                        return (u.username || "").toLowerCase().includes(q) || (u.email || "").toLowerCase().includes(q) || full.includes(q);
-                      }).slice(0, 6);
-                      if (matches.length === 0) return null;
-                      return (
-                        <div className="absolute left-0 right-0 mt-1 bg-neutral-900 border border-neutral-800 rounded max-h-40 overflow-auto z-30">
-                          {matches.map((u) => (
-                            <button key={u.id} type="button" className="w-full text-left px-3 py-2 hover:bg-neutral-800 flex justify-between items-start" onClick={() => { const full = (u.firstName || u.lastName) ? `${u.firstName || ""} ${u.lastName || ""}`.trim() : u.username; setEditDialog((d) => ({ ...d, manager: full })); setShowShareSuggestions(false); }}>
-                              <div>
-                                <div className="font-medium">{(u.firstName || u.lastName) ? `${u.firstName} ${u.lastName}` : u.username}</div>
-                                <div className="text-xs text-neutral-400">{u.email || `${u.firstName || ""} ${u.lastName || ""}`}</div>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      );
-                    })()
-                  )}
+                  <input autoComplete="off" disabled={!editCanEdit} className={`w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800 ${!editCanEdit ? 'opacity-60 cursor-not-allowed' : ''}`} placeholder="manager name" value={editDialog.manager} onChange={(e) => { setEditDialog((prev) => ({ ...prev, manager: e.target.value })); setShowShareSuggestions(false); }} onFocus={() => setShowShareSuggestions(false)} />
                 </div>
               </div>
               <div className="space-y-3">

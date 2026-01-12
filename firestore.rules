@@ -6,10 +6,191 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Starter template.
-    // Replace with your real data model + role checks.
-    match /{document=**} {
-      allow read, write: if false;
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function isActiveMembership(vaultId, userId) {
+      return exists(/databases/$(database)/documents/vaults/$(vaultId)/memberships/$(userId))
+        && get(/databases/$(database)/documents/vaults/$(vaultId)/memberships/$(userId)).data.status == 'ACTIVE';
+    }
+
+    function myActiveMembership(vaultId) {
+      return isSignedIn() && isActiveMembership(vaultId, uid());
+    }
+
+    function myRole(vaultId) {
+      return get(/databases/$(database)/documents/vaults/$(vaultId)/memberships/$(uid())).data.role;
+    }
+
+    function isOwner(vaultId) {
+      return myActiveMembership(vaultId) && myRole(vaultId) == 'OWNER';
+    }
+
+    function isDelegate(vaultId) {
+      return myActiveMembership(vaultId) && myRole(vaultId) == 'DELEGATE';
+    }
+
+    function vaultDoc(vaultId) {
+      return get(/databases/$(database)/documents/vaults/$(vaultId)).data;
+    }
+
+    function vaultPaid(vaultId) {
+      return exists(/databases/$(database)/documents/vaultSubscriptions/$(vaultId))
+        && get(/databases/$(database)/documents/vaultSubscriptions/$(vaultId)).data.status in ['active', 'trialing', 'past_due'];
+    }
+
+    function hasVaultPerm(vaultId, permKey) {
+      if (!myActiveMembership(vaultId)) return false;
+      if (isOwner(vaultId)) return true;
+      return get(/databases/$(database)/documents/vaults/$(vaultId)/memberships/$(uid())).data.permissions[permKey] == true;
+    }
+
+    function hasGrantPerm(vaultId, scopeType, scopeId, permKey) {
+      if (isOwner(vaultId)) return true;
+      return exists(/databases/$(database)/documents/vaults/$(vaultId)/permissionGrants/$(scopeType + ':' + scopeId + ':' + uid()))
+        && get(/databases/$(database)/documents/vaults/$(vaultId)/permissionGrants/$(scopeType + ':' + scopeId + ':' + uid())).data.permissions[permKey] == true;
+    }
+
+    function hasPerm(vaultId, scopeType, scopeId, permKey) {
+      if (!myActiveMembership(vaultId)) return false;
+      if (isOwner(vaultId)) return true;
+      // Most-specific grant wins; if a grant exists but does not allow the permission, deny.
+      if (exists(/databases/$(database)/documents/vaults/$(vaultId)/permissionGrants/$(scopeType + ':' + scopeId + ':' + uid()))) {
+        return hasGrantPerm(vaultId, scopeType, scopeId, permKey);
+      }
+      return hasVaultPerm(vaultId, permKey);
+    }
+
+    function ownerIdAfter(vaultId) {
+      return getAfter(/databases/$(database)/documents/vaults/$(vaultId)).data.activeOwnerId;
+    }
+
+    function ownerIdBefore(vaultId) {
+      return vaultDoc(vaultId).activeOwnerId;
+    }
+
+    function isOwnershipTransfer(vaultId) {
+      return request.resource.data.activeOwnerId != resource.data.activeOwnerId;
+    }
+
+    function isValidOwnerMembershipDoc(vaultId, ownerUid) {
+      return existsAfter(/databases/$(database)/documents/vaults/$(vaultId)/memberships/$(ownerUid))
+        && getAfter(/databases/$(database)/documents/vaults/$(vaultId)/memberships/$(ownerUid)).data.role == 'OWNER'
+        && getAfter(/databases/$(database)/documents/vaults/$(vaultId)/memberships/$(ownerUid)).data.status == 'ACTIVE'
+        && getAfter(/databases/$(database)/documents/vaults/$(vaultId)/memberships/$(ownerUid)).data.permissions == null;
+    }
+
+    function isValidPreviousOwnerAfterTransfer(vaultId, prevOwnerUid) {
+      return existsAfter(/databases/$(database)/documents/vaults/$(vaultId)/memberships/$(prevOwnerUid))
+        && getAfter(/databases/$(database)/documents/vaults/$(vaultId)/memberships/$(prevOwnerUid)).data.role != 'OWNER';
+    }
+
+    // Users: no global role field. Per-vault roles live in memberships.
+    match /users/{userId} {
+      allow read: if isSignedIn() && uid() == userId;
+      allow create: if isSignedIn() && uid() == userId;
+      allow update: if isSignedIn() && uid() == userId;
+      allow delete: if false;
+    }
+
+    // Vault subscriptions (one doc per vaultId).
+    // Owners can read. Writes should be server-only (Stripe webhook / admin).
+    match /vaultSubscriptions/{vaultId} {
+      allow read: if isOwner(vaultId) || isDelegate(vaultId);
+      allow create, update, delete: if false;
+    }
+
+    // Vaults are canonical.
+    match /vaults/{vaultId} {
+      allow read: if myActiveMembership(vaultId);
+
+      // Create a vault only for yourself; must also create OWNER membership in same batch.
+      allow create: if isSignedIn()
+        && request.resource.data.activeOwnerId == uid()
+        && request.resource.data.createdBy == uid()
+        && isValidOwnerMembershipDoc(vaultId, uid());
+
+      // Only active owner may update vault metadata.
+      allow update: if isOwner(vaultId)
+        && (!isOwnershipTransfer(vaultId) || (
+          // Ownership transfer must be explicit and atomic:
+          // - vault.activeOwnerId changes
+          // - new owner's membership becomes ACTIVE OWNER
+          // - previous owner is no longer OWNER
+          isValidOwnerMembershipDoc(vaultId, request.resource.data.activeOwnerId)
+          && isValidPreviousOwnerAfterTransfer(vaultId, resource.data.activeOwnerId)
+        ));
+
+      // Prevent client-side vault deletion to avoid orphaned subcollections.
+      allow delete: if false;
+
+      // VaultMembership: single source of truth for roles.
+      match /memberships/{memberUid} {
+        allow read: if myActiveMembership(vaultId);
+
+        // Owner membership is created when the vault is created (same batch).
+        // Delegate memberships can only be created by the active Owner of a PAID vault.
+        allow create: if isSignedIn() && (
+          // Initial owner membership during vault creation.
+          (memberUid == uid() && request.resource.data.role == 'OWNER' && request.resource.data.status == 'ACTIVE' && request.resource.data.permissions == null
+            && existsAfter(/databases/$(database)/documents/vaults/$(vaultId))
+            && ownerIdAfter(vaultId) == uid())
+          ||
+          // Delegate assignment (paid feature).
+          (isOwner(vaultId) && vaultPaid(vaultId) && request.resource.data.role == 'DELEGATE' && request.resource.data.status == 'ACTIVE')
+        );
+
+        // Only the active Owner can update memberships.
+        // Ownership transfer is driven by updating vault.activeOwnerId (see vault update rule).
+        allow update: if isOwner(vaultId) && (
+          // Owner can revoke or change delegate permissions.
+          (resource.data.role == 'DELEGATE' && request.resource.data.role == 'DELEGATE')
+          ||
+          // During ownership transfer, the previous owner can be demoted to DELEGATE.
+          (resource.data.role == 'OWNER' && request.resource.data.role == 'DELEGATE' && ownerIdAfter(vaultId) != memberUid)
+          ||
+          // Owner can set the new owner's membership to OWNER when transferring.
+          (request.resource.data.role == 'OWNER' && request.resource.data.permissions == null && ownerIdAfter(vaultId) == memberUid)
+        );
+
+        allow delete: if false;
+      }
+
+      // Scoped permission grants (collection/asset). Paid feature.
+      match /permissionGrants/{grantId} {
+        allow read: if myActiveMembership(vaultId);
+        allow create, update, delete: if isOwner(vaultId) && vaultPaid(vaultId);
+      }
+
+      // Collections
+      match /collections/{collectionId} {
+        allow read: if myActiveMembership(vaultId);
+        allow create: if hasVaultPerm(vaultId, 'Create');
+        allow update: if hasPerm(vaultId, 'COLLECTION', collectionId, 'Edit');
+        allow delete: if hasPerm(vaultId, 'COLLECTION', collectionId, 'Delete');
+      }
+
+      // Assets
+      match /assets/{assetId} {
+        allow read: if myActiveMembership(vaultId);
+        allow create: if hasPerm(vaultId, 'COLLECTION', request.resource.data.collectionId, 'Create') || hasVaultPerm(vaultId, 'Create');
+        allow update: if hasPerm(vaultId, 'ASSET', assetId, 'Edit');
+        allow delete: if hasPerm(vaultId, 'ASSET', assetId, 'Delete');
+      }
+
+      // Audit events are immutable.
+      match /auditEvents/{eventId} {
+        allow read: if isOwner(vaultId) && vaultPaid(vaultId);
+        allow create: if isOwner(vaultId) && vaultPaid(vaultId);
+        allow update, delete: if false;
+      }
+
+      // Invitations (paid feature)
+      match /invitations/{invId} {
+        allow read: if isOwner(vaultId);
+        allow create, update, delete: if isOwner(vaultId) && vaultPaid(vaultId);
+      }
     }
   }
 }

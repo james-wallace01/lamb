@@ -24,7 +24,7 @@ export default function ChooseSubscription({ navigation, route }) {
     Linking.openURL(url).catch(() => {});
   };
 
-  const initializePaymentSheet = async (tier) => {
+  const initializePaymentSheet = async (tier, vaultId) => {
     try {
       const returnURL = ExpoLinking.createURL('stripe-redirect');
 
@@ -39,6 +39,7 @@ export default function ChooseSubscription({ navigation, route }) {
           email,
           name: `${firstName} ${lastName}`,
           subscriptionTier: tier.toUpperCase(),
+          vaultId,
         }),
       });
 
@@ -103,8 +104,12 @@ export default function ChooseSubscription({ navigation, route }) {
     const localPrice = convertPrice(tier.price);
     const trialEndsAt = new Date(Date.now() + (14 * 24 * 60 * 60 * 1000));
 
+    // Generate the user's first vault id up-front so Stripe metadata can link
+    // the subscription to the canonical vault subscription doc.
+    const initialVaultId = `v${Date.now()}`;
+
     // Initialize payment sheet
-    const subscriptionData = await initializePaymentSheet(selectedTier);
+    const subscriptionData = await initializePaymentSheet(selectedTier, initialVaultId);
     if (!subscriptionData) {
       setSubmitting(false);
       return;
@@ -130,6 +135,7 @@ export default function ChooseSubscription({ navigation, route }) {
         customerId: subscriptionData.customerId,
         subscriptionTier: selectedTier.toUpperCase(),
         setupIntentId: subscriptionData.setupIntentId,
+        vaultId: initialVaultId,
       }),
     });
 
@@ -153,7 +159,8 @@ export default function ChooseSubscription({ navigation, route }) {
       password,
       subscriptionTier: selectedTier.toUpperCase(),
       stripeSubscriptionId: subscriptionId,
-      stripeCustomerId: subscriptionData.customerId
+      stripeCustomerId: subscriptionData.customerId,
+      initialVaultId,
     });
 
     setSubmitting(false);

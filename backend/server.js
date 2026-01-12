@@ -7,6 +7,7 @@ const path = require('path');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const crypto = require('crypto');
 require('dotenv').config();
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const stripe = typeof stripeSecretKey === 'string' && stripeSecretKey.trim() ? require('stripe')(stripeSecretKey.trim()) : null;
@@ -108,6 +109,123 @@ const PORT = process.env.PORT || 3001;
 
 const isStripeConfigured = () => !!stripe;
 
+const getFirestoreDb = () => {
+  if (!firebaseEnabled()) return null;
+  try {
+    return firebaseAdmin.firestore();
+  } catch {
+    return null;
+  }
+};
+
+const toStripeMetadata = (obj) => {
+  const out = {};
+  for (const [k, v] of Object.entries(obj || {})) {
+    if (v == null) continue;
+    const s = String(v);
+    if (!s) continue;
+    out[k] = s;
+  }
+  return out;
+};
+
+const normalizeVaultSubStatus = (stripeSubscription) => {
+  const stripeStatus = typeof stripeSubscription?.status === 'string' ? stripeSubscription.status : '';
+  const cancelAtPeriodEnd = !!stripeSubscription?.cancel_at_period_end;
+
+  // Firestore rules treat these as paid.
+  if (stripeStatus === 'active' || stripeStatus === 'trialing' || stripeStatus === 'past_due') return stripeStatus;
+
+  // Everything else is not paid; distinguish explicit cancels for UX/debugging.
+  if (stripeStatus === 'canceled' || cancelAtPeriodEnd) return 'canceled';
+  return stripeStatus || 'none';
+};
+
+const inferVaultIdForStripeCustomer = async (db, customerId) => {
+  if (!db || !customerId) return null;
+
+  // Prefer explicit metadata if present.
+  const customer = await stripe.customers.retrieve(customerId);
+  const firebaseUid = typeof customer?.metadata?.firebaseUid === 'string' ? customer.metadata.firebaseUid : '';
+  if (!firebaseUid) return null;
+
+  // Primary vault policy: earliest-created vault owned by this user.
+  // Avoid orderBy to reduce index requirements; pick min createdAt in memory.
+  const ownedSnap = await db.collection('vaults').where('activeOwnerId', '==', firebaseUid).limit(50).get();
+  if (ownedSnap.empty) return null;
+
+  let best = null;
+  for (const doc of ownedSnap.docs) {
+    const data = doc.data() || {};
+    const createdAt = typeof data.createdAt === 'number' ? data.createdAt : Number.MAX_SAFE_INTEGER;
+    if (!best || createdAt < best.createdAt) best = { id: doc.id, createdAt };
+  }
+  return best?.id || null;
+};
+
+const upsertVaultSubscriptionFromStripe = async ({ eventType, stripeSubscription }) => {
+  const db = getFirestoreDb();
+  if (!db) {
+    const msg = 'Firebase is not configured; cannot sync vaultSubscriptions from Stripe webhooks.';
+    if (isProd) throw new Error(msg);
+    console.warn(`[stripe webhook] ${msg}`);
+    return;
+  }
+
+  const customerId = typeof stripeSubscription?.customer === 'string' ? stripeSubscription.customer : stripeSubscription?.customer?.id;
+  const metaVaultId = typeof stripeSubscription?.metadata?.vaultId === 'string' ? stripeSubscription.metadata.vaultId : '';
+  const vaultId = metaVaultId || (await inferVaultIdForStripeCustomer(db, customerId));
+
+  if (!vaultId) {
+    console.warn('[stripe webhook] Unable to determine vaultId for subscription', {
+      eventType,
+      subscriptionId: stripeSubscription?.id,
+      customerId,
+    });
+    return;
+  }
+
+  const metaTier = typeof stripeSubscription?.metadata?.tier === 'string' ? stripeSubscription.metadata.tier : '';
+  const tier = metaTier ? metaTier.toUpperCase() : null;
+  const status = normalizeVaultSubStatus(stripeSubscription);
+
+  const payload = {
+    vault_id: vaultId,
+    tier,
+    status,
+    stripeSubscriptionId: stripeSubscription?.id || null,
+    stripeCustomerId: customerId || null,
+    cancelAtPeriodEnd: !!stripeSubscription?.cancel_at_period_end,
+    trialEndsAt: stripeSubscription?.trial_end ? stripeSubscription.trial_end * 1000 : null,
+    renewalDate: stripeSubscription?.current_period_end ? stripeSubscription.current_period_end * 1000 : null,
+    currentPeriodStart: stripeSubscription?.current_period_start ? stripeSubscription.current_period_start * 1000 : null,
+    currentPeriodEnd: stripeSubscription?.current_period_end ? stripeSubscription.current_period_end * 1000 : null,
+    updatedAt: Date.now(),
+    lastStripeEventType: eventType || null,
+  };
+
+  // Detect paid->unpaid transitions for cleanup.
+  let prevStatus = null;
+  try {
+    const prevSnap = await db.collection('vaultSubscriptions').doc(String(vaultId)).get();
+    prevStatus = prevSnap.exists ? (prevSnap.data() || {}).status : null;
+  } catch {
+    prevStatus = null;
+  }
+
+  await db.collection('vaultSubscriptions').doc(vaultId).set(payload, { merge: true });
+
+  const wasPaid = isPaidStatus(prevStatus);
+  const nowPaid = isPaidStatus(status);
+  if (wasPaid && !nowPaid) {
+    try {
+      await revokePaidFeaturesForVault(db, vaultId, { actorUid: 'system', reason: `SUBSCRIPTION_${String(status || 'NONE').toUpperCase()}` });
+    } catch (err) {
+      console.warn('[subscription] downgrade cleanup failed', { vaultId, status, message: err?.message || String(err) });
+    }
+  }
+};
+
 // Optional Firebase Admin initialization (used for verifying Firebase ID tokens)
 initFirebaseAdmin();
 
@@ -131,6 +249,320 @@ const maybeRequireFirebaseAuth = (req, res, next) => {
 };
 
 const normalizeEmail = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+
+const isPaidStatus = (status) => {
+  const s = typeof status === 'string' ? status : '';
+  return s === 'active' || s === 'trialing' || s === 'past_due';
+};
+
+const getMembershipDoc = async (db, vaultId, userId) => {
+  const snap = await db.collection('vaults').doc(String(vaultId)).collection('memberships').doc(String(userId)).get();
+  return snap.exists ? { id: snap.id, data: snap.data() || {} } : null;
+};
+
+const assertOwnerForVaultUid = async (db, vaultId, uid) => {
+  if (!uid) return { ok: false, status: 401, error: 'Missing authenticated user' };
+  if (!vaultId) return { ok: false, status: 400, error: 'Missing vaultId' };
+
+  const m = await getMembershipDoc(db, vaultId, uid);
+  if (!m) return { ok: false, status: 403, error: 'Not a vault member' };
+
+  const role = m.data.role;
+  const membershipStatus = m.data.status;
+  if (membershipStatus !== 'ACTIVE') return { ok: false, status: 403, error: 'Membership inactive' };
+  if (role !== 'OWNER') return { ok: false, status: 403, error: 'Owner permission required' };
+
+  return { ok: true };
+};
+
+const assertOwnerForVault = async (db, vaultId, firebaseUser) => {
+  if (!firebaseUser?.uid) return { ok: false, status: 401, error: 'Missing authenticated user' };
+  if (!vaultId) return { ok: false, status: 400, error: 'Missing vaultId' };
+
+  const m = await getMembershipDoc(db, vaultId, firebaseUser.uid);
+  if (!m) return { ok: false, status: 403, error: 'Not a vault member' };
+
+  const role = m.data.role;
+  const membershipStatus = m.data.status;
+  if (membershipStatus !== 'ACTIVE') return { ok: false, status: 403, error: 'Membership inactive' };
+  if (role !== 'OWNER') return { ok: false, status: 403, error: 'Owner permission required' };
+
+  return { ok: true };
+};
+
+const assertVaultPaid = async (db, vaultId) => {
+  const snap = await db.collection('vaultSubscriptions').doc(String(vaultId)).get();
+  const data = snap.exists ? (snap.data() || {}) : {};
+  const status = data.status;
+  if (!isPaidStatus(status)) {
+    return { ok: false, status: 402, error: 'Vault is not on a paid plan' };
+  }
+  return { ok: true, subscription: data };
+};
+
+const writeAuditEventIfPaid = async (db, vaultId, { type, actorUid, payload }) => {
+  const paid = await assertVaultPaid(db, vaultId);
+  if (!paid.ok) return;
+
+  const id = `ae_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
+  await db.collection('vaults').doc(String(vaultId)).collection('auditEvents').doc(id).set(
+    {
+      id,
+      vault_id: String(vaultId),
+      type: String(type || 'UNKNOWN'),
+      actor_uid: actorUid ? String(actorUid) : null,
+      createdAt: Date.now(),
+      payload: payload || null,
+    },
+    { merge: false }
+  );
+};
+
+const chunkArray = (arr, size) => {
+  const list = Array.isArray(arr) ? arr : [];
+  const s = Math.max(1, Number(size) || 400);
+  const out = [];
+  for (let i = 0; i < list.length; i += s) out.push(list.slice(i, i + s));
+  return out;
+};
+
+const revokePaidFeaturesForVault = async (db, vaultId, { actorUid, reason } = {}) => {
+  if (!db || !vaultId) return;
+
+  const vaultRef = db.collection('vaults').doc(String(vaultId));
+  const membershipsRef = vaultRef.collection('memberships');
+  const grantsRef = vaultRef.collection('permissionGrants');
+  const invitesRef = vaultRef.collection('invitations');
+
+  // Revoke delegates (paid feature).
+  const delegateSnap = await membershipsRef.where('role', '==', 'DELEGATE').limit(500).get();
+  const delegateDocs = delegateSnap.docs
+    .map((d) => ({ ref: d.ref, data: d.data() || {} }))
+    .filter((x) => x.data.status === 'ACTIVE');
+
+  for (const group of chunkArray(delegateDocs, 400)) {
+    const batch = db.batch();
+    group.forEach(({ ref }) => {
+      batch.set(ref, { status: 'REVOKED', revoked_at: Date.now(), revokedBy: actorUid ? String(actorUid) : 'system' }, { merge: true });
+    });
+    await batch.commit();
+  }
+
+  // Remove all scoped grants (paid feature).
+  const grantsSnap = await grantsRef.limit(500).get();
+  for (const group of chunkArray(grantsSnap.docs, 400)) {
+    const batch = db.batch();
+    group.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
+
+  // Revoke pending invitations (paid feature).
+  const invSnap = await invitesRef.limit(500).get();
+  const pendingInvRefs = invSnap.docs
+    .map((d) => ({ ref: d.ref, data: d.data() || {} }))
+    .filter((x) => x.data.status === 'PENDING');
+
+  for (const group of chunkArray(pendingInvRefs, 400)) {
+    const batch = db.batch();
+    group.forEach(({ ref }) => {
+      batch.set(ref, { status: 'REVOKED', revokedAt: Date.now(), revokedBy: actorUid ? String(actorUid) : 'system', revokeReason: reason || 'DOWNGRADED' }, { merge: true });
+    });
+    await batch.commit();
+  }
+};
+
+const deleteCollectionInPages = async (colRef, { pageSize = 400 } = {}) => {
+  // Paginate using document name ordering to avoid requiring additional indexes.
+  let last = null;
+  while (true) {
+    let q = colRef.orderBy(firebaseAdmin.firestore.FieldPath.documentId()).limit(pageSize);
+    if (last) q = q.startAfter(last);
+    const snap = await q.get();
+    if (snap.empty) break;
+    const batch = colRef.firestore.batch();
+    snap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+    last = snap.docs[snap.docs.length - 1];
+    if (snap.size < pageSize) break;
+  }
+};
+
+const deleteVaultRecursive = async (db, vaultId) => {
+  const vaultRef = db.collection('vaults').doc(String(vaultId));
+
+  // Delete known subcollections first.
+  const subcollections = ['assets', 'collections', 'memberships', 'permissionGrants', 'invitations', 'auditEvents'];
+  for (const name of subcollections) {
+    await deleteCollectionInPages(vaultRef.collection(name));
+  }
+
+  // Delete the vault doc and subscription doc.
+  await vaultRef.delete();
+  await db.collection('vaultSubscriptions').doc(String(vaultId)).delete().catch(() => {});
+};
+
+const deleteGrantsByPrefix = async (db, vaultId, prefix) => {
+  if (!prefix) return;
+  const grantsRef = db.collection('vaults').doc(String(vaultId)).collection('permissionGrants');
+  const snap = await grantsRef.orderBy(firebaseAdmin.firestore.FieldPath.documentId()).get();
+  const targets = snap.docs.filter((d) => String(d.id).startsWith(prefix));
+  for (const group of chunkArray(targets, 400)) {
+    const batch = db.batch();
+    group.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
+};
+
+const deleteGrantsByPrefixes = async (db, vaultId, prefixes) => {
+  const list = Array.isArray(prefixes) ? prefixes.map((p) => String(p || '')).filter(Boolean) : [];
+  if (list.length === 0) return;
+
+  const prefixSet = new Set(list);
+  const grantsRef = db.collection('vaults').doc(String(vaultId)).collection('permissionGrants');
+  const snap = await grantsRef.orderBy(firebaseAdmin.firestore.FieldPath.documentId()).get();
+  const targets = snap.docs.filter((d) => {
+    const id = String(d.id);
+    for (const p of prefixSet) {
+      if (id.startsWith(p)) return true;
+    }
+    return false;
+  });
+
+  for (const group of chunkArray(targets, 400)) {
+    const batch = db.batch();
+    group.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
+};
+
+const moveAssetAcrossVaults = async (db, { sourceVaultId, assetId, targetVaultId, targetCollectionId, actorUid }) => {
+  const sourceRef = db.collection('vaults').doc(String(sourceVaultId)).collection('assets').doc(String(assetId));
+  const sourceSnap = await sourceRef.get();
+  if (!sourceSnap.exists) return { ok: false, status: 404, error: 'Asset not found' };
+  const source = sourceSnap.data() || {};
+
+  const targetAssets = db.collection('vaults').doc(String(targetVaultId)).collection('assets');
+  const targetRef = targetAssets.doc(String(assetId));
+  const targetSnap = await targetRef.get();
+
+  const outId = targetSnap.exists ? `a_${Date.now()}_${crypto.randomBytes(6).toString('hex')}` : String(assetId);
+  const finalTargetRef = targetAssets.doc(outId);
+
+  const now = Date.now();
+  const movedDoc = {
+    ...source,
+    id: outId,
+    vaultId: String(targetVaultId),
+    vault_id: String(targetVaultId),
+    collectionId: String(targetCollectionId),
+    editedAt: now,
+    movedAt: now,
+    movedFrom: { vaultId: String(sourceVaultId), assetId: String(assetId) },
+  };
+
+  const batch = db.batch();
+  batch.set(finalTargetRef, movedDoc, { merge: false });
+  batch.delete(sourceRef);
+  await batch.commit();
+
+  // Remove old grants for this asset in the source vault.
+  await deleteGrantsByPrefix(db, sourceVaultId, `ASSET:${String(assetId)}:`);
+
+  await writeAuditEventIfPaid(db, sourceVaultId, {
+    type: 'ASSET_MOVED_OUT',
+    actorUid,
+    payload: { asset_id: String(assetId), to_vault_id: String(targetVaultId), to_collection_id: String(targetCollectionId), new_asset_id: outId },
+  });
+  await writeAuditEventIfPaid(db, targetVaultId, {
+    type: 'ASSET_MOVED_IN',
+    actorUid,
+    payload: { asset_id: outId, from_vault_id: String(sourceVaultId), from_asset_id: String(assetId), to_collection_id: String(targetCollectionId) },
+  });
+
+  return { ok: true, assetId: outId };
+};
+
+const moveCollectionAcrossVaults = async (db, { sourceVaultId, collectionId, targetVaultId, actorUid }) => {
+  const sourceColRef = db.collection('vaults').doc(String(sourceVaultId)).collection('collections').doc(String(collectionId));
+  const sourceSnap = await sourceColRef.get();
+  if (!sourceSnap.exists) return { ok: false, status: 404, error: 'Collection not found' };
+  const source = sourceSnap.data() || {};
+
+  const targetCols = db.collection('vaults').doc(String(targetVaultId)).collection('collections');
+  const targetRef = targetCols.doc(String(collectionId));
+  const targetSnap = await targetRef.get();
+
+  const outId = targetSnap.exists ? `c_${Date.now()}_${crypto.randomBytes(6).toString('hex')}` : String(collectionId);
+  const finalTargetRef = targetCols.doc(outId);
+
+  const now = Date.now();
+  const movedCol = {
+    ...source,
+    id: outId,
+    vaultId: String(targetVaultId),
+    editedAt: now,
+    movedAt: now,
+    movedFrom: { vaultId: String(sourceVaultId), collectionId: String(collectionId) },
+  };
+
+  // Create the destination collection doc first.
+  await db.batch().set(finalTargetRef, movedCol, { merge: false }).commit();
+
+  // Move all assets in this collection (paginate; avoid 500-doc limits).
+  const assetsRef = db.collection('vaults').doc(String(sourceVaultId)).collection('assets');
+  const movedAssetIds = [];
+  let last = null;
+  while (true) {
+    let q = assetsRef
+      .where('collectionId', '==', String(collectionId))
+      .orderBy(firebaseAdmin.firestore.FieldPath.documentId())
+      .limit(400);
+    if (last) q = q.startAfter(last);
+    const snap = await q.get();
+    if (snap.empty) break;
+
+    const batch = db.batch();
+    snap.docs.forEach((d) => {
+      const a = d.data() || {};
+      const targetAssetRef = db.collection('vaults').doc(String(targetVaultId)).collection('assets').doc(String(d.id));
+      batch.set(targetAssetRef, { ...a, vaultId: String(targetVaultId), collectionId: outId, editedAt: now }, { merge: false });
+      batch.delete(d.ref);
+      movedAssetIds.push(String(d.id));
+    });
+    await batch.commit();
+
+    last = snap.docs[snap.docs.length - 1];
+    if (snap.size < 400) break;
+  }
+
+  // Delete the source collection doc last.
+  await sourceColRef.delete();
+
+  // Remove collection + asset grants in source vault.
+  // Collection grants are prefix-addressable; asset grants are prefix-addressable by asset id.
+  await deleteGrantsByPrefixes(db, sourceVaultId, [
+    `COLLECTION:${String(collectionId)}:`,
+    ...movedAssetIds.map((aId) => `ASSET:${aId}:`),
+  ]);
+
+  await writeAuditEventIfPaid(db, sourceVaultId, {
+    type: 'COLLECTION_MOVED_OUT',
+    actorUid,
+    payload: { collection_id: String(collectionId), to_vault_id: String(targetVaultId), new_collection_id: outId, moved_asset_ids: movedAssetIds },
+  });
+  await writeAuditEventIfPaid(db, targetVaultId, {
+    type: 'COLLECTION_MOVED_IN',
+    actorUid,
+    payload: { collection_id: outId, from_vault_id: String(sourceVaultId), from_collection_id: String(collectionId), moved_asset_ids: movedAssetIds },
+  });
+
+  return { ok: true, collectionId: outId, movedAssetIds };
+};
+
+const generateInviteCode = (vaultId) => {
+  const rand = crypto.randomBytes(9).toString('base64url');
+  return `${String(vaultId)}_${rand}`;
+};
 
 const assertStripeCustomerOwnedByFirebaseUser = async (customerId, firebaseUser) => {
   if (!customerId) return { ok: false, status: 400, error: 'Missing customerId' };
@@ -171,7 +603,7 @@ const assertStripeCustomerOwnedByFirebaseUser = async (customerId, firebaseUser)
 
 // Stripe webhooks require the raw request body to validate signatures.
 // This MUST be registered before express.json().
-app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), (req, res) => {
+app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), async (req, res) => {
   if (!isStripeConfigured()) {
     return res.status(503).json({ error: 'Stripe is not configured on this server' });
   }
@@ -207,6 +639,8 @@ app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), (r
           cancel_at_period_end: sub?.cancel_at_period_end,
           current_period_end: sub?.current_period_end,
         });
+
+        await upsertVaultSubscriptionFromStripe({ eventType: event.type, stripeSubscription: sub });
         break;
       }
 
@@ -221,6 +655,21 @@ app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), (r
           status: invoice?.status,
           paid: invoice?.paid,
         });
+
+        // Best-effort: sync the linked subscription since invoice events are often what users notice first.
+        const subId = typeof invoice?.subscription === 'string' ? invoice.subscription : invoice?.subscription?.id;
+        if (subId) {
+          try {
+            const sub = await stripe.subscriptions.retrieve(subId);
+            await upsertVaultSubscriptionFromStripe({ eventType: event.type, stripeSubscription: sub });
+          } catch (err) {
+            console.warn('[stripe webhook] failed to retrieve subscription for invoice', {
+              invoiceId: invoice?.id,
+              subscription: subId,
+              message: err?.message || String(err),
+            });
+          }
+        }
         break;
       }
 
@@ -370,7 +819,7 @@ app.post('/create-subscription', maybeRequireFirebaseAuth, authRateLimiter, asyn
     const tokenEmail = normalizeEmail(req.firebaseUser?.email);
     const email = tokenEmail || normalizeEmail(req.body?.email);
     const name = typeof req.body?.name === 'string' && req.body.name.trim() ? req.body.name.trim() : 'LAMB User';
-    const { subscriptionTier } = req.body;
+    const { subscriptionTier, vaultId } = req.body;
 
     if (!email) {
       return res.status(400).json({ error: 'Missing email' });
@@ -391,7 +840,11 @@ app.post('/create-subscription', maybeRequireFirebaseAuth, authRateLimiter, asyn
       customer: customer.id,
       payment_method_types: ['card'],
       usage: 'off_session',
-      metadata: { tier: subscriptionTier }
+      metadata: toStripeMetadata({
+        tier: subscriptionTier,
+        vaultId,
+        firebaseUid: req.firebaseUser?.uid,
+      }),
     });
 
     if (!setupIntent.client_secret) {
@@ -413,7 +866,7 @@ app.post('/create-subscription', maybeRequireFirebaseAuth, authRateLimiter, asyn
 // Signup flow: runs before the user has an ID token, so this endpoint must not require Firebase auth.
 app.post('/start-trial-subscription', maybeRequireFirebaseAuth, authRateLimiter, async (req, res) => {
   try {
-    const { customerId, subscriptionTier, setupIntentId } = req.body;
+    const { customerId, subscriptionTier, setupIntentId, vaultId } = req.body;
     if (!customerId || !subscriptionTier || !setupIntentId) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -445,7 +898,11 @@ app.post('/start-trial-subscription', maybeRequireFirebaseAuth, authRateLimiter,
         save_default_payment_method: 'on_subscription',
         payment_method_types: ['card'],
       },
-      metadata: { tier: subscriptionTier }
+      metadata: toStripeMetadata({
+        tier: subscriptionTier,
+        vaultId,
+        firebaseUid: req.firebaseUser?.uid,
+      }),
     });
 
     res.json({ subscriptionId: subscription.id });
@@ -479,7 +936,10 @@ app.post('/update-subscription', maybeRequireFirebaseAuth, sensitiveRateLimiter,
         payment_method_types: ['card'],
         save_default_payment_method: 'on_subscription'
       },
-      metadata: { tier: newSubscriptionTier }
+      metadata: toStripeMetadata({
+        ...(subscription?.metadata || {}),
+        tier: newSubscriptionTier,
+      }),
     });
 
     if (updatedSubscription.latest_invoice) {
@@ -854,6 +1314,275 @@ app.post('/subscription-status', requireFirebaseAuth, sensitiveRateLimiter, asyn
   } catch (error) {
     console.error('Error validating subscription status:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Paid-owner invitation system.
+// Owners create invite codes; invitees accept using a Firebase-authenticated endpoint.
+
+app.get('/vaults/:vaultId/invitations', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const vaultId = String(req.params.vaultId || '');
+    const owner = await assertOwnerForVault(db, vaultId, req.firebaseUser);
+    if (!owner.ok) return res.status(owner.status).json({ error: owner.error });
+
+    const paid = await assertVaultPaid(db, vaultId);
+    if (!paid.ok) return res.status(paid.status).json({ error: paid.error });
+
+    const snap = await db.collection('vaults').doc(vaultId).collection('invitations').orderBy('createdAt', 'desc').limit(50).get();
+    const invitations = snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+    return res.json({ ok: true, invitations });
+  } catch (err) {
+    console.error('Error listing invitations:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to list invitations' });
+  }
+});
+
+app.post('/vaults/:vaultId/invitations', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const vaultId = String(req.params.vaultId || '');
+    const inviteeEmail = normalizeEmail(req.body?.email);
+    if (!inviteeEmail) return res.status(400).json({ error: 'Missing email' });
+
+    const owner = await assertOwnerForVault(db, vaultId, req.firebaseUser);
+    if (!owner.ok) return res.status(owner.status).json({ error: owner.error });
+
+    const paid = await assertVaultPaid(db, vaultId);
+    if (!paid.ok) return res.status(paid.status).json({ error: paid.error });
+
+    const code = generateInviteCode(vaultId);
+    const now = Date.now();
+    const expiresAt = now + 14 * 24 * 60 * 60 * 1000;
+
+    const doc = {
+      id: code,
+      vault_id: vaultId,
+      status: 'PENDING',
+      invitee_email: inviteeEmail,
+      invitee_uid: null,
+      createdAt: now,
+      createdBy: String(req.firebaseUser.uid),
+      expiresAt,
+    };
+
+    await db.collection('vaults').doc(vaultId).collection('invitations').doc(code).set(doc, { merge: false });
+    await writeAuditEventIfPaid(db, vaultId, {
+      type: 'INVITE_CREATED',
+      actorUid: req.firebaseUser.uid,
+      payload: { invitee_email: inviteeEmail, invitation_id: code },
+    });
+
+    return res.json({ ok: true, code, invitation: doc });
+  } catch (err) {
+    console.error('Error creating invitation:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to create invitation' });
+  }
+});
+
+app.post('/vaults/:vaultId/invitations/:code/revoke', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const vaultId = String(req.params.vaultId || '');
+    const code = String(req.params.code || '').trim();
+    if (!vaultId || !code) return res.status(400).json({ error: 'Missing vaultId or code' });
+
+    const owner = await assertOwnerForVault(db, vaultId, req.firebaseUser);
+    if (!owner.ok) return res.status(owner.status).json({ error: owner.error });
+
+    const paid = await assertVaultPaid(db, vaultId);
+    if (!paid.ok) return res.status(paid.status).json({ error: paid.error });
+
+    const invRef = db.collection('vaults').doc(vaultId).collection('invitations').doc(code);
+    const snap = await invRef.get();
+    if (!snap.exists) return res.status(404).json({ error: 'Invitation not found' });
+
+    const inv = snap.data() || {};
+    if (inv.status !== 'PENDING') {
+      return res.status(409).json({ error: 'Only pending invitations can be revoked' });
+    }
+
+    await invRef.set({ status: 'REVOKED', revokedAt: Date.now(), revokedBy: String(req.firebaseUser.uid) }, { merge: true });
+    await writeAuditEventIfPaid(db, vaultId, {
+      type: 'INVITE_REVOKED',
+      actorUid: req.firebaseUser.uid,
+      payload: { invitation_id: code },
+    });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Error revoking invitation:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to revoke invitation' });
+  }
+});
+
+app.post('/invitations/accept', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+    if (!code) return res.status(400).json({ error: 'Missing code' });
+
+    const vaultId = code.split('_')[0];
+    if (!vaultId) return res.status(400).json({ error: 'Invalid code' });
+
+    const invRef = db.collection('vaults').doc(String(vaultId)).collection('invitations').doc(code);
+    const invSnap = await invRef.get();
+    if (!invSnap.exists) return res.status(404).json({ error: 'Invitation not found' });
+
+    const inv = invSnap.data() || {};
+    if (inv.status !== 'PENDING') return res.status(409).json({ error: 'Invitation is no longer active' });
+    if (typeof inv.expiresAt === 'number' && Date.now() > inv.expiresAt) {
+      await invRef.set({ status: 'EXPIRED' }, { merge: true });
+      return res.status(410).json({ error: 'Invitation has expired' });
+    }
+
+    const tokenEmail = normalizeEmail(req.firebaseUser?.email);
+    const inviteEmail = normalizeEmail(inv.invitee_email);
+    if (inviteEmail && tokenEmail && inviteEmail !== tokenEmail) {
+      return res.status(403).json({ error: 'This invitation is for a different email' });
+    }
+
+    const uid = String(req.firebaseUser.uid);
+    const membershipRef = db.collection('vaults').doc(String(vaultId)).collection('memberships').doc(uid);
+    const existingMember = await membershipRef.get();
+    if (existingMember.exists) {
+      // If already a member, treat as idempotent accept.
+      await invRef.set({ status: 'ACCEPTED', acceptedAt: Date.now(), acceptedByUid: uid, invitee_uid: uid }, { merge: true });
+    } else {
+      await membershipRef.set(
+        {
+          user_id: uid,
+          vault_id: String(vaultId),
+          role: 'DELEGATE',
+          status: 'ACTIVE',
+          permissions: { View: true },
+          assigned_at: Date.now(),
+          revoked_at: null,
+          invitedBy: inv.createdBy || null,
+          invitedAt: inv.createdAt || null,
+        },
+        { merge: true }
+      );
+      await invRef.set({ status: 'ACCEPTED', acceptedAt: Date.now(), acceptedByUid: uid, invitee_uid: uid }, { merge: true });
+    }
+
+    await writeAuditEventIfPaid(db, vaultId, {
+      type: 'INVITE_ACCEPTED',
+      actorUid: uid,
+      payload: { invitation_id: code },
+    });
+
+    const vaultSnap = await db.collection('vaults').doc(String(vaultId)).get();
+    const vault = vaultSnap.exists ? { id: vaultSnap.id, ...(vaultSnap.data() || {}) } : null;
+    return res.json({ ok: true, vaultId: String(vaultId), vault });
+  } catch (err) {
+    console.error('Error accepting invitation:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to accept invitation' });
+  }
+});
+
+// Hard ops (admin-style), still authenticated + owner-gated.
+// These exist because some operations cannot be safely performed client-side due to Firestore rule constraints
+// (e.g. recursive deletion) or cross-vault document moves.
+
+app.post('/vaults/:vaultId/delete', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const vaultId = String(req.params.vaultId || '');
+    const confirm = typeof req.body?.confirm === 'string' ? req.body.confirm : '';
+    if (confirm !== 'DELETE') return res.status(400).json({ error: 'Missing confirm=DELETE' });
+
+    const owner = await assertOwnerForVault(db, vaultId, req.firebaseUser);
+    if (!owner.ok) return res.status(owner.status).json({ error: owner.error });
+
+    await deleteVaultRecursive(db, vaultId);
+    await writeAuditEventIfPaid(db, vaultId, {
+      type: 'VAULT_DELETED',
+      actorUid: req.firebaseUser.uid,
+      payload: { vault_id: vaultId },
+    });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Error deleting vault:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to delete vault' });
+  }
+});
+
+app.post('/vaults/:vaultId/assets/:assetId/move', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const sourceVaultId = String(req.params.vaultId || '');
+    const assetId = String(req.params.assetId || '');
+    const targetVaultId = String(req.body?.targetVaultId || '');
+    const targetCollectionId = String(req.body?.targetCollectionId || '');
+    if (!sourceVaultId || !assetId || !targetVaultId || !targetCollectionId) {
+      return res.status(400).json({ error: 'Missing source vaultId, assetId, targetVaultId, or targetCollectionId' });
+    }
+
+    const ownerSource = await assertOwnerForVault(db, sourceVaultId, req.firebaseUser);
+    if (!ownerSource.ok) return res.status(ownerSource.status).json({ error: ownerSource.error });
+
+    const ownerTarget = await assertOwnerForVaultUid(db, targetVaultId, String(req.firebaseUser.uid));
+    if (!ownerTarget.ok) return res.status(ownerTarget.status).json({ error: ownerTarget.error });
+
+    const moved = await moveAssetAcrossVaults(db, {
+      sourceVaultId,
+      assetId,
+      targetVaultId,
+      targetCollectionId,
+      actorUid: String(req.firebaseUser.uid),
+    });
+    if (!moved.ok) return res.status(moved.status || 400).json({ error: moved.error || 'Move failed' });
+    return res.json({ ok: true, assetId: moved.assetId });
+  } catch (err) {
+    console.error('Error moving asset across vaults:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to move asset' });
+  }
+});
+
+app.post('/vaults/:vaultId/collections/:collectionId/move', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const sourceVaultId = String(req.params.vaultId || '');
+    const collectionId = String(req.params.collectionId || '');
+    const targetVaultId = String(req.body?.targetVaultId || '');
+    if (!sourceVaultId || !collectionId || !targetVaultId) {
+      return res.status(400).json({ error: 'Missing source vaultId, collectionId, or targetVaultId' });
+    }
+
+    const ownerSource = await assertOwnerForVault(db, sourceVaultId, req.firebaseUser);
+    if (!ownerSource.ok) return res.status(ownerSource.status).json({ error: ownerSource.error });
+
+    const ownerTarget = await assertOwnerForVaultUid(db, targetVaultId, String(req.firebaseUser.uid));
+    if (!ownerTarget.ok) return res.status(ownerTarget.status).json({ error: ownerTarget.error });
+
+    const moved = await moveCollectionAcrossVaults(db, {
+      sourceVaultId,
+      collectionId,
+      targetVaultId,
+      actorUid: String(req.firebaseUser.uid),
+    });
+    if (!moved.ok) return res.status(moved.status || 400).json({ error: moved.error || 'Move failed' });
+    return res.json({ ok: true, collectionId: moved.collectionId, movedAssetIds: moved.movedAssetIds || [] });
+  } catch (err) {
+    console.error('Error moving collection across vaults:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to move collection' });
   }
 });
 

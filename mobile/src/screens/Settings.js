@@ -7,8 +7,10 @@ import { useData } from '../context/DataContext';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 
 export default function Membership() {
-  const { refreshData, syncSubscriptionFromServer, theme } = useData();
+  const { refreshData, syncSubscriptionFromServer, theme, vaults, currentUser } = useData();
   const [refreshing, setRefreshing] = useState(false);
+
+  const ownsAnyVault = (vaults || []).some((v) => v?.ownerId && currentUser?.id && v.ownerId === currentUser.id);
 
   const openLegalLink = (url) => {
     Linking.openURL(url).catch(() => {});
@@ -44,8 +46,15 @@ export default function Membership() {
           <LambHeader />
         </View>
         <Text style={[styles.title, { color: theme.text }]}>Membership</Text>
-        
-        <SubscriptionManager />
+
+        {ownsAnyVault ? (
+          <SubscriptionManager />
+        ) : (
+          <View style={[styles.legalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Billing</Text>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Your access is managed by the vault owner. Delegates never need to pay.</Text>
+          </View>
+        )}
 
         <View style={[styles.legalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Legal</Text>

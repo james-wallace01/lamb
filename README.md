@@ -12,6 +12,31 @@ Liquid Asset Management Board
 4) Health check: `npm run doctor`
 5) Stop Metro when done: Ctrl+C
 
+## Web (CRA) setup
+
+1) Install: `npm install`
+2) Configure env vars (CRA only reads `REACT_APP_*` at build time):
+
+Create `.env.local` in repo root:
+
+```bash
+REACT_APP_FIREBASE_API_KEY=...
+REACT_APP_FIREBASE_AUTH_DOMAIN=...
+REACT_APP_FIREBASE_PROJECT_ID=...
+REACT_APP_FIREBASE_STORAGE_BUCKET=...
+REACT_APP_FIREBASE_MESSAGING_SENDER_ID=...
+REACT_APP_FIREBASE_APP_ID=...
+
+# Backend base URL for hard ops (vault delete, cross-vault moves)
+REACT_APP_API_URL=http://localhost:3001
+```
+
+3) Run: `npm start`
+
+Notes:
+- The web app uses Firebase Auth + Firestore directly; Firestore Security Rules are the canonical auth layer.
+- Some operations are intentionally routed through the backend (recursive delete, cross-vault moves) and require `REACT_APP_API_URL`.
+
 ## Firebase (mobile + backend)
 
 ### Mobile
@@ -25,6 +50,7 @@ Liquid Asset Management Board
 - To require auth on Stripe endpoints, set `REQUIRE_FIREBASE_AUTH=true` in `backend/.env`.
 
 ### Firestore Rules
-- A starter rules template is in [firestore.rules](firestore.rules). It currently denies all access until you customize it.
+- Canonical Firestore authorization is defined in [firestore.rules](firestore.rules) (vault membership, permissions, paid gating, single active owner).
+- Deploy rules via the Firebase CLI (e.g. firebase deploy --only firestore:rules) for them to take effect.
 
 - `.env*` files are gitignored; add mobile-specific vars under `mobile/.env` if needed.

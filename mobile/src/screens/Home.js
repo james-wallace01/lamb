@@ -14,8 +14,9 @@ const getInitials = (user) => {
 };
 
 export default function Home({ navigation }) {
-  const { loading, vaults, currentUser, addVault, logout, refreshData, theme, membershipAccess } = useData();
+  const { loading, vaults, currentUser, addVault, logout, refreshData, theme, membershipAccess, vaultMemberships, acceptInvitationCode } = useData();
   const [newVaultName, setNewVaultName] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
 
   const limit35 = (value = '') => String(value).slice(0, 35);
   const [shareVaultId, setShareVaultId] = useState(null);
@@ -38,6 +39,24 @@ export default function Home({ navigation }) {
         await new Promise((r) => setTimeout(r, minMs - elapsed));
       }
       setRefreshing(false);
+    }
+  };
+
+  const handleAcceptInvite = async () => {
+    const code = inviteCode.trim();
+    if (!code) {
+      Alert.alert('Invite code', 'Enter an invite code to join a vault.');
+      return;
+    }
+    const res = await acceptInvitationCode?.(code);
+    if (!res || res.ok === false) {
+      Alert.alert('Invite failed', res?.message || 'Unable to accept invite');
+      return;
+    }
+    setInviteCode('');
+    Alert.alert('Joined', 'You now have access to the shared vault.');
+    if (res.vaultId) {
+      navigation.navigate('Vault', { vaultId: res.vaultId });
     }
   };
 
@@ -81,6 +100,28 @@ export default function Home({ navigation }) {
           </View>
 
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}> 
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Join a vault</Text>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Have an invite code? Paste it here to join as a delegate.</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, alignItems: 'center' }}>
+              <TextInput
+                value={inviteCode}
+                onChangeText={setInviteCode}
+                placeholder="Invite code"
+                placeholderTextColor={theme.placeholder}
+                style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, flex: 1 }]}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <TouchableOpacity
+                style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface, paddingHorizontal: 14, paddingVertical: 10 }]}
+                onPress={handleAcceptInvite}
+              >
+                <Text style={[styles.secondaryText, { color: theme.textSecondary }]}>Join</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}> 
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Membership required</Text>
             <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Your membership isn’t active. You can manage your membership, update your profile, and revoke sharing.</Text>
           </View>
@@ -101,7 +142,21 @@ export default function Home({ navigation }) {
   }
 
   const myVaults = useMemo(() => vaults.filter((v) => v.ownerId === currentUser?.id), [vaults, currentUser]);
-  const sharedVaults = useMemo(() => vaults.filter((v) => v.ownerId !== currentUser?.id && (v.sharedWith || []).some(sw => sw.userId === currentUser?.id)), [vaults, currentUser]);
+  const sharedVaults = useMemo(() => {
+    const uid = currentUser?.id ? String(currentUser.id) : null;
+    if (!uid) return [];
+    const activeVaultIds = new Set(
+      (vaultMemberships || [])
+        .filter((m) => m?.user_id === uid && m?.status === 'ACTIVE')
+        .map((m) => String(m.vault_id))
+    );
+    return vaults.filter((v) => v?.ownerId !== uid && activeVaultIds.has(String(v.id)));
+  }, [vaults, currentUser, vaultMemberships]);
+
+  const getDelegateCountForVault = (vaultId) => {
+    const vId = String(vaultId);
+    return (vaultMemberships || []).filter((m) => m?.vault_id === vId && m?.status === 'ACTIVE' && m?.role === 'DELEGATE').length;
+  };
 
   const renderVault = (item) => (
     <TouchableOpacity
@@ -116,7 +171,12 @@ export default function Home({ navigation }) {
         <View>
           <View style={styles.titleRow}>
             <Text style={[styles.cardTitle, { color: theme.text }]}>{item.name}</Text>
-            <View style={[styles.sharedDot, (item.sharedWith || []).length > 0 ? styles.sharedDotOn : styles.sharedDotOff]} />
+            <View
+              style={[
+                styles.sharedDot,
+                item?.ownerId === currentUser?.id && getDelegateCountForVault(item.id) > 0 ? styles.sharedDotOn : styles.sharedDotOff,
+              ]}
+            />
           </View>
           <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>Vault • {new Date(item.createdAt).toLocaleDateString()}</Text>
         </View>
@@ -165,6 +225,28 @@ export default function Home({ navigation }) {
           </View>
         </View>
 
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}> 
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Join a vault</Text>
+          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Have an invite code? Paste it here to join as a delegate.</Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, alignItems: 'center' }}>
+            <TextInput
+              value={inviteCode}
+              onChangeText={setInviteCode}
+              placeholder="Invite code"
+              placeholderTextColor={theme.placeholder}
+              style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, flex: 1 }]}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TouchableOpacity
+              style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface, paddingHorizontal: 14, paddingVertical: 10 }]}
+              onPress={handleAcceptInvite}
+            >
+              <Text style={[styles.secondaryText, { color: theme.textSecondary }]}>Join</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <View style={styles.quickRow}>
           <TouchableOpacity style={[styles.quickCard, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => scrollRef.current?.scrollTo({ y: mySectionY, animated: true })}>
             <Text style={[styles.quickTitle, { color: theme.text }]}>My Vaults</Text>
@@ -204,8 +286,14 @@ export default function Home({ navigation }) {
                   style={styles.addButton}
                   onPress={() => {
                     if (!newVaultName.trim()) return;
-                    addVault({ name: newVaultName.trim() });
-                    setNewVaultName('');
+                    (async () => {
+                      const res = await addVault({ name: newVaultName.trim() });
+                      if (!res || res.ok === false) {
+                        Alert.alert('Create vault failed', res?.message || 'Unable to create vault');
+                        return;
+                      }
+                      setNewVaultName('');
+                    })();
                   }}
                 >
                   <Text style={styles.addButtonText}>Add</Text>

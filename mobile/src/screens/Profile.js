@@ -102,18 +102,55 @@ export default function Profile() {
     Alert.alert('Profile updated');
   };
 
-  const ownedVaultsShared = useMemo(
-    () => (vaults || []).filter((v) => v?.ownerId === currentUser?.id && (v.sharedWith || []).length > 0),
-    [vaults, currentUser?.id]
-  );
-  const ownedCollectionsShared = useMemo(
-    () => (collections || []).filter((c) => c?.ownerId === currentUser?.id && (c.sharedWith || []).length > 0),
-    [collections, currentUser?.id]
-  );
-  const ownedAssetsShared = useMemo(
-    () => (assets || []).filter((a) => a?.ownerId === currentUser?.id && (a.sharedWith || []).length > 0),
-    [assets, currentUser?.id]
-  );
+  const ownedVaultsShared = useMemo(() => {
+    const uid = currentUser?.id ? String(currentUser.id) : null;
+    if (!uid) return [];
+    return (vaults || [])
+      .filter((v) => v?.ownerId === uid)
+      .map((v) => {
+        const vaultId = String(v.id);
+        const delegateCount = (vaultMemberships || []).filter((m) => m?.vault_id === vaultId && m?.status === 'ACTIVE' && m?.role === 'DELEGATE').length;
+        return { ...v, __shareCount: delegateCount };
+      })
+      .filter((v) => (v.__shareCount || 0) > 0);
+  }, [vaults, currentUser?.id, vaultMemberships]);
+
+  const ownedCollectionsShared = useMemo(() => {
+    const uid = currentUser?.id ? String(currentUser.id) : null;
+    if (!uid) return [];
+    return (collections || [])
+      .filter((c) => c?.ownerId === uid)
+      .map((c) => {
+        const vaultId = String(c.vaultId);
+        const scopeId = String(c.id);
+        const ids = new Set(
+          (permissionGrants || [])
+            .filter((g) => g?.vault_id === vaultId && g?.scope_type === 'COLLECTION' && String(g?.scope_id) === scopeId)
+            .map((g) => String(g.user_id))
+        );
+        return { ...c, __shareCount: ids.size };
+      })
+      .filter((c) => (c.__shareCount || 0) > 0);
+  }, [collections, currentUser?.id, permissionGrants]);
+
+  const ownedAssetsShared = useMemo(() => {
+    const uid = currentUser?.id ? String(currentUser.id) : null;
+    if (!uid) return [];
+    return (assets || [])
+      .filter((a) => a?.ownerId === uid)
+      .map((a) => {
+        const vaultId = String(a.vaultId);
+        const scopeId = String(a.id);
+        const ids = new Set(
+          (permissionGrants || [])
+            .filter((g) => g?.vault_id === vaultId && g?.scope_type === 'ASSET' && String(g?.scope_id) === scopeId)
+            .map((g) => String(g.user_id))
+        );
+        return { ...a, __shareCount: ids.size };
+      })
+      .filter((a) => (a.__shareCount || 0) > 0);
+  }, [assets, currentUser?.id, permissionGrants]);
+
   const anyShares = ownedVaultsShared.length + ownedCollectionsShared.length + ownedAssetsShared.length > 0;
 
   const handleProfilePictureChange = async () => {
@@ -657,7 +694,7 @@ export default function Profile() {
                       onPress={() => setShareTarget({ targetType: 'vault', targetId: v.id })}
                     >
                       <Text style={[styles.shareRowTitle, { color: theme.text }]}>{v.name || 'Vault'}</Text>
-                      <Text style={[styles.shareRowMeta, { color: theme.textMuted }]}>Vault • {(v.sharedWith || []).length} shared</Text>
+                      <Text style={[styles.shareRowMeta, { color: theme.textMuted }]}>Vault • {v.__shareCount || 0} shared</Text>
                     </TouchableOpacity>
                   ))}
                   {ownedCollectionsShared.map((c) => (
@@ -667,7 +704,7 @@ export default function Profile() {
                       onPress={() => setShareTarget({ targetType: 'collection', targetId: c.id })}
                     >
                       <Text style={[styles.shareRowTitle, { color: theme.text }]}>{c.name || 'Collection'}</Text>
-                      <Text style={[styles.shareRowMeta, { color: theme.textMuted }]}>Collection • {(c.sharedWith || []).length} shared</Text>
+                      <Text style={[styles.shareRowMeta, { color: theme.textMuted }]}>Collection • {c.__shareCount || 0} shared</Text>
                     </TouchableOpacity>
                   ))}
                   {ownedAssetsShared.map((a) => (
@@ -677,7 +714,7 @@ export default function Profile() {
                       onPress={() => setShareTarget({ targetType: 'asset', targetId: a.id })}
                     >
                       <Text style={[styles.shareRowTitle, { color: theme.text }]}>{a.title || 'Asset'}</Text>
-                      <Text style={[styles.shareRowMeta, { color: theme.textMuted }]}>Asset • {(a.sharedWith || []).length} shared</Text>
+                      <Text style={[styles.shareRowMeta, { color: theme.textMuted }]}>Asset • {a.__shareCount || 0} shared</Text>
                     </TouchableOpacity>
                   ))}
                 </>

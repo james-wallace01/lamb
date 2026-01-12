@@ -1,35 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView } from 'react-native';
 import { useData } from '../context/DataContext';
+import { firestore } from '../firebase';
+import { collection, onSnapshot, orderBy, query as fsQuery } from 'firebase/firestore';
+import { API_URL } from '../config/stripe';
+import { apiFetch } from '../utils/apiFetch';
 
-const ROLE_OPTIONS = [
-  { value: 'reviewer', label: 'Reviewer' },
-  { value: 'editor', label: 'Editor' },
-  { value: 'manager', label: 'Manager' },
-  { value: 'owner', label: 'Owner' },
-];
-
-const ROLE_HELP = {
-  reviewer: 'View access.',
-  editor: 'View and Edit access.',
-  manager: 'View, Edit, Move and Clone access.',
-  owner: 'View, Edit, Move, Clone and Delete access.',
-};
-
-const normalizeRole = (role) => {
-  if (!role) return null;
-  const raw = role.toString().trim().toLowerCase();
-  if (raw === 'viewer' || raw === 'reviewer') return 'reviewer';
-  if (raw === 'editor') return 'editor';
-  if (raw === 'manager') return 'manager';
-  if (raw === 'owner') return 'owner';
-  return raw;
-};
-
-const roleLabel = (role) => {
-  const normalized = normalizeRole(role);
-  return ROLE_OPTIONS.find((r) => r.value === normalized)?.label || 'Reviewer';
-};
+// Roles are Vault-scoped and only OWNER/DELEGATE.
+// Sharing UI configures delegate permissions, not hierarchical roles.
+const DEFAULT_DELEGATE_ROLE = 'editor';
 
 export default function ShareModal({ visible, onClose, targetType, targetId }) {
   const {
@@ -48,24 +27,46 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
     vaults,
     collections,
     assets,
+    vaultMemberships,
+    permissionGrants,
+    acceptInvitationCode,
   } = useData();
   const [query, setQuery] = useState('');
-  const [role, setRole] = useState('reviewer');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
+  const [creatingInvite, setCreatingInvite] = useState(false);
+  const [pendingInvites, setPendingInvites] = useState([]);
+  // Back-compat: DataContext still accepts a legacy "role" string to map into permissions.
+  const [role, setRole] = useState(DEFAULT_DELEGATE_ROLE);
   const [canCreateCollections, setCanCreateCollections] = useState(false);
   const [canCreateAssets, setCanCreateAssets] = useState(false);
 
+  const vaultIdForTarget = useMemo(() => {
+    if (targetType === 'vault') return targetId;
+    if (targetType === 'collection') return collections.find((c) => c.id === targetId)?.vaultId || null;
+    if (targetType === 'asset') return assets.find((a) => a.id === targetId)?.vaultId || null;
+    return null;
+  }, [targetType, targetId, collections, assets]);
+
   const alreadySharedIds = useMemo(() => {
+    if (!vaultIdForTarget) return [];
     if (targetType === 'vault') {
-      return (vaults.find(v => v.id === targetId)?.sharedWith || []).map(s => s.userId);
+      return (vaultMemberships || [])
+        .filter((m) => m?.vault_id === String(vaultIdForTarget) && m?.status === 'ACTIVE' && m?.role === 'DELEGATE')
+        .map((m) => m.user_id);
     }
     if (targetType === 'collection') {
-      return (collections.find(c => c.id === targetId)?.sharedWith || []).map(s => s.userId);
+      return (permissionGrants || [])
+        .filter((g) => g?.vault_id === String(vaultIdForTarget) && g?.scope_type === 'COLLECTION' && g?.scope_id === String(targetId))
+        .map((g) => g.user_id);
     }
     if (targetType === 'asset') {
-      return (assets.find(a => a.id === targetId)?.sharedWith || []).map(s => s.userId);
+      return (permissionGrants || [])
+        .filter((g) => g?.vault_id === String(vaultIdForTarget) && g?.scope_type === 'ASSET' && g?.scope_id === String(targetId))
+        .map((g) => g.user_id);
     }
     return [];
-  }, [targetType, targetId, vaults, collections, assets]);
+  }, [vaultIdForTarget, targetType, targetId, vaultMemberships, permissionGrants]);
 
   const suggestions = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -79,32 +80,58 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
   }, [users, query, currentUser, alreadySharedIds]);
 
   const existingShares = useMemo(() => {
-    if (targetType === 'vault') {
-      return (vaults.find(v => v.id === targetId)?.sharedWith || []).map(s => ({ ...s, user: users.find(u => u.id === s.userId) }));
-    }
-    if (targetType === 'collection') {
-      return (collections.find(c => c.id === targetId)?.sharedWith || []).map(s => ({ ...s, user: users.find(u => u.id === s.userId) }));
-    }
-    if (targetType === 'asset') {
-      return (assets.find(a => a.id === targetId)?.sharedWith || []).map(s => ({ ...s, user: users.find(u => u.id === s.userId) }));
-    }
-    return [];
-  }, [targetType, targetId, vaults, collections, assets, users]);
+    if (!vaultIdForTarget) return [];
 
-  const handleShare = (userId) => {
-    const normalizedRole = normalizeRole(role) || 'reviewer';
+    if (targetType === 'vault') {
+      return (vaultMemberships || [])
+        .filter((m) => m?.vault_id === String(vaultIdForTarget) && m?.status === 'ACTIVE' && m?.role === 'DELEGATE')
+        .map((m) => ({
+          userId: m.user_id,
+          // Back-compat fields used by handlers
+          role: DEFAULT_DELEGATE_ROLE,
+          canCreateCollections: !!m?.permissions?.Create,
+          user: users.find((u) => u.id === m.user_id),
+        }));
+    }
+
+    if (targetType === 'collection') {
+      return (permissionGrants || [])
+        .filter((g) => g?.vault_id === String(vaultIdForTarget) && g?.scope_type === 'COLLECTION' && g?.scope_id === String(targetId))
+        .map((g) => ({
+          userId: g.user_id,
+          role: DEFAULT_DELEGATE_ROLE,
+          canCreateAssets: !!g?.permissions?.Create,
+          user: users.find((u) => u.id === g.user_id),
+        }));
+    }
+
+    if (targetType === 'asset') {
+      return (permissionGrants || [])
+        .filter((g) => g?.vault_id === String(vaultIdForTarget) && g?.scope_type === 'ASSET' && g?.scope_id === String(targetId))
+        .map((g) => ({
+          userId: g.user_id,
+          role: DEFAULT_DELEGATE_ROLE,
+          user: users.find((u) => u.id === g.user_id),
+        }));
+    }
+
+    return [];
+  }, [vaultIdForTarget, targetType, targetId, vaultMemberships, permissionGrants, users]);
+
+  const handleShare = async (userId) => {
+    const normalizedRole = role || DEFAULT_DELEGATE_ROLE;
 
     const res =
       targetType === 'vault'
-        ? shareVault({ vaultId: targetId, userId, role: normalizedRole, canCreateCollections })
+        ? await shareVault({ vaultId: targetId, userId, role: normalizedRole, canCreateCollections })
         : targetType === 'collection'
-          ? shareCollection({ collectionId: targetId, userId, role: normalizedRole, canCreateAssets })
+          ? await shareCollection({ collectionId: targetId, userId, role: normalizedRole, canCreateAssets })
           : targetType === 'asset'
-            ? shareAsset({ assetId: targetId, userId, role: normalizedRole })
+            ? await shareAsset({ assetId: targetId, userId, role: normalizedRole })
             : null;
 
-    if (res && res.ok === false) {
-      Alert.alert('Not allowed', res.message || 'You do not have permission to share this item.');
+    if (!res || res.ok === false) {
+      Alert.alert('Not allowed', res?.message || 'You do not have permission to share this item.');
       return;
     }
 
@@ -113,36 +140,152 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
     setCanCreateAssets(false);
   };
 
-  const handleUpdate = (userId, nextRole, nextFlag) => {
-    const normalizedRole = normalizeRole(nextRole) || 'reviewer';
+  const canInviteByEmail = useMemo(() => {
+    if (targetType !== 'vault') return false;
+    const v = (vaults || []).find((x) => x?.id === targetId);
+    if (!v) return false;
+    return v?.ownerId && currentUser?.id && v.ownerId === currentUser.id;
+  }, [targetType, targetId, vaults, currentUser]);
 
-    const res =
-      targetType === 'vault'
-        ? updateVaultShare({ vaultId: targetId, userId, role: normalizedRole, canCreateCollections: nextFlag })
-        : targetType === 'collection'
-          ? updateCollectionShare({ collectionId: targetId, userId, role: normalizedRole, canCreateAssets: nextFlag })
-          : targetType === 'asset'
-            ? updateAssetShare({ assetId: targetId, userId, role: normalizedRole })
-            : null;
+  useEffect(() => {
+    if (!visible) return;
+    if (targetType !== 'vault') return;
+    if (!firestore) return;
+    if (!targetId) return;
+    if (!canInviteByEmail) return;
 
-    if (res && res.ok === false) {
-      Alert.alert('Not allowed', res.message || 'You do not have permission to update sharing on this item.');
+    const vaultId = String(targetId);
+    const invRef = collection(firestore, 'vaults', vaultId, 'invitations');
+    const q = fsQuery(invRef, orderBy('createdAt', 'desc'));
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const invites = snap.docs
+          .map((d) => ({ id: String(d.id), ...(d.data() || {}) }))
+          .filter((x) => x?.status === 'PENDING');
+        setPendingInvites(invites);
+      },
+      () => {
+        // ignore
+      }
+    );
+
+    return () => {
+      try {
+        unsub?.();
+      } catch {
+        // ignore
+      }
+    };
+  }, [visible, targetType, targetId]);
+
+  const handleCreateInvite = async () => {
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email) {
+      Alert.alert('Invite', 'Enter an email to invite.');
+      return;
+    }
+    if (creatingInvite) return;
+    if (!canInviteByEmail) {
+      Alert.alert('Invite', 'Only the vault owner can create invites.');
+      return;
+    }
+    setCreatingInvite(true);
+    try {
+      const vaultId = String(targetId);
+      const resp = await apiFetch(`${API_URL}/vaults/${encodeURIComponent(vaultId)}/invitations`, {
+        requireAuth: true,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const json = await resp.json().catch(() => null);
+      if (!resp.ok) {
+        Alert.alert('Invite failed', json?.error || 'Unable to create invitation');
+        return;
+      }
+
+      const code = json?.code ? String(json.code) : '';
+      if (code) setInviteCode(code);
+      setInviteEmail('');
+      Alert.alert('Invite created', 'Share the invite code with your delegate.');
+    } catch (e) {
+      Alert.alert('Invite failed', e?.message || 'Unable to create invitation');
+    } finally {
+      setCreatingInvite(false);
     }
   };
 
-  const handleRemove = (userId) => {
+  const handleAcceptInvite = async () => {
+    const code = inviteCode.trim();
+    if (!code) {
+      Alert.alert('Invite', 'Paste an invite code to accept.');
+      return;
+    }
+    const res = await acceptInvitationCode?.(code);
+    if (!res || res.ok === false) {
+      Alert.alert('Invite failed', res?.message || 'Unable to accept invite');
+      return;
+    }
+    Alert.alert('Joined', 'You now have access to the vault.');
+    onClose?.();
+  };
+
+  const handleRevokeInvite = async (code) => {
+    if (!canInviteByEmail) {
+      Alert.alert('Revoke failed', 'Only the vault owner can revoke invites.');
+      return;
+    }
+    const vaultId = String(targetId);
+    const inviteId = String(code || '').trim();
+    if (!vaultId || !inviteId) return;
+    try {
+      const resp = await apiFetch(`${API_URL}/vaults/${encodeURIComponent(vaultId)}/invitations/${encodeURIComponent(inviteId)}/revoke`, {
+        requireAuth: true,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const json = await resp.json().catch(() => null);
+      if (!resp.ok) {
+        Alert.alert('Revoke failed', json?.error || 'Unable to revoke invitation');
+        return;
+      }
+      Alert.alert('Revoked', 'Invitation has been revoked.');
+    } catch (e) {
+      Alert.alert('Revoke failed', e?.message || 'Unable to revoke invitation');
+    }
+  };
+
+  const handleUpdate = async (userId, nextRole, nextFlag) => {
+    const normalizedRole = nextRole || DEFAULT_DELEGATE_ROLE;
 
     const res =
       targetType === 'vault'
-        ? removeVaultShare({ vaultId: targetId, userId })
+        ? await updateVaultShare({ vaultId: targetId, userId, role: normalizedRole, canCreateCollections: nextFlag })
         : targetType === 'collection'
-          ? removeCollectionShare({ collectionId: targetId, userId })
+          ? await updateCollectionShare({ collectionId: targetId, userId, role: normalizedRole, canCreateAssets: nextFlag })
           : targetType === 'asset'
-            ? removeAssetShare({ assetId: targetId, userId })
+            ? await updateAssetShare({ assetId: targetId, userId, role: normalizedRole })
             : null;
 
-    if (res && res.ok === false) {
-      Alert.alert('Not allowed', res.message || 'You do not have permission to remove sharing on this item.');
+    if (!res || res.ok === false) {
+      Alert.alert('Not allowed', res?.message || 'You do not have permission to update sharing on this item.');
+    }
+  };
+
+  const handleRemove = async (userId) => {
+    const res =
+      targetType === 'vault'
+        ? await removeVaultShare({ vaultId: targetId, userId })
+        : targetType === 'collection'
+          ? await removeCollectionShare({ collectionId: targetId, userId })
+          : targetType === 'asset'
+            ? await removeAssetShare({ assetId: targetId, userId })
+            : null;
+
+    if (!res || res.ok === false) {
+      Alert.alert('Not allowed', res?.message || 'You do not have permission to remove sharing on this item.');
     }
   };
 
@@ -151,6 +294,72 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
       <View style={styles.backdrop}>
         <View style={[styles.modal, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Text style={[styles.title, { color: theme.text }]}>Share {targetType}</Text>
+
+          {targetType === 'vault' && (
+            <>
+              <Text style={[styles.label, { color: theme.textMuted, marginTop: 8 }]}>Invite by code</Text>
+              {canInviteByEmail ? (
+                <>
+                  <Text style={[styles.roleHelp, { color: theme.textSecondary }]}>Paid owners can invite delegates by email. Delegates accept using a code.</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
+                    placeholder="Delegate email"
+                    placeholderTextColor={theme.placeholder}
+                    value={inviteEmail}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    onChangeText={setInviteEmail}
+                  />
+                  <TouchableOpacity style={[styles.primaryButton, creatingInvite && styles.primaryButtonDisabled]} onPress={handleCreateInvite} disabled={creatingInvite}>
+                    <Text style={styles.primaryButtonText}>{creatingInvite ? 'Creating…' : 'Create invite'}</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <Text style={[styles.roleHelp, { color: theme.textSecondary }]}>Only the vault owner can create invites.</Text>
+              )}
+
+              <TextInput
+                style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
+                placeholder="Invite code"
+                placeholderTextColor={theme.placeholder}
+                value={inviteCode}
+                autoCapitalize="none"
+                autoCorrect={false}
+                onChangeText={setInviteCode}
+              />
+              <TouchableOpacity style={[styles.secondaryButton]} onPress={handleAcceptInvite}>
+                <Text style={[styles.secondaryButtonText, { color: theme.text }]}>Accept invite</Text>
+              </TouchableOpacity>
+
+              {canInviteByEmail && pendingInvites.length > 0 && (
+                <>
+                  <View style={[styles.miniDivider, { backgroundColor: theme.border }]} />
+                  <Text style={[styles.label, { color: theme.textMuted }]}>Pending invites</Text>
+                  <View style={[styles.sharedBox, { borderColor: theme.border, backgroundColor: theme.surface }]}> 
+                    <ScrollView style={{ maxHeight: 160 }} showsVerticalScrollIndicator={false}>
+                      {pendingInvites.map((inv) => (
+                        <View key={inv.id} style={[styles.sharedRow, { backgroundColor: theme.inputBg }]}> 
+                          <View style={styles.sharedInfo}>
+                            <Text style={[styles.sharedName, { color: theme.text }]}>{inv.invitee_email || inv.email || inv.id}</Text>
+                            <Text style={[styles.sharedMeta, { color: theme.textMuted }]}>{inv.id}</Text>
+                          </View>
+                          <TouchableOpacity
+                            style={[styles.removeBtn, { backgroundColor: theme.surface, borderColor: '#dc2626' }]}
+                            onPress={() => handleRevokeInvite(inv.id)}
+                          >
+                            <Text style={[styles.removeText, { color: '#dc2626' }]}>Revoke</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </ScrollView>
+                  </View>
+                </>
+              )}
+
+              <View style={[styles.divider, { backgroundColor: theme.border }]} />
+            </>
+          )}
+
             <Text style={[styles.label, { color: theme.textMuted }]}>User</Text>
             <TextInput
               style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
@@ -181,25 +390,10 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
               </View>
             )}
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
-            <Text style={[styles.label, { color: theme.textMuted }]}>Access Type</Text>
-            <View style={styles.roleRow}>
-              {ROLE_OPTIONS.map((r) => (
-                <TouchableOpacity
-                  key={r.value}
-                  style={[
-                    styles.roleChip,
-                    { borderColor: theme.border, backgroundColor: theme.inputBg },
-                    role === r.value && { borderColor: '#2563eb', backgroundColor: theme.surface },
-                  ]}
-                  onPress={() => setRole(r.value)}
-                >
-                  <Text style={[styles.roleText, { color: theme.text }]}>{r.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            {ROLE_HELP[role] && (
-              <Text style={[styles.roleHelp, { color: theme.textSecondary }]}>{ROLE_HELP[role]}</Text>
-            )}
+            <Text style={[styles.label, { color: theme.textMuted }]}>Delegate Access</Text>
+            <Text style={[styles.roleHelp, { color: theme.textSecondary }]}>
+              Delegates can work inside the shared scope based on the permissions you grant.
+            </Text>
 
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
@@ -276,30 +470,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                           <Text style={[styles.sharedMeta, { color: theme.textMuted }]}>{s.user?.email || ''}</Text>
                         </View>
                         <View style={styles.sharedActions}>
-                          <View style={styles.roleRow}>
-                            {ROLE_OPTIONS.map((r) => (
-                              <TouchableOpacity
-                                key={r.value}
-                                style={[
-                                  styles.roleChipSmall,
-                                  { borderColor: theme.border, backgroundColor: theme.inputBg },
-                                  normalizeRole(s.role) === r.value && { borderColor: '#2563eb', backgroundColor: theme.surface },
-                                ]}
-                                onPress={() => handleUpdate(
-                                  s.userId,
-                                  r.value,
-                                  targetType === 'vault' ? s.canCreateCollections : targetType === 'collection' ? s.canCreateAssets : undefined
-                                )}
-                              >
-                                <Text style={[styles.roleText, { color: theme.text }]}>{r.label}</Text>
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                          {ROLE_HELP[normalizeRole(s.role)] && (
-                            <Text style={[styles.roleHelp, { color: theme.textSecondary }]}>{ROLE_HELP[normalizeRole(s.role)]}</Text>
-                          )}
-
-                          <View style={[styles.miniDivider, { backgroundColor: theme.border }]} />
+                          <Text style={[styles.roleHelp, { color: theme.textSecondary }]}>Delegate</Text>
 
                           {(targetType === 'vault' || targetType === 'collection') && (
                             <>
@@ -316,7 +487,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                                         { borderColor: theme.border, backgroundColor: theme.inputBg },
                                         !s.canCreateCollections && { borderColor: '#2563eb', backgroundColor: theme.surface },
                                       ]}
-                                      onPress={() => handleUpdate(s.userId, s.role, false)}
+                                      onPress={() => handleUpdate(s.userId, DEFAULT_DELEGATE_ROLE, false)}
                                     >
                                       <Text style={[styles.roleText, { color: theme.text }]}>Disabled</Text>
                                     </TouchableOpacity>
@@ -326,7 +497,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                                         { borderColor: theme.border, backgroundColor: theme.inputBg },
                                         !!s.canCreateCollections && { borderColor: '#2563eb', backgroundColor: theme.surface },
                                       ]}
-                                      onPress={() => handleUpdate(s.userId, s.role, true)}
+                                      onPress={() => handleUpdate(s.userId, DEFAULT_DELEGATE_ROLE, true)}
                                     >
                                       <Text style={[styles.roleText, { color: theme.text }]}>Enabled</Text>
                                     </TouchableOpacity>
@@ -343,7 +514,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                                         { borderColor: theme.border, backgroundColor: theme.inputBg },
                                         !s.canCreateAssets && { borderColor: '#2563eb', backgroundColor: theme.surface },
                                       ]}
-                                      onPress={() => handleUpdate(s.userId, s.role, false)}
+                                      onPress={() => handleUpdate(s.userId, DEFAULT_DELEGATE_ROLE, false)}
                                     >
                                       <Text style={[styles.roleText, { color: theme.text }]}>Disabled</Text>
                                     </TouchableOpacity>
@@ -353,7 +524,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                                         { borderColor: theme.border, backgroundColor: theme.inputBg },
                                         !!s.canCreateAssets && { borderColor: '#2563eb', backgroundColor: theme.surface },
                                       ]}
-                                      onPress={() => handleUpdate(s.userId, s.role, true)}
+                                      onPress={() => handleUpdate(s.userId, DEFAULT_DELEGATE_ROLE, true)}
                                     >
                                       <Text style={[styles.roleText, { color: theme.text }]}>Enabled</Text>
                                     </TouchableOpacity>
@@ -393,6 +564,11 @@ const styles = StyleSheet.create({
   title: { color: '#fff', fontSize: 18, fontWeight: '800', marginBottom: 12 },
   label: { color: '#9aa1b5', fontWeight: '800', marginTop: 8, marginBottom: 4 },
   input: { backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, borderRadius: 10, padding: 12, color: '#fff' },
+  primaryButton: { marginTop: 10, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10, borderWidth: 1, borderColor: '#2563eb', backgroundColor: '#2563eb', alignItems: 'center' },
+  primaryButtonDisabled: { opacity: 0.6 },
+  primaryButtonText: { color: '#ffffff', fontWeight: '800' },
+  secondaryButton: { marginTop: 10, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10, borderWidth: 1, borderColor: '#26344a', backgroundColor: 'transparent', alignItems: 'center' },
+  secondaryButtonText: { color: '#e5e7f0', fontWeight: '700' },
   suggestions: { marginTop: 8, maxHeight: 180, borderWidth: 1, borderColor: '#1f2738', borderRadius: 10, backgroundColor: '#11121a', overflow: 'hidden' },
   suggestionRow: { padding: 12, borderBottomWidth: 1, borderBottomColor: '#1f2738', flexDirection: 'row', justifyContent: 'space-between' },
   suggestionRowLast: { borderBottomWidth: 0 },

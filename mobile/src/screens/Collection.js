@@ -9,7 +9,7 @@ import { getCollectionCapabilities } from '../policies/capabilities';
 
 export default function Collection({ navigation, route }) {
   const { collectionId } = route.params || {};
-  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData, theme, defaultHeroImage } = useData();
+  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData, theme, defaultHeroImage, permissionGrants } = useData();
   const [newTitle, setNewTitle] = useState('');
   const [shareVisible, setShareVisible] = useState(false);
   const [shareTargetType, setShareTargetType] = useState(null);
@@ -51,6 +51,18 @@ export default function Collection({ navigation, route }) {
     if (!collection?.vaultId) return;
     setMoveVaultId(collection.vaultId);
   }, [collection?.vaultId, moveVaultId]);
+
+  const getAssetShareCount = (assetId) => {
+    const vId = String(collection?.vaultId || '');
+    const aId = String(assetId);
+    if (!vId) return 0;
+    const ids = new Set(
+      (permissionGrants || [])
+        .filter((g) => g?.vault_id === vId && g?.scope_type === 'ASSET' && String(g?.scope_id) === aId)
+        .map((g) => String(g.user_id))
+    );
+    return ids.size;
+  };
   const collectionAssets = useMemo(() => assets.filter((a) => a.collectionId === collectionId), [assets, collectionId]);
   const role = getRoleForCollection(collectionId, currentUser?.id);
   const accessType = collection?.ownerId === currentUser?.id
@@ -111,7 +123,12 @@ export default function Collection({ navigation, route }) {
 
     const merged = trimToFour([...collectionImages, ...newImages]);
     const nextHero = ensureHero(merged, heroImage);
-    updateCollection(collectionId, { images: merged, heroImage: nextHero });
+    (async () => {
+      const res = await updateCollection(collectionId, { images: merged, heroImage: nextHero });
+      if (!res || res.ok === false) {
+        Alert.alert('Update failed', res?.message || 'Unable to update collection images');
+      }
+    })();
 
     if (skipped.length) {
       Alert.alert('Skipped large files', `Images over 30MB were skipped: ${skipped.join(', ')}`);
@@ -121,14 +138,24 @@ export default function Collection({ navigation, route }) {
   const handleSetHero = (img) => {
     if (!collection) return;
     const reordered = trimToFour([img, ...collectionImages.filter((i) => i !== img)]);
-    updateCollection(collectionId, { images: reordered, heroImage: img });
+    (async () => {
+      const res = await updateCollection(collectionId, { images: reordered, heroImage: img });
+      if (!res || res.ok === false) {
+        Alert.alert('Update failed', res?.message || 'Unable to update collection hero image');
+      }
+    })();
   };
 
   const handleRemoveImage = (img) => {
     if (!collection) return;
     const remaining = collectionImages.filter((i) => i !== img);
     const nextHero = ensureHero(remaining, heroImage === img ? remaining[0] : heroImage);
-    updateCollection(collectionId, { images: remaining, heroImage: nextHero });
+    (async () => {
+      const res = await updateCollection(collectionId, { images: remaining, heroImage: nextHero });
+      if (!res || res.ok === false) {
+        Alert.alert('Update failed', res?.message || 'Unable to remove collection image');
+      }
+    })();
   };
   const MAX_IMAGE_BYTES = 30 * 1024 * 1024;
   const MAX_IMAGES = 4;
@@ -219,14 +246,20 @@ export default function Collection({ navigation, route }) {
     if (!collection) return;
     const images = trimToFour(editDraft.images || []);
     const hero = ensureHero(images, editDraft.heroImage);
-    updateCollection(collectionId, {
-      name: limit35((editDraft.name || '').trim() || collection.name || ''),
-      description: (editDraft.description || '').trim(),
-      manager: (editDraft.manager || '').trim(),
-      images,
-      heroImage: hero,
-    });
-    setEditVisible(false);
+    (async () => {
+      const res = await updateCollection(collectionId, {
+        name: limit35((editDraft.name || '').trim() || collection.name || ''),
+        description: (editDraft.description || '').trim(),
+        manager: (editDraft.manager || '').trim(),
+        images,
+        heroImage: hero,
+      });
+      if (!res || res.ok === false) {
+        Alert.alert('Save failed', res?.message || 'Unable to update collection');
+        return;
+      }
+      setEditVisible(false);
+    })();
   };
 
   const openShare = (targetType, targetId) => {
@@ -252,7 +285,7 @@ export default function Collection({ navigation, route }) {
         <View>
           <View style={styles.titleRow}>
             <Text style={[styles.cardTitle, { color: theme.text }]}>{item.title}</Text>
-            <View style={[styles.sharedDot, (item.sharedWith || []).length > 0 ? styles.sharedDotOn : styles.sharedDotOff]} />
+            <View style={[styles.sharedDot, canShare && getAssetShareCount(item.id) > 0 ? styles.sharedDotOn : styles.sharedDotOff]} />
           </View>
           <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>{item.type || 'Asset'} • {new Date(item.createdAt).toLocaleDateString()}</Text>
         </View>
@@ -365,8 +398,14 @@ export default function Collection({ navigation, route }) {
             if (!canCreate) return Alert.alert('No permission to add assets');
               const title = limit35(newTitle.trim());
               if (!title) return;
-              addAsset({ vaultId: collection?.vaultId, collectionId, title });
-            setNewTitle('');
+              (async () => {
+                const res = await addAsset({ vaultId: collection?.vaultId, collectionId, title });
+                if (!res || res.ok === false) {
+                  Alert.alert('Create failed', res?.message || 'Unable to create asset');
+                  return;
+                }
+                setNewTitle('');
+              })();
           }}
         >
           <Text style={styles.addButtonText}>Add</Text>
@@ -422,10 +461,16 @@ export default function Collection({ navigation, route }) {
             disabled={!moveVaultId}
             onPress={() => {
               if (!moveVaultId) return Alert.alert('Select a vault');
-              moveCollection({ collectionId, targetVaultId: moveVaultId });
-              Alert.alert('Moved');
-              setShowMoveBox(false);
-              setDropdownOpen(false);
+              (async () => {
+                const res = await moveCollection({ collectionId, targetVaultId: moveVaultId });
+                if (!res || res.ok === false) {
+                  Alert.alert('Move failed', res?.message || 'Unable to move collection');
+                  return;
+                }
+                Alert.alert('Moved');
+                setShowMoveBox(false);
+                setDropdownOpen(false);
+              })();
             }}
           >
             <Text style={styles.buttonText}>Move</Text>
@@ -528,8 +573,14 @@ export default function Collection({ navigation, route }) {
                         text: 'Delete',
                         onPress: () => {
                           setEditVisible(false);
-                          deleteCollection(collectionId);
-                          navigation.goBack();
+                          (async () => {
+                            const res = await deleteCollection(collectionId);
+                            if (!res || res.ok === false) {
+                              Alert.alert('Delete failed', res?.message || 'Unable to delete collection');
+                              return;
+                            }
+                            navigation.goBack();
+                          })();
                         },
                         style: 'destructive',
                       },

@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "migrate-vault-model": "node scripts/migrateVaultModel.js",
     "wipe-remote": "node scripts/wipeRemoteData.js"
   },
   "dependencies": {

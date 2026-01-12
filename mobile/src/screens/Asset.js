@@ -242,23 +242,29 @@ export default function Asset({ route, navigation }) {
     const hero = ensureHero(images, editDraft.heroImage);
     const title = limit35(editDraft.title || 'Untitled');
 
-    updateAsset(asset.id, {
-      title,
-      type: editDraft.type || '',
-      category: editDraft.category || '',
-      quantity: Number(editDraft.quantity) || 1,
-      value: editDraft.value,
-      estimateValue: editDraft.estimateValue,
-      rrp: editDraft.rrp,
-      purchasePrice: editDraft.purchasePrice,
-      manager: editDraft.manager,
-      description: editDraft.description,
-      images,
-      heroImage: hero,
-    });
+    (async () => {
+      const res = await updateAsset(asset.id, {
+        title,
+        type: editDraft.type || '',
+        category: editDraft.category || '',
+        quantity: Number(editDraft.quantity) || 1,
+        value: editDraft.value,
+        estimateValue: editDraft.estimateValue,
+        rrp: editDraft.rrp,
+        purchasePrice: editDraft.purchasePrice,
+        manager: editDraft.manager,
+        description: editDraft.description,
+        images,
+        heroImage: hero,
+      });
 
-    setEditVisible(false);
-    Alert.alert('Saved');
+      if (!res || res.ok === false) {
+        Alert.alert('Save failed', res?.message || 'Unable to update asset');
+        return;
+      }
+      setEditVisible(false);
+      Alert.alert('Saved');
+    })();
   };
 
   const handleMove = () => {
@@ -267,8 +273,14 @@ export default function Asset({ route, navigation }) {
       Alert.alert('Select vault and collection');
       return;
     }
-    moveAsset({ assetId: asset.id, targetVaultId: moveVaultId, targetCollectionId: moveCollectionId });
-    navigation.goBack();
+    (async () => {
+      const res = await moveAsset({ assetId: asset.id, targetVaultId: moveVaultId, targetCollectionId: moveCollectionId });
+      if (!res || res.ok === false) {
+        Alert.alert('Move failed', res?.message || 'Unable to move asset');
+        return;
+      }
+      navigation.goBack();
+    })();
   };
 
   const handleCloneAsset = () => {
@@ -279,16 +291,22 @@ export default function Asset({ route, navigation }) {
     }
 
     const copyTitle = asset.title ? `${asset.title} (Copy)` : 'Untitled (Copy)';
-    addAsset({
-      vaultId: asset.vaultId,
-      collectionId: asset.collectionId,
-      title: copyTitle,
-      type: asset.type,
-      category: asset.category,
-      images: asset.images,
-      heroImage: asset.heroImage,
-    });
-    Alert.alert('Cloned', 'Asset has been cloned.');
+    (async () => {
+      const res = await addAsset({
+        vaultId: asset.vaultId,
+        collectionId: asset.collectionId,
+        title: copyTitle,
+        type: asset.type,
+        category: asset.category,
+        images: asset.images,
+        heroImage: asset.heroImage,
+      });
+      if (!res || res.ok === false) {
+        Alert.alert('Clone failed', res?.message || 'Unable to clone asset');
+        return;
+      }
+      Alert.alert('Cloned', 'Asset has been cloned.');
+    })();
   };
 
   const ownerVaults = vaults.filter((v) => v.ownerId === asset?.ownerId);
@@ -496,8 +514,14 @@ export default function Asset({ route, navigation }) {
                         text: 'Delete',
                         onPress: () => {
                           setEditVisible(false);
-                          deleteAsset(assetId);
-                          navigation.goBack();
+                          (async () => {
+                            const res = await deleteAsset(assetId);
+                            if (!res || res.ok === false) {
+                              Alert.alert('Delete failed', res?.message || 'Unable to delete asset');
+                              return;
+                            }
+                            navigation.goBack();
+                          })();
                         },
                         style: 'destructive',
                       },
