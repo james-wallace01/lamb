@@ -1213,9 +1213,9 @@ export function DataProvider({ children }) {
         setVaultMemberships((prev) => mergeById(prev, deduped));
       };
 
-      // NOTE: Query by membership document id (uid) to avoid requiring a collection-group index
-      // on `user_id` (which may be disabled in some environments).
-      const myMembershipsQuery = query(collectionGroup(firestore, 'memberships'), where(documentId(), '==', uid));
+      // NOTE: For collection-group queries, `documentId()` expects a full document path, not a bare uid.
+      // Querying by `user_id` is the correct shape for this schema.
+      const myMembershipsQuery = query(collectionGroup(firestore, 'memberships'), where('user_id', '==', uid));
 
       const unsubMyMemberships = onSnapshot(
         myMembershipsQuery,
