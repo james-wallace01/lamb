@@ -471,11 +471,70 @@ export default function App() {
     setShowShareSuggestions(false);
   };
 
+  const [vaultInvitations, setVaultInvitations] = useState([]);
+  const [vaultInvitationsLoading, setVaultInvitationsLoading] = useState(false);
+  const [vaultInvitationsError, setVaultInvitationsError] = useState('');
+
+  const loadVaultInvitations = async (vaultId) => {
+    if (!vaultId) return;
+    if (!API_URL) throw new Error('Missing REACT_APP_API_URL.');
+    setVaultInvitationsLoading(true);
+    setVaultInvitationsError('');
+    try {
+      const resp = await apiFetch(`${API_URL}/vaults/${encodeURIComponent(String(vaultId))}/invitations`, { method: 'GET' });
+      const invitations = Array.isArray(resp?.invitations) ? resp.invitations : [];
+      setVaultInvitations(invitations);
+    } catch (err) {
+      setVaultInvitations([]);
+      setVaultInvitationsError(err?.message ? String(err.message) : 'Failed to load invitations');
+    } finally {
+      setVaultInvitationsLoading(false);
+    }
+  };
+
+  const revokeVaultInvitation = async (vaultId, code) => {
+    if (!vaultId || !code) return;
+    if (!API_URL) throw new Error('Missing REACT_APP_API_URL.');
+    await apiFetch(`${API_URL}/vaults/${encodeURIComponent(String(vaultId))}/invitations/${encodeURIComponent(String(code))}/revoke`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    setVaultInvitations((prev) => (prev || []).map((i) => (i?.id === code ? { ...i, status: 'REVOKED', revokedAt: Date.now() } : i)));
+  };
+
+  const resolveUserForVault = async (vaultId, queryValue) => {
+    if (!vaultId) throw new Error('Missing vaultId');
+    const query = typeof queryValue === 'string' ? queryValue.trim() : '';
+    if (!query) throw new Error('Missing user identifier');
+    if (!API_URL) throw new Error('Missing REACT_APP_API_URL.');
+    const resp = await apiFetch(`${API_URL}/vaults/${encodeURIComponent(String(vaultId))}/users/resolve`, {
+      method: 'POST',
+      body: JSON.stringify({ query }),
+    });
+    const uid = resp?.user?.uid ? String(resp.user.uid) : null;
+    if (!uid) throw new Error('User not found');
+    return uid;
+  };
+
+  useEffect(() => {
+    if (!shareDialog?.show) {
+      setVaultInvitations([]);
+      setVaultInvitationsError('');
+      setVaultInvitationsLoading(false);
+      return;
+    }
+
+    if (shareDialog.type !== 'vault') return;
+    if (!shareDialog.targetId) return;
+    // Invitations are a paid feature; load errors are rendered in the dialog.
+    loadVaultInvitations(shareDialog.targetId).catch(() => {});
+  }, [shareDialog.show, shareDialog.type, shareDialog.targetId]);
+
   const handleShareConfirm = () => {
     const rawTarget = (shareDialog.username || '').trim();
     if (!rawTarget) {
       if (shareDialog.type === 'vault') return showAlert("Enter an email address to invite.");
-      return showAlert("Enter a member UID to share with.");
+      return showAlert("Enter a member uid/email/username to share with.");
     }
 
     const permissions = normalizePermissions(shareDialog.permissions);
@@ -487,18 +546,35 @@ export default function App() {
           const email = normalizeEmail(rawTarget);
           if (!email || !email.includes('@')) throw new Error('Enter a valid email address.');
           if (!API_URL) throw new Error('Missing REACT_APP_API_URL.');
-          await apiFetch(`${API_URL}/vaults/${encodeURIComponent(String(vault.id))}/invitations`, {
+          const resp = await apiFetch(`${API_URL}/vaults/${encodeURIComponent(String(vault.id))}/invitations`, {
             method: 'POST',
             body: JSON.stringify({ email }),
           });
           showAlert(`Invitation sent to ${email}`);
+          if (resp?.invitation) {
+            setVaultInvitations((prev) => {
+              const next = Array.isArray(prev) ? [...prev] : [];
+              const id = resp.invitation?.id || resp.code;
+              if (!id) return next;
+              const existing = next.find((i) => i && i.id === id);
+              if (existing) return next;
+              return [{ id, ...(resp.invitation || {}) }, ...next];
+            });
+          } else {
+            loadVaultInvitations(String(vault.id)).catch(() => {});
+          }
         } else if (shareDialog.type === 'collection') {
           const collection = collections.find((c) => c.id === shareDialog.targetId) || null;
           if (!collection) return;
-          const userId = String(rawTarget);
+          let userId = String(rawTarget);
+          const looksLikeEmail = userId.includes('@');
+          const looksLikeUsername = userId.includes(' ') || userId.length < 20;
+          if (looksLikeEmail || looksLikeUsername) {
+            userId = await resolveUserForVault(String(collection.vaultId), userId);
+          }
           if (currentUser && userId === currentUser.id) throw new Error('You cannot share with yourself.');
           if (!getMembershipForVault(String(collection.vaultId), userId)) {
-            throw new Error('User must already be a vault member (enter their UID).');
+            throw new Error('User must already be a vault member.');
           }
           await upsertPermissionGrant(String(collection.vaultId), 'COLLECTION', String(collection.id), String(userId), permissions);
           showAlert(`Granted collection access to ${userId}`);
@@ -507,10 +583,15 @@ export default function App() {
           if (!asset) return;
           const vaultId = asset.vaultId || getVaultForAsset(asset)?.id || null;
           if (!vaultId) return;
-          const userId = String(rawTarget);
+          let userId = String(rawTarget);
+          const looksLikeEmail = userId.includes('@');
+          const looksLikeUsername = userId.includes(' ') || userId.length < 20;
+          if (looksLikeEmail || looksLikeUsername) {
+            userId = await resolveUserForVault(String(vaultId), userId);
+          }
           if (currentUser && userId === currentUser.id) throw new Error('You cannot share with yourself.');
           if (!getMembershipForVault(String(vaultId), userId)) {
-            throw new Error('User must already be a vault member (enter their UID).');
+            throw new Error('User must already be a vault member.');
           }
           await upsertPermissionGrant(String(vaultId), 'ASSET', String(asset.id), String(userId), permissions);
           showAlert(`Granted asset access to ${userId}`);
@@ -3700,12 +3781,12 @@ export default function App() {
               if (shareDialog.type === 'asset') return `Share ${assets.find(a => a.id === shareDialog.targetId)?.title || 'Asset'}`;
               return `Share ${vaults.find(v => v.id === shareDialog.targetId)?.name || 'Vault'}`;
             })()}</h3>
-            <p className="text-sm text-neutral-400 mb-4">{shareDialog.type === 'vault' ? 'Invite by email (they must accept to get access).' : 'Grant access to an existing vault member by UID.'}</p>
+            <p className="text-sm text-neutral-400 mb-4">{shareDialog.type === 'vault' ? 'Invite by email (paid feature; owners can revoke pending invites).' : 'Grant access to an existing vault member by uid/email/username.'}</p>
             <div className="space-y-3">
               <div>
                 <label className="text-sm text-neutral-400">User</label>
                 <div className="relative">
-                  <input autoComplete="off" className="w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800" placeholder={shareDialog.type === 'vault' ? 'email address' : 'member UID'} value={shareDialog.username} onChange={(e) => { setShareDialog((d) => ({ ...d, username: e.target.value })); setShowShareSuggestions(false); }} onFocus={() => setShowShareSuggestions(false)} />
+                  <input autoComplete="off" className="w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800" placeholder={shareDialog.type === 'vault' ? 'email address' : 'member uid / email / username'} value={shareDialog.username} onChange={(e) => { setShareDialog((d) => ({ ...d, username: e.target.value })); setShowShareSuggestions(false); }} onFocus={() => setShowShareSuggestions(false)} />
                 </div>
               </div>
               <div>
@@ -3799,6 +3880,47 @@ export default function App() {
                     })()}
                   </div>
                 </div>
+
+                {shareDialog.type === 'vault' && (
+                  <div className="mt-4">
+                    <h4 className="text-sm font-medium text-neutral-400 mb-2">Pending Invitations</h4>
+                    {vaultInvitationsLoading && <div className="text-sm text-neutral-500 py-2">Loading invitations…</div>}
+                    {!vaultInvitationsLoading && vaultInvitationsError && (
+                      <div className="text-sm text-neutral-500 py-2">{vaultInvitationsError}</div>
+                    )}
+                    {!vaultInvitationsLoading && !vaultInvitationsError && (
+                      (() => {
+                        const pending = (vaultInvitations || []).filter((i) => i && i.status === 'PENDING');
+                        if (pending.length === 0) return <div className="text-sm text-neutral-500 py-2">No pending invitations.</div>;
+                        return (
+                          <div className="space-y-2 max-h-40 overflow-auto">
+                            {pending.map((inv) => (
+                              <div key={inv.id} className="bg-neutral-950/40 p-3 rounded flex items-center justify-between">
+                                <div>
+                                  <div className="text-sm font-medium">{inv.invitee_email || inv.id}</div>
+                                  <div className="text-xs text-neutral-500">{inv.expiresAt ? `Expires ${new Date(inv.expiresAt).toLocaleDateString()}` : ''}</div>
+                                </div>
+                                <button
+                                  className="text-xs px-2 py-1 bg-red-700 hover:bg-red-800 rounded"
+                                  onClick={async () => {
+                                    try {
+                                      await revokeVaultInvitation(shareDialog.targetId, inv.id);
+                                      showAlert('Invitation revoked');
+                                    } catch (err) {
+                                      showAlert(err?.message ? String(err.message) : 'Failed to revoke invitation');
+                                    }
+                                  }}
+                                >
+                                  Revoke
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex gap-3 justify-end mt-4">

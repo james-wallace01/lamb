@@ -1385,6 +1385,64 @@ app.post('/vaults/:vaultId/invitations', requireFirebaseAuth, sensitiveRateLimit
   }
 });
 
+// Resolve a user identifier (email or username) to a uid.
+// This is intentionally server-side because Firestore rules do not allow listing `/users` from clients.
+// Paid + owner gated to avoid creating a public user directory.
+app.post('/vaults/:vaultId/users/resolve', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const vaultId = String(req.params.vaultId || '');
+    const raw = typeof req.body?.query === 'string' ? req.body.query.trim() : '';
+    if (!vaultId) return res.status(400).json({ error: 'Missing vaultId' });
+    if (!raw) return res.status(400).json({ error: 'Missing query' });
+
+    const owner = await assertOwnerForVault(db, vaultId, req.firebaseUser);
+    if (!owner.ok) return res.status(owner.status).json({ error: owner.error });
+
+    const paid = await assertVaultPaid(db, vaultId);
+    if (!paid.ok) return res.status(paid.status).json({ error: paid.error });
+
+    let uid = null;
+    const q = raw;
+    const asEmail = normalizeEmail(q);
+
+    if (asEmail && asEmail.includes('@')) {
+      try {
+        const authUser = await firebaseAdmin.auth().getUserByEmail(asEmail);
+        uid = authUser?.uid ? String(authUser.uid) : null;
+      } catch (err) {
+        uid = null;
+      }
+    } else {
+      // Username lookup is done against the users collection.
+      const username = String(q).trim().toLowerCase();
+      const snap = await db.collection('users').where('username', '==', username).limit(1).get();
+      if (!snap.empty) uid = String(snap.docs[0].id);
+    }
+
+    if (!uid) return res.status(404).json({ error: 'User not found' });
+
+    const userSnap = await db.collection('users').doc(uid).get();
+    const userData = userSnap.exists ? (userSnap.data() || {}) : {};
+
+    return res.json({
+      ok: true,
+      user: {
+        uid,
+        email: userData.email || (asEmail && asEmail.includes('@') ? asEmail : null),
+        username: userData.username || null,
+        firstName: userData.firstName || null,
+        lastName: userData.lastName || null,
+      },
+    });
+  } catch (err) {
+    console.error('Error resolving user:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to resolve user' });
+  }
+});
+
 app.post('/vaults/:vaultId/invitations/:code/revoke', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
   try {
     const db = getFirestoreDb();
