@@ -236,43 +236,64 @@ const normalizeVaultSubStatus = (stripeSubscription) => {
   return stripeStatus || 'none';
 };
 
-const inferVaultIdForStripeCustomer = async (db, customerId) => {
-  if (!db || !customerId) return null;
-
-  // Prefer explicit metadata if present.
-  const customer = await stripe.customers.retrieve(customerId);
-  const firebaseUid = typeof customer?.metadata?.firebaseUid === 'string' ? customer.metadata.firebaseUid : '';
-  if (!firebaseUid) return null;
-
-  // Primary vault policy: earliest-created vault owned by this user.
-  // Avoid orderBy to reduce index requirements; pick min createdAt in memory.
-  const ownedSnap = await db.collection('vaults').where('activeOwnerId', '==', firebaseUid).limit(50).get();
-  if (ownedSnap.empty) return null;
-
-  let best = null;
-  for (const doc of ownedSnap.docs) {
-    const data = doc.data() || {};
-    const createdAt = typeof data.createdAt === 'number' ? data.createdAt : Number.MAX_SAFE_INTEGER;
-    if (!best || createdAt < best.createdAt) best = { id: doc.id, createdAt };
+const inferFirebaseUidForStripeCustomer = async (customerId) => {
+  if (!customerId) return null;
+  try {
+    const customer = await stripe.customers.retrieve(customerId);
+    const firebaseUid = typeof customer?.metadata?.firebaseUid === 'string' ? customer.metadata.firebaseUid.trim() : '';
+    return firebaseUid || null;
+  } catch {
+    return null;
   }
-  return best?.id || null;
 };
 
-const upsertVaultSubscriptionFromStripe = async ({ eventType, stripeSubscription }) => {
+const inferPrimaryVaultIdForFirebaseUid = async (db, firebaseUid) => {
+  if (!db || !firebaseUid) return null;
+  try {
+    // Avoid orderBy to reduce index requirements; pick min createdAt in memory.
+    const ownedSnap = await db.collection('vaults').where('activeOwnerId', '==', String(firebaseUid)).limit(50).get();
+    if (ownedSnap.empty) return null;
+    let best = null;
+    for (const doc of ownedSnap.docs) {
+      const data = doc.data() || {};
+      const createdAt = typeof data.createdAt === 'number' ? data.createdAt : Number.MAX_SAFE_INTEGER;
+      if (!best || createdAt < best.createdAt) best = { id: doc.id, createdAt };
+    }
+    return best?.id || null;
+  } catch {
+    return null;
+  }
+};
+
+const revokePaidFeaturesForOwner = async (db, ownerUid, { actorUid = 'system', reason } = {}) => {
+  if (!db || !ownerUid) return;
+  // Best-effort: most users will have a small number of owned vaults.
+  const snap = await db.collection('vaults').where('activeOwnerId', '==', String(ownerUid)).limit(100).get();
+  for (const doc of snap.docs) {
+    try {
+      await revokePaidFeaturesForVault(db, doc.id, { actorUid, reason });
+    } catch (err) {
+      console.warn('[subscription] downgrade cleanup failed', { vaultId: doc.id, message: err?.message || String(err) });
+    }
+  }
+};
+
+const upsertUserSubscriptionFromStripe = async ({ eventType, stripeSubscription }) => {
   const db = getFirestoreDb();
   if (!db) {
-    const msg = 'Firebase is not configured; cannot sync vaultSubscriptions from Stripe webhooks.';
+    const msg = 'Firebase is not configured; cannot sync userSubscriptions from Stripe webhooks.';
     if (isProd) throw new Error(msg);
     console.warn(`[stripe webhook] ${msg}`);
     return;
   }
 
   const customerId = typeof stripeSubscription?.customer === 'string' ? stripeSubscription.customer : stripeSubscription?.customer?.id;
-  const metaVaultId = typeof stripeSubscription?.metadata?.vaultId === 'string' ? stripeSubscription.metadata.vaultId : '';
-  const vaultId = metaVaultId || (await inferVaultIdForStripeCustomer(db, customerId));
 
-  if (!vaultId) {
-    console.warn('[stripe webhook] Unable to determine vaultId for subscription', {
+  const metaUid = typeof stripeSubscription?.metadata?.firebaseUid === 'string' ? stripeSubscription.metadata.firebaseUid.trim() : '';
+  const firebaseUid = metaUid || (await inferFirebaseUidForStripeCustomer(customerId));
+
+  if (!firebaseUid) {
+    console.warn('[stripe webhook] Unable to determine firebaseUid for subscription', {
       eventType,
       subscriptionId: stripeSubscription?.id,
       customerId,
@@ -285,7 +306,7 @@ const upsertVaultSubscriptionFromStripe = async ({ eventType, stripeSubscription
   const status = normalizeVaultSubStatus(stripeSubscription);
 
   const payload = {
-    vault_id: vaultId,
+    user_id: firebaseUid,
     tier,
     status,
     stripeSubscriptionId: stripeSubscription?.id || null,
@@ -302,21 +323,24 @@ const upsertVaultSubscriptionFromStripe = async ({ eventType, stripeSubscription
   // Detect paid->unpaid transitions for cleanup.
   let prevStatus = null;
   try {
-    const prevSnap = await db.collection('vaultSubscriptions').doc(String(vaultId)).get();
+    const prevSnap = await db.collection('userSubscriptions').doc(String(firebaseUid)).get();
     prevStatus = prevSnap.exists ? (prevSnap.data() || {}).status : null;
   } catch {
     prevStatus = null;
   }
 
-  await db.collection('vaultSubscriptions').doc(vaultId).set(payload, { merge: true });
+  await db.collection('userSubscriptions').doc(String(firebaseUid)).set(payload, { merge: true });
 
   const wasPaid = isPaidStatus(prevStatus);
   const nowPaid = isPaidStatus(status);
   if (wasPaid && !nowPaid) {
     try {
-      await revokePaidFeaturesForVault(db, vaultId, { actorUid: 'system', reason: `SUBSCRIPTION_${String(status || 'NONE').toUpperCase()}` });
+      await revokePaidFeaturesForOwner(db, firebaseUid, {
+        actorUid: 'system',
+        reason: `SUBSCRIPTION_${String(status || 'NONE').toUpperCase()}`,
+      });
     } catch (err) {
-      console.warn('[subscription] downgrade cleanup failed', { vaultId, status, message: err?.message || String(err) });
+      console.warn('[subscription] downgrade cleanup failed', { userId: firebaseUid, status, message: err?.message || String(err) });
     }
   }
 };
@@ -586,15 +610,52 @@ const getTierLimits = (tier) => {
   return TIER_LIMITS[t] || TIER_LIMITS.BASIC;
 };
 
-const getVaultTier = async (db, vaultId) => {
-  if (!db || !vaultId) return 'BASIC';
+const getUserSubscriptionOrNull = async (db, userId) => {
+  if (!db || !userId) return null;
+  try {
+    const snap = await db.collection('userSubscriptions').doc(String(userId)).get();
+    return snap.exists ? (snap.data() || {}) : null;
+  } catch {
+    return null;
+  }
+};
+
+const getVaultOwnerIdOrNull = async (db, vaultId) => {
+  if (!db || !vaultId) return null;
+  try {
+    const snap = await db.collection('vaults').doc(String(vaultId)).get();
+    if (!snap.exists) return null;
+    const data = snap.data() || {};
+    const ownerId = typeof data.activeOwnerId === 'string' ? data.activeOwnerId : null;
+    return ownerId ? String(ownerId) : null;
+  } catch {
+    return null;
+  }
+};
+
+const getLegacyVaultSubscriptionOrNull = async (db, vaultId) => {
+  if (!db || !vaultId) return null;
   try {
     const snap = await db.collection('vaultSubscriptions').doc(String(vaultId)).get();
-    const data = snap.exists ? (snap.data() || {}) : {};
-    return normalizeTier(data.tier);
+    return snap.exists ? (snap.data() || {}) : null;
   } catch {
-    return 'BASIC';
+    return null;
   }
+};
+
+const getVaultTier = async (db, vaultId) => {
+  if (!db || !vaultId) return 'BASIC';
+  const ownerId = await getVaultOwnerIdOrNull(db, vaultId);
+  if (ownerId) {
+    const userSub = await getUserSubscriptionOrNull(db, ownerId);
+    if (userSub) return normalizeTier(userSub.tier);
+  }
+
+  // Back-compat fallback: legacy per-vault subscription doc.
+  const legacy = await getLegacyVaultSubscriptionOrNull(db, vaultId);
+  if (legacy) return normalizeTier(legacy.tier);
+
+  return 'BASIC';
 };
 
 const assertUnderDelegateLimit = async (db, vaultId) => {
@@ -909,13 +970,15 @@ const assertOwnerForVault = async (db, vaultId, firebaseUser) => {
 };
 
 const assertVaultPaid = async (db, vaultId) => {
-  const snap = await db.collection('vaultSubscriptions').doc(String(vaultId)).get();
-  const data = snap.exists ? (snap.data() || {}) : {};
+  const ownerId = await getVaultOwnerIdOrNull(db, vaultId);
+  const userSub = ownerId ? await getUserSubscriptionOrNull(db, ownerId) : null;
+  const legacySub = userSub ? null : await getLegacyVaultSubscriptionOrNull(db, vaultId);
+  const data = userSub || legacySub || {};
   const status = data.status;
   if (!isPaidStatus(status)) {
     return { ok: false, status: 402, error: 'Vault is not on a paid plan' };
   }
-  return { ok: true, subscription: data };
+  return { ok: true, subscription: data, ownerId: ownerId || null };
 };
 
 const writeAuditEventIfPaid = async (db, vaultId, { type, actorUid, payload }) => {
@@ -1101,9 +1164,8 @@ const deleteVaultRecursive = async (db, vaultId) => {
     await deleteCollectionInPages(vaultRef.collection(name));
   }
 
-  // Delete the vault doc and subscription doc.
+  // Delete the vault doc.
   await vaultRef.delete();
-  await db.collection('vaultSubscriptions').doc(String(vaultId)).delete().catch(() => {});
 };
 
 const deleteGrantsByPrefix = async (db, vaultId, prefix) => {
@@ -1347,15 +1409,16 @@ app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), as
           current_period_end: sub?.current_period_end,
         });
 
-        await upsertVaultSubscriptionFromStripe({ eventType: event.type, stripeSubscription: sub });
+        await upsertUserSubscriptionFromStripe({ eventType: event.type, stripeSubscription: sub });
 
         // Best-effort billing notifications (mandatory; owners only).
         try {
           const db = getFirestoreDb();
           if (db) {
             const customerId = typeof sub?.customer === 'string' ? sub.customer : sub?.customer?.id;
-            const metaVaultId = typeof sub?.metadata?.vaultId === 'string' ? sub.metadata.vaultId : '';
-            const vaultId = metaVaultId || (await inferVaultIdForStripeCustomer(db, customerId));
+            const metaUid = typeof sub?.metadata?.firebaseUid === 'string' ? sub.metadata.firebaseUid.trim() : '';
+            const firebaseUid = metaUid || (await inferFirebaseUidForStripeCustomer(customerId));
+            const vaultId = firebaseUid ? await inferPrimaryVaultIdForFirebaseUid(db, firebaseUid) : null;
             if (vaultId) {
               if (event.type === 'customer.subscription.created') {
                 await sendBillingEmailToVaultOwner({ db, vaultId, type: 'SUBSCRIPTION_STARTED', stripeEventId: event.id });
@@ -1416,15 +1479,16 @@ app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), as
         if (subId) {
           try {
             const sub = await stripe.subscriptions.retrieve(subId);
-            await upsertVaultSubscriptionFromStripe({ eventType: event.type, stripeSubscription: sub });
+            await upsertUserSubscriptionFromStripe({ eventType: event.type, stripeSubscription: sub });
 
             if (event.type === 'invoice.payment_failed') {
               try {
                 const db = getFirestoreDb();
                 if (db) {
                   const customerId = typeof sub?.customer === 'string' ? sub.customer : sub?.customer?.id;
-                  const metaVaultId = typeof sub?.metadata?.vaultId === 'string' ? sub.metadata.vaultId : '';
-                  const vaultId = metaVaultId || (await inferVaultIdForStripeCustomer(db, customerId));
+                  const metaUid = typeof sub?.metadata?.firebaseUid === 'string' ? sub.metadata.firebaseUid.trim() : '';
+                  const firebaseUid = metaUid || (await inferFirebaseUidForStripeCustomer(customerId));
+                  const vaultId = firebaseUid ? await inferPrimaryVaultIdForFirebaseUid(db, firebaseUid) : null;
                   if (vaultId) {
                     await sendBillingEmailToVaultOwner({ db, vaultId, type: 'PAYMENT_FAILED', stripeEventId: event.id });
                   }
@@ -1595,9 +1659,9 @@ app.post('/email-available', emailAvailabilityRateLimiter, async (req, res) => {
 
 // Price amounts in cents
 const PRICE_MAP = {
-  BASIC: 249,
-  PREMIUM: 499,
-  PRO: 999
+  BASIC: 499,
+  PREMIUM: 999,
+  PRO: 1999
 };
 
 // Cache for Stripe Price IDs
@@ -1642,7 +1706,7 @@ async function initializeStripePrices() {
         price = await stripe.prices.create({
           product: product.id,
           unit_amount: amount,
-          currency: 'usd',
+          currency: 'aud',
           recurring: { interval: 'month' },
         });
       }
@@ -1695,7 +1759,7 @@ app.post('/create-subscription', maybeRequireFirebaseAuth, authRateLimiter, asyn
     const tokenEmail = normalizeEmail(req.firebaseUser?.email);
     const email = tokenEmail || normalizeEmail(req.body?.email);
     const name = typeof req.body?.name === 'string' && req.body.name.trim() ? req.body.name.trim() : 'LAMB User';
-    const { subscriptionTier, vaultId } = req.body;
+    const { subscriptionTier } = req.body;
 
     if (!email) {
       return res.status(400).json({ error: 'Missing email' });
@@ -1718,7 +1782,6 @@ app.post('/create-subscription', maybeRequireFirebaseAuth, authRateLimiter, asyn
       usage: 'off_session',
       metadata: toStripeMetadata({
         tier: subscriptionTier,
-        vaultId,
         firebaseUid: req.firebaseUser?.uid,
       }),
     });
@@ -1742,7 +1805,7 @@ app.post('/create-subscription', maybeRequireFirebaseAuth, authRateLimiter, asyn
 // Signup flow: runs before the user has an ID token, so this endpoint must not require Firebase auth.
 app.post('/start-trial-subscription', maybeRequireFirebaseAuth, authRateLimiter, async (req, res) => {
   try {
-    const { customerId, subscriptionTier, setupIntentId, vaultId } = req.body;
+    const { customerId, subscriptionTier, setupIntentId } = req.body;
     if (!customerId || !subscriptionTier || !setupIntentId) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -1776,7 +1839,6 @@ app.post('/start-trial-subscription', maybeRequireFirebaseAuth, authRateLimiter,
       },
       metadata: toStripeMetadata({
         tier: subscriptionTier,
-        vaultId,
         firebaseUid: req.firebaseUser?.uid,
       }),
     });

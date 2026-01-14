@@ -52,9 +52,21 @@ const getRetentionDaysForVault = async (db, vaultId, overrideDays) => {
   if (overrideDays != null) return overrideDays;
 
   try {
-    const snap = await db.collection('vaultSubscriptions').doc(String(vaultId)).get();
-    const data = snap.exists ? (snap.data() || {}) : {};
-    const tier = normalizeTier(data.tier);
+    const vaultSnap = await db.collection('vaults').doc(String(vaultId)).get();
+    const vault = vaultSnap.exists ? (vaultSnap.data() || {}) : {};
+    const ownerId = typeof vault.activeOwnerId === 'string' ? vault.activeOwnerId : null;
+
+    if (ownerId) {
+      const userSnap = await db.collection('userSubscriptions').doc(String(ownerId)).get();
+      const userSub = userSnap.exists ? (userSnap.data() || {}) : {};
+      const tier = normalizeTier(userSub.tier);
+      return TIER_AUDIT_RETENTION_DAYS[tier] || TIER_AUDIT_RETENTION_DAYS.BASIC;
+    }
+
+    // Back-compat fallback.
+    const legacySnap = await db.collection('vaultSubscriptions').doc(String(vaultId)).get();
+    const legacy = legacySnap.exists ? (legacySnap.data() || {}) : {};
+    const tier = normalizeTier(legacy.tier);
     return TIER_AUDIT_RETENTION_DAYS[tier] || TIER_AUDIT_RETENTION_DAYS.BASIC;
   } catch {
     return TIER_AUDIT_RETENTION_DAYS.BASIC;

@@ -36,8 +36,18 @@ service cloud.firestore {
     }
 
     function vaultPaid(vaultId) {
-      return exists(/databases/$(database)/documents/vaultSubscriptions/$(vaultId))
-        && get(/databases/$(database)/documents/vaultSubscriptions/$(vaultId)).data.status in ['active', 'trialing', 'past_due'];
+      let ownerId = vaultDoc(vaultId).activeOwnerId;
+      return (
+        (ownerId is string
+          && exists(/databases/$(database)/documents/userSubscriptions/$(ownerId))
+          && get(/databases/$(database)/documents/userSubscriptions/$(ownerId)).data.status in ['active', 'trialing', 'past_due']
+        )
+        || (
+          // Back-compat fallback.
+          exists(/databases/$(database)/documents/vaultSubscriptions/$(vaultId))
+          && get(/databases/$(database)/documents/vaultSubscriptions/$(vaultId)).data.status in ['active', 'trialing', 'past_due']
+        )
+      );
     }
 
     function hasVaultPerm(vaultId, permKey) {
@@ -103,8 +113,15 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Vault subscriptions (one doc per vaultId).
-    // Owners can read. Writes should be server-only (Stripe webhook / admin).
+    // Per-user subscriptions (one doc per uid).
+    // Users can read their own subscription. Writes should be server-only.
+    match /userSubscriptions/{userId} {
+      allow read: if isSignedIn() && uid() == userId;
+      allow create, update, delete: if false;
+    }
+
+    // Legacy vault subscriptions (one doc per vaultId).
+    // Read is allowed for backwards compatibility; new code should use /userSubscriptions.
     match /vaultSubscriptions/{vaultId} {
       allow read: if isOwner(vaultId) || isDelegate(vaultId);
       allow create, update, delete: if false;

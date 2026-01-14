@@ -231,8 +231,10 @@ const SUBSCRIPTION_TIERS = {
   BASIC: { 
     id: 'BASIC', 
     name: 'Basic', 
-    price: 2.49, 
+    price: 4.99, 
     period: 'month', 
+    annualPrice: 49.99,
+    annualPeriod: 'year',
     description: 'Get started with LAMB',
     features: [
       'Up to 5 vaults',
@@ -244,8 +246,10 @@ const SUBSCRIPTION_TIERS = {
   PREMIUM: { 
     id: 'PREMIUM', 
     name: 'Premium', 
-    price: 4.99, 
+    price: 9.99, 
     period: 'month', 
+    annualPrice: 99.99,
+    annualPeriod: 'year',
     description: 'Advanced features',
     features: [
       'Unlimited vaults',
@@ -258,8 +262,10 @@ const SUBSCRIPTION_TIERS = {
   PRO: { 
     id: 'PRO', 
     name: 'Pro', 
-    price: 9.99, 
+    price: 19.99, 
     period: 'month', 
+    annualPrice: 199.99,
+    annualPeriod: 'year',
     description: 'Full access',
     features: [
       'Unlimited everything',
@@ -2416,37 +2422,14 @@ export function DataProvider({ children }) {
     return { featuresLost, featuresGained };
   };
 
-  // Get currency and exchange rate based on locale
-  const getCurrencyInfo = () => {
-    const locale = Intl.DateTimeFormat().resolvedOptions().locale;
-    const currencyMap = {
-      'en-AU': { code: 'AUD', rate: 1.50 },
-      'en-GB': { code: 'GBP', rate: 0.79 },
-      'en-NZ': { code: 'NZD', rate: 1.65 },
-      'en-CA': { code: 'CAD', rate: 1.35 },
-      'en-US': { code: 'USD', rate: 1.00 },
-    };
-    
-    // Check for exact match first
-    if (currencyMap[locale]) {
-      return currencyMap[locale];
-    }
-    
-    // Check for country match (e.g., 'en-AU' or 'en_AU')
-    const country = locale.split(/[-_]/)[1]?.toUpperCase();
-    const match = Object.keys(currencyMap).find(key => key.includes(country));
-    
-    return match ? currencyMap[match] : { code: 'USD', rate: 1.00 };
-  };
+  // LAMB pricing is defined in AUD. (If/when we add localization, App Store / Stripe price objects
+  // should be used instead of hard-coded FX rates.)
+  const getCurrencyInfo = () => ({ code: 'AUD', rate: 1.0 });
 
-  // Convert price to local currency
-  const convertPrice = (usdPrice) => {
-    const { code, rate } = getCurrencyInfo();
-    return {
-      amount: (usdPrice * rate).toFixed(2),
-      currency: code,
-      symbol: code === 'USD' ? '$' : code === 'AUD' ? 'A$' : code === 'GBP' ? '£' : code === 'CAD' ? 'C$' : code === 'NZD' ? 'NZ$' : '$'
-    };
+  const convertPrice = (audPrice) => {
+    const amountNum = Number(audPrice);
+    const safe = Number.isFinite(amountNum) ? amountNum : 0;
+    return { amount: safe.toFixed(2), currency: 'AUD', symbol: 'A$' };
   };
 
   const retainVaultAssets = useCallback((vaultId) => {

@@ -56,7 +56,7 @@ export default function SubscriptionManager() {
         },
         body: JSON.stringify({
           amount: Math.round(subscriptionTiers[tier].price * 100),
-          currency: 'usd',
+          currency: 'aud',
           email: currentUser.email,
           subscriptionTier: tier,
         }),

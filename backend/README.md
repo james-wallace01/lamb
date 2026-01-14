@@ -417,7 +417,7 @@ After creating the endpoint, copy its **Signing secret** (`whsec_...`) into Rend
 Creates a payment intent for subscription purchase
 ```json
 {
-  "amount": 249,
+  "amount": 499,
   "currency": "usd",
   "email": "user@example.com",
   "subscriptionTier": "basic"
