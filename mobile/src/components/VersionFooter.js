@@ -95,6 +95,7 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
     if (r === 'Profile' || r === 'EmailNotifications') return 'Profile';
     if (r === 'PrivateVaults') return 'PrivateVaults';
     if (r === 'SharedVaults') return 'SharedVaults';
+    if (r === 'Tracking') return 'Tracking';
     if (r === 'Vault' || r === 'Collection' || r === 'Asset') {
       try {
         const route = navigationRef?.getCurrentRoute?.();
@@ -181,6 +182,19 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
               name={activeTab === 'SharedVaults' ? 'share-social' : 'share-social-outline'}
               size={22}
               color={activeTab === 'SharedVaults' ? activeColor : inactiveColor}
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.navButton}
+            onPress={() => safePush('Tracking')}
+            accessibilityRole="button"
+            accessibilityLabel="Go to Tracking"
+          >
+            <Ionicons
+              name={activeTab === 'Tracking' ? 'time' : 'time-outline'}
+              size={22}
+              color={activeTab === 'Tracking' ? activeColor : inactiveColor}
             />
           </TouchableOpacity>
 

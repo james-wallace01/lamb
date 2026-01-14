@@ -14,6 +14,7 @@ import CollectionScreen from './src/screens/Collection';
 import AssetScreen from './src/screens/Asset';
 import PrivateVaultsScreen from './src/screens/PrivateVaults';
 import SharedVaultsScreen from './src/screens/SharedVaults';
+import TrackingScreen from './src/screens/Tracking';
 import MembershipScreen from './src/screens/Settings';
 import ProfileScreen from './src/screens/Profile';
 import EmailNotificationsScreen from './src/screens/EmailNotifications';
@@ -60,6 +61,7 @@ const MainStack = () => {
     <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
     <Stack.Screen name="PrivateVaults" component={PrivateVaultsScreen} options={{ headerShown: false }} />
     <Stack.Screen name="SharedVaults" component={SharedVaultsScreen} options={{ headerShown: false }} />
+    <Stack.Screen name="Tracking" component={TrackingScreen} options={{ headerShown: false }} />
     <Stack.Screen name="Vault" component={VaultScreen} options={{ headerShown: false }} />
     <Stack.Screen name="Collection" component={CollectionScreen} options={{ headerShown: false }} />
     <Stack.Screen name="Asset" component={AssetScreen} options={{ headerShown: false }} />
@@ -88,6 +90,7 @@ const LimitedStack = () => {
       <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
       <Stack.Screen name="PrivateVaults" component={PrivateVaultsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="SharedVaults" component={SharedVaultsScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Tracking" component={TrackingScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Membership" component={MembershipScreen} options={{ headerShown: false }} />
       <Stack.Screen name="ChooseSubscription" component={ChooseSubscriptionScreen} options={{ headerShown: false }} />
