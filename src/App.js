@@ -9,6 +9,7 @@ import {
   EmailAuthProvider,
   reauthenticateWithCredential,
   deleteUser,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import {
   addDoc,
@@ -1888,6 +1889,8 @@ export default function App() {
     e.preventDefault();
     if (!currentUser) return;
 
+    const prevUsername = String(currentUser.username || '').trim();
+
     const firstName = profileForm.firstName.trim();
     const lastName = profileForm.lastName.trim();
     const email = profileForm.email.trim();
@@ -1947,6 +1950,31 @@ export default function App() {
           email: normalizeEmail(email),
           username,
         });
+
+        // Best-effort email notifications via backend.
+        if (API_URL) {
+          const nextUsername = String(username || '').trim();
+          const usernameChanged = normalizeUsername(prevUsername) !== normalizeUsername(nextUsername);
+          if (usernameChanged) {
+            apiFetch(`${API_URL}/notifications/username-changed`, {
+              method: 'POST',
+              body: JSON.stringify({
+                eventId: globalThis?.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+                oldUsername: prevUsername,
+                newUsername: nextUsername,
+              }),
+            }).catch(() => {});
+          }
+
+          if (isChangingPassword && profileForm.newPassword) {
+            apiFetch(`${API_URL}/notifications/password-changed`, {
+              method: 'POST',
+              body: JSON.stringify({
+                eventId: globalThis?.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+              }),
+            }).catch(() => {});
+          }
+        }
 
         setProfileErrors({});
         setIsEditingProfile(false);
@@ -2514,6 +2542,24 @@ export default function App() {
                   </div>
                   <div className="space-y-3">
                     <button className="w-full py-2 rounded bg-blue-600 hover:bg-blue-700" type="submit">Login</button>
+                    <button
+                      className="w-full py-2 rounded border border-neutral-700 hover:bg-neutral-800 text-sm"
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const prefill = (loginForm.username || '').trim();
+                          const input = window.prompt('Enter your email to reset your password:', prefill.includes('@') ? prefill : '');
+                          const em = normalizeEmail(input || '');
+                          if (!em) return;
+                          await sendPasswordResetEmail(firebaseAuth, em);
+                          showAlert('If an account exists for that email, you will receive a reset link shortly.');
+                        } catch {
+                          showAlert('If an account exists for that email, you will receive a reset link shortly.');
+                        }
+                      }}
+                    >
+                      Forgot password?
+                    </button>
                     <p className="text-sm text-neutral-400 text-center">No account? <button className="text-blue-400 hover:text-blue-300" type="button" onClick={() => navigateTo("register")}>Sign up</button></p>
                   </div>
                 </form>

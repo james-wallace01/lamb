@@ -1672,6 +1672,8 @@ export function DataProvider({ children }) {
     const updateCurrentUser = (patch) => {
       if (!currentUser) return { ok: false, message: 'Not signed in' };
 
+      const prevUsername = currentUser?.username ? String(currentUser.username) : '';
+
       const nextPatch = { ...patch };
 
       if (Object.prototype.hasOwnProperty.call(nextPatch, 'firstName')) {
@@ -1698,10 +1700,10 @@ export function DataProvider({ children }) {
         nextPatch.username = un.value;
       }
 
-      const nextUsername = Object.prototype.hasOwnProperty.call(nextPatch, 'username') ? nextPatch.username : null;
+      const requestedUsername = Object.prototype.hasOwnProperty.call(nextPatch, 'username') ? nextPatch.username : null;
       const nextEmail = Object.prototype.hasOwnProperty.call(nextPatch, 'email') ? nextPatch.email : null;
 
-      if (nextUsername && users.some(u => u.id !== currentUser.id && u?.username && normalizeUsername(u.username) === normalizeUsername(nextUsername))) {
+      if (requestedUsername && users.some(u => u.id !== currentUser.id && u?.username && normalizeUsername(u.username) === normalizeUsername(requestedUsername))) {
         return { ok: false, message: 'Username already taken' };
       }
       if (nextEmail && users.some(u => u.id !== currentUser.id && u?.email && normalizeEmail(u.email) === normalizeEmail(nextEmail))) {
@@ -1711,6 +1713,19 @@ export function DataProvider({ children }) {
       const merged = withProfileImage({ ...currentUser, ...nextPatch });
       setCurrentUser(merged);
       setUsers(prev => prev.map(u => u.id === currentUser.id ? merged : u));
+
+      // Best-effort notification email.
+      const mergedUsername = merged?.username ? String(merged.username) : '';
+      if (API_URL && mergedUsername && normalizeUsername(prevUsername) !== normalizeUsername(mergedUsername)) {
+        apiFetch(`${API_URL}/notifications/username-changed`, {
+          method: 'POST',
+          body: JSON.stringify({
+            eventId: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+            oldUsername: prevUsername,
+            newUsername: mergedUsername,
+          }),
+        }).catch(() => {});
+      }
       return { ok: true };
     };
 
@@ -1736,6 +1751,14 @@ export function DataProvider({ children }) {
           const credential = EmailAuthProvider.credential(String(firebaseAuth.currentUser.email), String(currentPassword));
           await reauthenticateWithCredential(firebaseAuth.currentUser, credential);
           await firebaseUpdatePassword(firebaseAuth.currentUser, String(newPassword));
+
+          // Best-effort notification email.
+          if (API_URL) {
+            apiFetch(`${API_URL}/notifications/password-changed`, {
+              method: 'POST',
+              body: JSON.stringify({ eventId: `${Date.now()}_${Math.random().toString(36).slice(2)}` }),
+            }).catch(() => {});
+          }
           return { ok: true };
         } catch (error) {
           return { ok: false, message: mapFirebaseAuthError(error) };

@@ -24,6 +24,8 @@ export default function Profile() {
     vaults,
     collections,
     assets,
+    vaultMemberships,
+    permissionGrants,
     validatePassword,
     resetPassword,
     deleteAccount,

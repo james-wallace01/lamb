@@ -197,6 +197,7 @@ The backend exposes a minimal invitation flow that writes canonical Firestore do
   - Owner-only, paid-vault only
   - Body: `{ "email": "invitee@example.com" }`
   - Returns an invite `code`
+  - If email is configured on the backend, also sends an email to the invitee with the invite code.
 
 - `GET /vaults/:vaultId/invitations` (Firebase auth required)
   - Owner-only, paid-vault only
@@ -205,6 +206,62 @@ The backend exposes a minimal invitation flow that writes canonical Firestore do
 - `POST /invitations/accept` (Firebase auth required)
   - Body: `{ "code": "<invite code>" }`
   - Creates `/vaults/{vaultId}/memberships/{uid}` as `DELEGATE` and marks the invitation accepted
+
+## Email notifications (optional)
+
+Some notifications are intentionally sent from the backend (instead of clients) so we don't expose a global user directory and so delivery is reliable.
+
+Supported providers:
+- SendGrid (recommended on Render)
+- SMTP
+
+Configure via environment variables in [backend/.env.example](backend/.env.example):
+- `EMAIL_PROVIDER=sendgrid|smtp|none`
+- `EMAIL_FROM="LAMB <no-reply@yourdomain.com>"`
+
+### Notification categories + preferences
+
+Users opt in/out by **category** (not individual events). The backend enforces mandatory categories.
+
+Categories:
+- `billing` (mandatory; owners only)
+- `security` (mandatory)
+- `accessChanges`
+- `destructiveActions`
+- `structuralChanges`
+- `activityDigest`
+
+Firestore storage:
+- `notificationSettings/{uid}`
+  - `emailEnabled: boolean` (disables optional categories only)
+  - `categories: { [category]: boolean }` (optional overrides)
+  - `digestFrequency: "daily" | "weekly"`
+
+API endpoints (Firebase auth required):
+- `GET /notification-settings`
+- `PUT /notification-settings`
+  - Body: `{ "emailEnabled": true|false, "digestFrequency": "daily"|"weekly", "categories": { "accessChanges": true|false, ... } }`
+  - `billing` and `security` cannot be disabled by clients.
+
+### Idempotency + audit linkage
+
+Email delivery is designed to be idempotent:
+- Security notification endpoints require a client-provided `eventId` so retries do not re-send:
+  - `POST /notifications/username-changed` body: `{ "eventId": "...", "oldUsername": "...", "newUsername": "..." }`
+  - `POST /notifications/password-changed` body: `{ "eventId": "..." }`
+
+Every attempted email writes an `emailEvents/{id}` document that includes an `audit_event_id` reference.
+
+For SendGrid:
+- `SENDGRID_API_KEY=...`
+
+For SMTP:
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE`
+
+Additional authenticated notification endpoints:
+- `POST /notifications/username-changed` (Firebase auth required)
+  - Body: `{ "oldUsername": "old", "newUsername": "new" }`
+- `POST /notifications/password-changed` (Firebase auth required)
 
 ## Hard Ops (Owner-only)
 

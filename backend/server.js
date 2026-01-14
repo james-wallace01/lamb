@@ -13,6 +13,17 @@ const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const stripe = typeof stripeSecretKey === 'string' && stripeSecretKey.trim() ? require('stripe')(stripeSecretKey.trim()) : null;
 const { initFirebaseAdmin, firebaseEnabled, requireFirebaseAuth } = require('./firebaseAdmin');
 const firebaseAdmin = require('firebase-admin');
+const { sendEmail, isEmailEnabled } = require('./email');
+const {
+  NOTIFICATION_CATEGORIES,
+  ROLE_OWNER,
+  ROLE_DELEGATE,
+  getRoleDefaults,
+  ensureNotificationSettings,
+  getNotificationSettings,
+  updateNotificationSettings,
+  sendNotificationEmailIdempotent,
+} = require('./notifications');
 
 const app = express();
 
@@ -249,6 +260,69 @@ const maybeRequireFirebaseAuth = (req, res, next) => {
 };
 
 const normalizeEmail = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+const normalizeUsername = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+
+const getPublicAppName = () => String(process.env.PUBLIC_APP_NAME || 'LAMB').trim() || 'LAMB';
+
+const buildInviteEmail = ({ code } = {}) => {
+  const appName = getPublicAppName();
+  const safeCode = String(code || '').trim();
+  const lines = [
+    `You've been invited to join a shared vault in ${appName}.`,
+    '',
+    'To accept:',
+    '1) Open the app',
+    '2) Go to Home',
+    '3) Paste this invite code:',
+    '',
+    safeCode,
+    '',
+    "If you weren't expecting this invite, you can ignore this email.",
+  ];
+  return {
+    subject: `${appName} vault invitation`,
+    text: lines.join('\n'),
+    html: `<p>You've been invited to join a shared vault in <b>${appName}</b>.</p>
+<p><b>Invite code:</b> <code>${safeCode}</code></p>
+<p>Open the app → Home → paste the invite code to accept.</p>
+<p style="color:#666">If you weren't expecting this invite, you can ignore this email.</p>`,
+  };
+};
+
+const buildUsernameChangedEmail = ({ oldUsername, newUsername } = {}) => {
+  const appName = getPublicAppName();
+  const now = new Date();
+  const lines = [
+    `Your ${appName} username was changed.`,
+    '',
+    `Old: ${oldUsername || '(unknown)'}`,
+    `New: ${newUsername || '(unknown)'}`,
+    '',
+    `Time: ${now.toISOString()}`,
+    '',
+    'If you did not make this change, please secure your account immediately.',
+  ];
+  return {
+    subject: `${appName} username changed`,
+    text: lines.join('\n'),
+  };
+};
+
+const buildPasswordChangedEmail = () => {
+  const appName = getPublicAppName();
+  const now = new Date();
+  const lines = [
+    `Your ${appName} password was changed.`,
+    '',
+    `Time: ${now.toISOString()}`,
+    '',
+    'If you did not make this change, please secure your account immediately.',
+  ];
+  return {
+    subject: `${appName} password changed`,
+    text: lines.join('\n'),
+  };
+};
 
 const isPaidStatus = (status) => {
   const s = typeof status === 'string' ? status : '';
@@ -316,6 +390,36 @@ const writeAuditEventIfPaid = async (db, vaultId, { type, actorUid, payload }) =
     },
     { merge: false }
   );
+
+  return id;
+};
+
+const writeUserAuditEvent = async (db, userId, { type, actorUid, payload } = {}) => {
+  if (!db || !userId) return null;
+  const uid = String(userId);
+  const id = `uae_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
+  await db
+    .collection('userAuditEvents')
+    .doc(uid)
+    .collection('events')
+    .doc(id)
+    .set(
+      {
+        id,
+        user_id: uid,
+        type: String(type || 'UNKNOWN'),
+        actor_uid: actorUid ? String(actorUid) : null,
+        createdAt: Date.now(),
+        payload: payload || null,
+      },
+      { merge: false }
+    );
+  return id;
+};
+
+const roleForMembership = (m) => {
+  const role = m?.data?.role;
+  return role === 'OWNER' ? ROLE_OWNER : ROLE_DELEGATE;
 };
 
 const chunkArray = (arr, size) => {
@@ -687,6 +791,59 @@ app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), as
 
 // JSON parser for all non-webhook routes.
 app.use(express.json({ limit: '200kb' }));
+
+// Notification settings (per-user).
+// NOTE: UI preferences are advisory; the backend enforces mandatory categories.
+app.get('/notification-settings', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const uid = String(req.firebaseUser?.uid || '');
+    if (!uid) return res.status(401).json({ error: 'Missing authenticated user' });
+
+    const stored = await ensureNotificationSettings(db, uid);
+    const normalized = stored ? { ...stored } : null;
+
+    return res.json({
+      ok: true,
+      settings: normalized,
+      roleDefaults: {
+        OWNER: getRoleDefaults(ROLE_OWNER),
+        DELEGATE: getRoleDefaults(ROLE_DELEGATE),
+      },
+      enforced: {
+        billing: true,
+        security: true,
+      },
+    });
+  } catch (err) {
+    console.error('Error getting notification settings:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to get notification settings' });
+  }
+});
+
+app.put('/notification-settings', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const uid = String(req.firebaseUser?.uid || '');
+    if (!uid) return res.status(401).json({ error: 'Missing authenticated user' });
+
+    await ensureNotificationSettings(db, uid);
+    const next = await updateNotificationSettings(db, uid, {
+      emailEnabled: req.body?.emailEnabled,
+      categories: req.body?.categories,
+      digestFrequency: req.body?.digestFrequency,
+    });
+
+    return res.json({ ok: true, settings: next });
+  } catch (err) {
+    console.error('Error updating notification settings:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to update notification settings' });
+  }
+});
 
 // Email availability check used by the signup UI (runs before the user is authenticated).
 // Note: This endpoint intentionally reveals whether an email exists. Keep the rate limit tight.
@@ -1372,13 +1529,38 @@ app.post('/vaults/:vaultId/invitations', requireFirebaseAuth, sensitiveRateLimit
     };
 
     await db.collection('vaults').doc(vaultId).collection('invitations').doc(code).set(doc, { merge: false });
-    await writeAuditEventIfPaid(db, vaultId, {
+    const auditEventId = await writeAuditEventIfPaid(db, vaultId, {
       type: 'INVITE_CREATED',
       actorUid: req.firebaseUser.uid,
       payload: { invitee_email: inviteeEmail, invitation_id: code },
     });
 
-    return res.json({ ok: true, code, invitation: doc });
+    let emailSent = false;
+    try {
+      const msg = buildInviteEmail({ code });
+      const resp = await sendNotificationEmailIdempotent({
+        db,
+        dedupeKey: `vault:${vaultId}:invite:${code}:to:${inviteeEmail}`,
+        category: NOTIFICATION_CATEGORIES.accessChanges,
+        to: inviteeEmail,
+        recipientUid: null,
+        recipientRole: ROLE_DELEGATE,
+        vaultId,
+        auditEventId,
+        subject: msg.subject,
+        text: msg.text,
+        html: msg.html,
+        // Invites are a special case: if the invitee has never set preferences,
+        // default to sending this message (they can opt out explicitly later).
+        defaultOptInIfNoSettings: true,
+      });
+      emailSent = !!resp?.sent;
+    } catch (emailErr) {
+      console.error('Failed to send invitation email:', emailErr?.message || emailErr);
+      emailSent = false;
+    }
+
+    return res.json({ ok: true, code, invitation: doc, emailSent });
   } catch (err) {
     console.error('Error creating invitation:', err);
     return res.status(500).json({ error: err?.message || 'Failed to create invitation' });
@@ -1440,6 +1622,90 @@ app.post('/vaults/:vaultId/users/resolve', requireFirebaseAuth, sensitiveRateLim
   } catch (err) {
     console.error('Error resolving user:', err);
     return res.status(500).json({ error: err?.message || 'Failed to resolve user' });
+  }
+});
+
+// Account change notifications.
+// These send an informational email to the signed-in user's email address.
+app.post('/notifications/username-changed', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const email = normalizeEmail(req.firebaseUser?.email);
+    if (!email) return res.status(400).json({ error: 'Missing email on authenticated user' });
+
+    const oldUsername = normalizeUsername(req.body?.oldUsername);
+    const newUsername = normalizeUsername(req.body?.newUsername);
+    if (!newUsername) return res.status(400).json({ error: 'Missing newUsername' });
+
+    const eventId = typeof req.body?.eventId === 'string' ? req.body.eventId.trim() : '';
+    if (!eventId) return res.status(400).json({ error: 'Missing eventId' });
+
+    const auditEventId = await writeUserAuditEvent(db, String(req.firebaseUser.uid), {
+      type: 'USERNAME_CHANGED',
+      actorUid: String(req.firebaseUser.uid),
+      payload: { oldUsername: oldUsername || null, newUsername: newUsername || null },
+    });
+
+    const msg = buildUsernameChangedEmail({ oldUsername, newUsername });
+    const resp = await sendNotificationEmailIdempotent({
+      db,
+      dedupeKey: `user:${String(req.firebaseUser.uid)}:username-changed:${eventId}`,
+      category: NOTIFICATION_CATEGORIES.security,
+      to: email,
+      recipientUid: String(req.firebaseUser.uid),
+      recipientRole: null,
+      vaultId: null,
+      auditEventId,
+      subject: msg.subject,
+      text: msg.text,
+      html: msg.html,
+    });
+
+    return res.json({ ok: true, email: { sent: !!resp?.sent, skipped: !!resp?.skipped, deduped: !!resp?.deduped } });
+  } catch (err) {
+    console.error('Error sending username-changed email:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to send email' });
+  }
+});
+
+app.post('/notifications/password-changed', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const email = normalizeEmail(req.firebaseUser?.email);
+    if (!email) return res.status(400).json({ error: 'Missing email on authenticated user' });
+
+    const eventId = typeof req.body?.eventId === 'string' ? req.body.eventId.trim() : '';
+    if (!eventId) return res.status(400).json({ error: 'Missing eventId' });
+
+    const auditEventId = await writeUserAuditEvent(db, String(req.firebaseUser.uid), {
+      type: 'PASSWORD_CHANGED',
+      actorUid: String(req.firebaseUser.uid),
+      payload: {},
+    });
+
+    const msg = buildPasswordChangedEmail();
+    const resp = await sendNotificationEmailIdempotent({
+      db,
+      dedupeKey: `user:${String(req.firebaseUser.uid)}:password-changed:${eventId}`,
+      category: NOTIFICATION_CATEGORIES.security,
+      to: email,
+      recipientUid: String(req.firebaseUser.uid),
+      recipientRole: null,
+      vaultId: null,
+      auditEventId,
+      subject: msg.subject,
+      text: msg.text,
+      html: msg.html,
+    });
+
+    return res.json({ ok: true, email: { sent: !!resp?.sent, skipped: !!resp?.skipped, deduped: !!resp?.deduped } });
+  } catch (err) {
+    console.error('Error sending password-changed email:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to send email' });
   }
 });
 

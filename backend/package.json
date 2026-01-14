@@ -16,7 +16,9 @@
     "dotenv": "^16.3.1",
     "firebase-admin": "^12.6.0",
     "helmet": "^7.2.0",
-    "express-rate-limit": "^7.5.0"
+    "express-rate-limit": "^7.5.0",
+    "@sendgrid/mail": "^8.1.4",
+    "nodemailer": "^6.9.16"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
