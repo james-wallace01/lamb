@@ -81,7 +81,7 @@ export default function Collection({ navigation, route }) {
   };
   const collectionAssets = useMemo(() => assets.filter((a) => a.collectionId === collectionId), [assets, collectionId]);
   const role = getRoleForCollection(collectionId, currentUser?.id);
-  const accessType = collection?.ownerId === currentUser?.id
+  const accessType = collection?.ownerId != null && currentUser?.id != null && String(collection.ownerId) === String(currentUser.id)
     ? 'Owner'
     : role
       ? `${role.charAt(0).toUpperCase()}${role.slice(1)}`

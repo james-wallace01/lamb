@@ -544,6 +544,7 @@ export function DataProvider({ children }) {
   const vaultCollectionsUnsubsRef = useRef(new Map());
   const vaultAssetsUnsubsRef = useRef(new Map());
   const vaultGrantUnsubsRef = useRef([]);
+  const ownedVaultQueryUnsubsRef = useRef([]);
   const dynamicVaultCollectionRefCountsRef = useRef(new Map());
   const dynamicVaultAssetRefCountsRef = useRef(new Map());
   const ownerVaultIdsRef = useRef([]);
@@ -903,6 +904,18 @@ export function DataProvider({ children }) {
         vaultDocUnsubsRef.current = [];
       };
 
+      const cleanupOwnedVaultQueryListeners = () => {
+        const unsubs = ownedVaultQueryUnsubsRef.current || [];
+        unsubs.forEach((fn) => {
+          try {
+            fn?.();
+          } catch {
+            // ignore
+          }
+        });
+        ownedVaultQueryUnsubsRef.current = [];
+      };
+
       const cleanupVaultCollectionListeners = () => {
         const map = vaultCollectionsUnsubsRef.current;
         if (map && typeof map.forEach === 'function') {
@@ -952,6 +965,14 @@ export function DataProvider({ children }) {
         });
         vaultGrantUnsubsRef.current = [];
       };
+
+      // Clean up any previous listeners before establishing new ones for this user.
+      cleanupOwnerMembershipListeners();
+      cleanupVaultDocListeners();
+      cleanupOwnedVaultQueryListeners();
+      cleanupVaultCollectionListeners();
+      cleanupVaultAssetListeners();
+      cleanupVaultGrantListeners();
 
       const chunk = (arr, size) => {
         const list = Array.isArray(arr) ? arr : [];
@@ -1118,11 +1139,62 @@ export function DataProvider({ children }) {
         };
       };
 
-      cleanupOwnerMembershipListeners();
-      cleanupVaultDocListeners();
-      cleanupVaultCollectionListeners();
-      cleanupVaultAssetListeners();
-      cleanupVaultGrantListeners();
+      // Always listen for vaults owned by the signed-in user.
+      // This does not rely on collectionGroup indexes and prevents "no vaults" when memberships discovery fails.
+      let ownedVaultsByActiveOwner = [];
+      let ownedVaultsByOwnerId = [];
+      const recomputeOwnedVaults = () => {
+        const combined = [...ownedVaultsByActiveOwner, ...ownedVaultsByOwnerId];
+        const seen = new Set();
+        const deduped = [];
+        for (const v of combined) {
+          const id = v?.id ? String(v.id) : null;
+          if (!id || seen.has(id)) continue;
+          seen.add(id);
+          deduped.push(v);
+        }
+
+        if (deduped.length) {
+          const ownedIds = deduped.map((v) => String(v.id));
+          ownerVaultIdsRef.current = Array.from(new Set([...(ownerVaultIdsRef.current || []), ...ownedIds]));
+          setVaults((prev) => mergeById(prev, deduped));
+
+          // Keep base listeners in sync for owned vaults.
+          reconcileVaultCollectionListenersRef.current?.({ baseVaultIds: ownerVaultIdsRef.current || [] });
+          reconcileVaultAssetListenersRef.current?.({ baseVaultIds: ownerVaultIdsRef.current || [] });
+        }
+      };
+
+      try {
+        const ownedByActiveOwnerQuery = query(collection(firestore, 'vaults'), where('activeOwnerId', '==', uid));
+        const ownedByOwnerIdQuery = query(collection(firestore, 'vaults'), where('ownerId', '==', uid));
+
+        const unsubActiveOwner = onSnapshot(
+          ownedByActiveOwnerQuery,
+          (vsnap) => {
+            ownedVaultsByActiveOwner = vsnap.docs.map((d) => normalizeVaultDoc({ docId: d.id, data: d.data() })).filter(Boolean);
+            recomputeOwnedVaults();
+          },
+          (err) => {
+            console.warn('[vaults] owned-by-activeOwnerId snapshot error:', err?.message || err);
+          }
+        );
+
+        const unsubOwnerId = onSnapshot(
+          ownedByOwnerIdQuery,
+          (vsnap) => {
+            ownedVaultsByOwnerId = vsnap.docs.map((d) => normalizeVaultDoc({ docId: d.id, data: d.data() })).filter(Boolean);
+            recomputeOwnedVaults();
+          },
+          (err) => {
+            console.warn('[vaults] owned-by-ownerId snapshot error:', err?.message || err);
+          }
+        );
+
+        ownedVaultQueryUnsubsRef.current = [unsubActiveOwner, unsubOwnerId];
+      } catch {
+        // ignore
+      }
 
       let delegateMemberships = [];
       let ownedVaultMemberships = [];
@@ -1141,11 +1213,9 @@ export function DataProvider({ children }) {
         setVaultMemberships((prev) => mergeById(prev, deduped));
       };
 
-      const myMembershipsQuery = query(
-        collectionGroup(firestore, 'memberships'),
-        where('user_id', '==', uid),
-        where('status', '==', 'ACTIVE')
-      );
+      // NOTE: Query by membership document id (uid) to avoid requiring a collection-group index
+      // on `user_id` (which may be disabled in some environments).
+      const myMembershipsQuery = query(collectionGroup(firestore, 'memberships'), where(documentId(), '==', uid));
 
       const unsubMyMemberships = onSnapshot(
         myMembershipsQuery,
@@ -1226,8 +1296,10 @@ export function DataProvider({ children }) {
             );
           });
         },
-        () => {
-          // ignore snapshot errors; local data still works.
+        (err) => {
+          // If this query fails (e.g. missing collectionGroup indexing), the app can appear to have "no vaults".
+          // Keep local state stable, but surface the issue for debugging.
+          console.warn('[vaults] memberships collectionGroup snapshot error:', err?.message || err);
         }
       );
 
@@ -1239,6 +1311,7 @@ export function DataProvider({ children }) {
         }
         cleanupOwnerMembershipListeners();
         cleanupVaultDocListeners();
+        cleanupOwnedVaultQueryListeners();
         cleanupVaultCollectionListeners();
         cleanupVaultAssetListeners();
         cleanupVaultGrantListeners();
@@ -1291,6 +1364,12 @@ export function DataProvider({ children }) {
   };
 
   const isOwnerForVault = (vaultId, userId) => {
+    const vId = vaultId ? String(vaultId) : null;
+    const uId = userId ? String(userId) : null;
+    if (vId && uId) {
+      const v = (vaults || []).find((x) => String(x?.id || '') === vId);
+      if (v && v.ownerId && String(v.ownerId) === uId) return true;
+    }
     const m = getMembership(vaultId, userId);
     return !!m && m.role === VAULT_ROLE.OWNER;
   };
@@ -1856,6 +1935,9 @@ export function DataProvider({ children }) {
       };
 
     const addVault = async ({ name, images = [], heroImage }) => {
+      if (!firestore) return { ok: false, message: 'Firestore is not configured' };
+      if (!currentUser?.id) return { ok: false, message: 'Not signed in' };
+
       const uid = String(currentUser.id);
       const createdAt = Date.now();
       const normalizedImages = Array.isArray(images) ? images.filter(Boolean).slice(0, 4) : [];
@@ -1885,8 +1967,60 @@ export function DataProvider({ children }) {
         revoked_at: null,
       }, { merge: true });
 
-      await batch.commit();
-      return { ok: true, vaultId };
+      try {
+        await batch.commit();
+
+        // Optimistically reflect the new vault immediately, even if remote listeners are impaired.
+        const localVault = {
+          id: vaultId,
+          name: vaultName,
+          activeOwnerId: uid,
+          ownerId: uid,
+          createdBy: uid,
+          createdAt,
+          viewedAt: createdAt,
+          editedAt: createdAt,
+          images: normalizedImages,
+          heroImage: heroImage || normalizedImages[0] || null,
+        };
+
+        setVaults((prev) => {
+          const base = Array.isArray(prev) ? [...prev] : [];
+          const idx = base.findIndex((v) => String(v?.id) === String(vaultId));
+          if (idx >= 0) base[idx] = { ...base[idx], ...localVault };
+          else base.unshift(localVault);
+          return base;
+        });
+
+        setVaultMemberships((prev) => {
+          const base = Array.isArray(prev) ? [...prev] : [];
+          const id = `${vaultId}:${uid}`;
+          const next = {
+            id,
+            user_id: uid,
+            vault_id: vaultId,
+            role: VAULT_ROLE.OWNER,
+            permissions: null,
+            status: MEMBERSHIP_STATUS.ACTIVE,
+            assigned_at: createdAt,
+            revoked_at: null,
+          };
+          const existingIdx = base.findIndex((m) => String(m?.id) === String(id));
+          if (existingIdx >= 0) base[existingIdx] = { ...base[existingIdx], ...next };
+          else base.unshift(next);
+          return base;
+        });
+
+        // Ensure collection/asset listeners can be established for the new vault.
+        ownerVaultIdsRef.current = Array.from(new Set([...(ownerVaultIdsRef.current || []), String(vaultId)]));
+        reconcileVaultCollectionListenersRef.current?.({ baseVaultIds: ownerVaultIdsRef.current || [] });
+        reconcileVaultAssetListenersRef.current?.({ baseVaultIds: ownerVaultIdsRef.current || [] });
+
+        return { ok: true, vaultId };
+      } catch (error) {
+        const msg = error?.message ? String(error.message) : 'Unable to create vault';
+        return { ok: false, message: msg };
+      }
     };
 
     const canCreateCollectionsInVault = (vaultId, userId) => {
@@ -2246,6 +2380,10 @@ export function DataProvider({ children }) {
   // Legacy helper: some screens still ask for a "role" string.
   // We now derive this from VaultMembership.
   const getRoleForVault = (vaultId, userId) => {
+    // Back-compat / resilience: if membership listeners are unavailable (e.g. missing collectionGroup indexes),
+    // treat vault ownerId as OWNER for UI capability checks.
+    if (isOwnerForVault(vaultId, userId)) return 'owner';
+
     const m = getMembership(vaultId, userId);
     if (!m) return null;
     if (m.role === VAULT_ROLE.OWNER) return 'owner';
@@ -2258,6 +2396,9 @@ export function DataProvider({ children }) {
   const getRoleForCollection = (collectionId, userId) => {
     const collection = collections.find((c) => c.id === collectionId);
     if (!collection) return null;
+
+    if (isOwnerForVault(collection.vaultId, userId)) return 'owner';
+
     const m = getMembership(collection.vaultId, userId);
     if (!m) return null;
     if (m.role === VAULT_ROLE.OWNER) return 'owner';
@@ -2273,6 +2414,9 @@ export function DataProvider({ children }) {
   const getRoleForAsset = (assetId, userId) => {
     const asset = assets.find((a) => a.id === assetId);
     if (!asset) return null;
+
+    if (isOwnerForVault(asset.vaultId, userId)) return 'owner';
+
     const m = getMembership(asset.vaultId, userId);
     if (!m) return null;
     if (m.role === VAULT_ROLE.OWNER) return 'owner';

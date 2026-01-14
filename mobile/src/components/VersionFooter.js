@@ -28,7 +28,7 @@ const build =
 const versionText = version ? `v${version}${build ? ` (${build})` : ''}` : 'Version unavailable';
 
 export default function VersionFooter({ navigationRef, currentRouteName }) {
-  const { theme, currentUser } = useData();
+  const { theme, currentUser, vaults, collections } = useData();
   const insets = useSafeAreaInsets();
   const [status, setStatus] = useState('connecting'); // connecting | connected | offline
   const checkingRef = useRef(false);
@@ -93,7 +93,29 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
     if (!r) return null;
     if (r === 'Membership' || r === 'ChooseSubscription') return 'Membership';
     if (r === 'Profile' || r === 'EmailNotifications') return 'Profile';
-    // Default: Home + detail routes
+    if (r === 'PrivateVaults') return 'PrivateVaults';
+    if (r === 'SharedVaults') return 'SharedVaults';
+    if (r === 'Vault' || r === 'Collection' || r === 'Asset') {
+      try {
+        const route = navigationRef?.getCurrentRoute?.();
+        const params = route?.params || {};
+        let vaultId = null;
+        if (r === 'Vault') vaultId = params.vaultId;
+        if (r === 'Asset') vaultId = params.vaultId || params.routeVaultId;
+        if (r === 'Collection') {
+          const c = (collections || []).find((col) => String(col?.id) === String(params.collectionId));
+          vaultId = c?.vaultId;
+        }
+
+        const v = vaultId ? (vaults || []).find((vv) => String(vv?.id) === String(vaultId)) : null;
+        if (v && currentUser?.id && String(v.ownerId) === String(currentUser.id)) return 'PrivateVaults';
+        if (v) return 'SharedVaults';
+      } catch {
+        // ignore
+      }
+      return 'Home';
+    }
+
     return 'Home';
   })();
 
@@ -136,6 +158,32 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
               color={activeTab === 'Home' ? activeColor : inactiveColor}
             />
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.navButton}
+            onPress={() => safePush('PrivateVaults')}
+            accessibilityRole="button"
+            accessibilityLabel="Go to Private Vaults"
+          >
+            <Ionicons
+              name={activeTab === 'PrivateVaults' ? 'archive' : 'archive-outline'}
+              size={22}
+              color={activeTab === 'PrivateVaults' ? activeColor : inactiveColor}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.navButton}
+            onPress={() => safePush('SharedVaults')}
+            accessibilityRole="button"
+            accessibilityLabel="Go to Shared Vaults"
+          >
+            <Ionicons
+              name={activeTab === 'SharedVaults' ? 'share-social' : 'share-social-outline'}
+              size={22}
+              color={activeTab === 'SharedVaults' ? activeColor : inactiveColor}
+            />
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.navButton}
             onPress={() => safePush('Membership')}

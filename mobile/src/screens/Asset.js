@@ -115,7 +115,7 @@ export default function Asset({ route, navigation }) {
 
   const limit35 = (value = '') => String(value).slice(0, 35);
   const role = getRoleForAsset(assetId, currentUser?.id);
-  const accessType = asset?.ownerId === currentUser?.id
+  const accessType = asset?.ownerId != null && currentUser?.id != null && String(asset.ownerId) === String(currentUser.id)
     ? 'Owner'
     : role
       ? `${role.charAt(0).toUpperCase()}${role.slice(1)}`

@@ -47,7 +47,7 @@ export default function Vault({ navigation, route }) {
   const vault = useMemo(() => vaults.find((v) => v.id === vaultId), [vaultId, vaults]);
   const vaultCollections = useMemo(() => collections.filter((c) => c.vaultId === vaultId), [collections, vaultId]);
   const role = getRoleForVault(vaultId, currentUser?.id);
-  const accessType = vault?.ownerId === currentUser?.id
+  const accessType = vault?.ownerId != null && currentUser?.id != null && String(vault.ownerId) === String(currentUser.id)
     ? 'Owner'
     : role
       ? `${role.charAt(0).toUpperCase()}${role.slice(1)}`

@@ -1,23 +1,17 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, TextInput, Alert, Image, RefreshControl } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { StyleSheet, View, Text, ScrollView, TextInput, Alert, Image, RefreshControl, TouchableOpacity } from 'react-native';
 import { useData } from '../context/DataContext';
-import ShareModal from '../components/ShareModal';
 import LambHeader from '../components/LambHeader';
 import { getInitials } from '../utils/user';
 import { runWithMinimumDuration } from '../utils/timing';
 
 export default function Home({ navigation }) {
-  const { loading, vaults, currentUser, addVault, refreshData, theme, membershipAccess, vaultMemberships, acceptInvitationCode, backendReachable } = useData();
+  const { currentUser, refreshData, theme, membershipAccess, acceptInvitationCode, backendReachable } = useData();
   const isOffline = backendReachable === false;
-  const [newVaultName, setNewVaultName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
 
-  const limit35 = (value = '') => String(value).slice(0, 35);
-  const [shareVaultId, setShareVaultId] = useState(null);
   const [avatarFailed, setAvatarFailed] = useState(false);
   const scrollRef = useRef(null);
-  const [mySectionY, setMySectionY] = useState(0);
-  const [sharedSectionY, setSharedSectionY] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
   const handleRefresh = async () => {
@@ -63,26 +57,24 @@ export default function Home({ navigation }) {
           <View style={styles.headerRow}>
             <Text style={[styles.title, { color: theme.text }]}>Home</Text>
             <View style={styles.headerActions}>
-              <TouchableOpacity onPress={() => navigation.navigate('Profile')} activeOpacity={0.8}>
-                {!avatarFailed && currentUser?.profileImage ? (
-                  <Image source={{ uri: currentUser.profileImage }} style={styles.avatar} onError={() => setAvatarFailed(true)} />
-                ) : (
-                  <View
-                    style={[
-                      styles.avatar,
-                      {
-                        backgroundColor: theme.primary,
-                        borderColor: theme.primary,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        borderWidth: 1,
-                      },
-                    ]}
-                  >
-                    <Text style={[styles.avatarFallbackText, { color: '#fff' }]}>{getInitials(currentUser)}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
+              {!avatarFailed && currentUser?.profileImage ? (
+                <Image source={{ uri: currentUser.profileImage }} style={styles.avatar} onError={() => setAvatarFailed(true)} />
+              ) : (
+                <View
+                  style={[
+                    styles.avatar,
+                    {
+                      backgroundColor: theme.primary,
+                      borderColor: theme.primary,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderWidth: 1,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.avatarFallbackText, { color: '#fff' }]}>{getInitials(currentUser)}</Text>
+                </View>
+              )}
             </View>
           </View>
 
@@ -133,66 +125,11 @@ export default function Home({ navigation }) {
             ) : null}
           </View>
 
-          <View style={styles.quickRow}>
-            <TouchableOpacity style={[styles.quickCard, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => navigation.navigate('Membership')}>
-              <Text style={[styles.quickTitle, { color: theme.text }]}>Membership</Text>
-              <Text style={[styles.quickMeta, { color: theme.textMuted }]}>Renew or manage</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.quickCard, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => navigation.navigate('Profile')}>
-              <Text style={[styles.quickTitle, { color: theme.text }]}>Profile</Text>
-              <Text style={[styles.quickMeta, { color: theme.textMuted }]}>Account</Text>
-            </TouchableOpacity>
-          </View>
+          <View style={styles.quickRow} />
         </ScrollView>
       </View>
     );
   }
-
-  const myVaults = useMemo(() => vaults.filter((v) => v.ownerId === currentUser?.id), [vaults, currentUser]);
-  const sharedVaults = useMemo(() => {
-    const uid = currentUser?.id ? String(currentUser.id) : null;
-    if (!uid) return [];
-    const activeVaultIds = new Set(
-      (vaultMemberships || [])
-        .filter((m) => m?.user_id === uid && m?.status === 'ACTIVE')
-        .map((m) => String(m.vault_id))
-    );
-    return vaults.filter((v) => v?.ownerId !== uid && activeVaultIds.has(String(v.id)));
-  }, [vaults, currentUser, vaultMemberships]);
-
-  const getDelegateCountForVault = (vaultId) => {
-    const vId = String(vaultId);
-    return (vaultMemberships || []).filter((m) => m?.vault_id === vId && m?.status === 'ACTIVE' && m?.role === 'DELEGATE').length;
-  };
-
-  const renderVault = (item) => (
-    <TouchableOpacity
-      style={[
-        styles.card,
-        styles.vaultAccent,
-        { backgroundColor: theme.surface, borderColor: theme.border },
-      ]}
-      onPress={() => navigation.navigate('Vault', { vaultId: item.id })}
-    >
-      <View style={styles.cardRow}>
-        <View>
-          <View style={styles.titleRow}>
-            <Text style={[styles.cardTitle, { color: theme.text }]}>{item.name}</Text>
-            <View
-              style={[
-                styles.sharedDot,
-                item?.ownerId === currentUser?.id && getDelegateCountForVault(item.id) > 0 ? styles.sharedDotOn : styles.sharedDotOff,
-              ]}
-            />
-          </View>
-          <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>Vault • {new Date(item.createdAt).toLocaleDateString()}</Text>
-        </View>
-        <View style={styles.cardActions}>
-          <Text style={[styles.chevron, { color: theme.textMuted }]}>›</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
 
   return (
     <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
@@ -207,25 +144,23 @@ export default function Home({ navigation }) {
         <View style={styles.headerRow}>
           <Text style={[styles.title, { color: theme.text }]}>Home</Text>
           <View style={styles.headerActions}>
-            <TouchableOpacity onPress={() => navigation.navigate('Profile')} activeOpacity={0.8}>
-              {!avatarFailed && currentUser?.profileImage ? (
-                <Image source={{ uri: currentUser.profileImage }} style={styles.avatar} onError={() => setAvatarFailed(true)} />
-              ) : (
-                <View
-                  style={[
-                    styles.avatar,
-                    {
-                      backgroundColor: theme.primary,
-                      borderColor: theme.primary,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    },
-                  ]}
-                >
-                  <Text style={[styles.avatarFallbackText, { color: '#fff' }]}>{getInitials(currentUser)}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
+            {!avatarFailed && currentUser?.profileImage ? (
+              <Image source={{ uri: currentUser.profileImage }} style={styles.avatar} onError={() => setAvatarFailed(true)} />
+            ) : (
+              <View
+                style={[
+                  styles.avatar,
+                  {
+                    backgroundColor: theme.primary,
+                    borderColor: theme.primary,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  },
+                ]}
+              >
+                <Text style={[styles.avatarFallbackText, { color: '#fff' }]}>{getInitials(currentUser)}</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -251,90 +186,7 @@ export default function Home({ navigation }) {
             </TouchableOpacity>
           </View>
         </View>
-
-        <View style={styles.quickRow}>
-          <TouchableOpacity style={[styles.quickCard, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => scrollRef.current?.scrollTo({ y: mySectionY, animated: true })}>
-            <Text style={[styles.quickTitle, { color: theme.text }]}>My Vaults</Text>
-            <Text style={[styles.quickMeta, { color: theme.textMuted }]}>{myVaults.length} total</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.quickCard, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => scrollRef.current?.scrollTo({ y: sharedSectionY, animated: true })}>
-            <Text style={[styles.quickTitle, { color: theme.text }]}>Shared Vaults</Text>
-            <Text style={[styles.quickMeta, { color: theme.textMuted }]}>{sharedVaults.length} total</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.quickCard, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => navigation.navigate('Membership')}>
-            <Text style={[styles.quickTitle, { color: theme.text }]}>Membership</Text>
-            <Text style={[styles.quickMeta, { color: theme.textMuted }]}>Membership</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.quickCard, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => navigation.navigate('Profile')}>
-            <Text style={[styles.quickTitle, { color: theme.text }]}>Profile</Text>
-            <Text style={[styles.quickMeta, { color: theme.textMuted }]}>Account</Text>
-          </TouchableOpacity>
-        </View>
-
-        {loading ? (
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Loading…</Text>
-        ) : (
-          <>
-            <View onLayout={(e) => setMySectionY(e.nativeEvent.layout.y)}>
-              <View style={styles.sectionHeader}>
-                <Text style={[styles.sectionTitle, { color: theme.text }]}>My Vaults</Text>
-              </View>
-              <View style={styles.createRow}>
-                <TextInput
-                  style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
-                  placeholder="New vault name"
-                  placeholderTextColor={theme.placeholder}
-                  value={newVaultName}
-                  onChangeText={(text) => setNewVaultName(limit35(text || ''))}
-                />
-                <TouchableOpacity
-                  style={[styles.addButton, isOffline && styles.buttonDisabled]}
-                  disabled={isOffline}
-                  onPress={() => {
-                    if (!newVaultName.trim()) return;
-                    (async () => {
-                      const res = await addVault({ name: newVaultName.trim() });
-                      if (!res || res.ok === false) {
-                        Alert.alert('Create vault failed', res?.message || 'Unable to create vault');
-                        return;
-                      }
-                      setNewVaultName('');
-                    })();
-                  }}
-                >
-                  <Text style={styles.addButtonText}>Add</Text>
-                </TouchableOpacity>
-              </View>
-              {myVaults.length === 0 ? (
-                <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No vaults yet.</Text>
-              ) : (
-                myVaults.map((v) => (
-                  <View key={v.id} style={styles.sectionItem}>
-                    {renderVault(v)}
-                  </View>
-                ))
-              )}
-            </View>
-
-            <View onLayout={(e) => setSharedSectionY(e.nativeEvent.layout.y)}>
-              <View style={styles.sectionHeader}>
-                <Text style={[styles.sectionTitle, { color: theme.text }]}>Shared Vaults</Text>
-              </View>
-              {sharedVaults.length === 0 ? (
-                <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No shared vaults.</Text>
-              ) : (
-                sharedVaults.map((v) => (
-                  <View key={v.id} style={styles.sectionItem}>
-                    {renderVault(v)}
-                  </View>
-                ))
-              )}
-            </View>
-          </>
-        )}
       </ScrollView>
-
-      <ShareModal visible={!!shareVaultId} onClose={() => setShareVaultId(null)} targetType="vault" targetId={shareVaultId} />
     </View>
   );
 }
