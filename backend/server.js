@@ -903,6 +903,63 @@ const writeAuditEventIfPaid = async (db, vaultId, { type, actorUid, payload }) =
   return id;
 };
 
+// Best-effort: audit quota exceeded, but keep it bounded to avoid turning quota denial into a write-amplification vector.
+// This intentionally logs at most once per (vaultId, actorUid, kind, dateKey) per server instance.
+const quotaExceededAuditCache = new Map();
+const QUOTA_EXCEEDED_AUDIT_CACHE_TTL_MS = 10 * 60 * 1000;
+
+const maybeWriteDailyQuotaExceededAuditOnceIfPaid = async (db, vaultId, { actorUid, quota, kind, requestId, path }) => {
+  if (!db || !vaultId || !actorUid) return;
+  if (!quota || quota.ok !== false) return;
+  if (quota.status !== 429) return;
+  if (!quota.dateKey) return;
+
+  const now = Date.now();
+  const dateKey = String(quota.dateKey);
+  const kindKey = String(kind || quota.kind || '').toLowerCase() || 'write';
+  const cacheKey = `${dateKey}:${String(vaultId)}:${String(actorUid)}:${kindKey}`;
+
+  const existing = quotaExceededAuditCache.get(cacheKey);
+  if (existing && typeof existing.expiresAt === 'number' && existing.expiresAt > now) return;
+  quotaExceededAuditCache.set(cacheKey, { expiresAt: now + QUOTA_EXCEEDED_AUDIT_CACHE_TTL_MS });
+
+  // Opportunistic cleanup.
+  if (quotaExceededAuditCache.size > 5000) {
+    for (const [k, v] of quotaExceededAuditCache.entries()) {
+      if (!v || typeof v.expiresAt !== 'number' || v.expiresAt <= now) quotaExceededAuditCache.delete(k);
+    }
+  }
+
+  const paid = await assertVaultPaid(db, vaultId);
+  if (!paid.ok) return;
+
+  const hash = crypto.createHash('sha256').update(cacheKey).digest('hex').slice(0, 20);
+  const id = `qex_${dateKey}_${hash}`;
+  const ref = db.collection('vaults').doc(String(vaultId)).collection('auditEvents').doc(id);
+
+  try {
+    await ref.create({
+      id,
+      vault_id: String(vaultId),
+      type: 'DAILY_QUOTA_EXCEEDED',
+      actor_uid: String(actorUid),
+      createdAt: now,
+      payload: {
+        dateKey,
+        kind: kindKey,
+        tier: quota.tier || null,
+        field: quota.field || null,
+        current: typeof quota.current === 'number' ? quota.current : null,
+        max: typeof quota.max === 'number' ? quota.max : null,
+        request_id: requestId || null,
+        path: path || null,
+      },
+    });
+  } catch (err) {
+    // Ignore already-exists and any best-effort audit failures.
+  }
+};
+
 const writeUserAuditEvent = async (db, userId, { type, actorUid, payload } = {}) => {
   if (!db || !userId) return null;
   const uid = String(userId);
@@ -2218,7 +2275,16 @@ app.post('/vaults/:vaultId/collections', requireFirebaseAuth, writeRateLimiter, 
     if (!can.ok) return res.status(can.status).json({ error: can.error });
 
     const quota = await assertAndIncrementVaultDailyQuota(db, vaultId, { kind: 'write', actorUid: uid });
-    if (!quota.ok) return res.status(quota.status).json({ error: quota.error, tier: quota.tier, limits: quota.limits, dateKey: quota.dateKey });
+    if (!quota.ok) {
+      await maybeWriteDailyQuotaExceededAuditOnceIfPaid(db, vaultId, {
+        actorUid: uid,
+        quota,
+        kind: 'write',
+        requestId: req.requestId,
+        path: String(req.originalUrl || req.url || ''),
+      });
+      return res.status(quota.status).json({ error: quota.error, tier: quota.tier, limits: quota.limits, dateKey: quota.dateKey });
+    }
 
     const within = await assertUnderCollectionLimit(db, vaultId);
     if (!within.ok) return res.status(within.status).json({ error: within.error });
@@ -2268,6 +2334,12 @@ app.post('/vaults/:vaultId/collections', requireFirebaseAuth, writeRateLimiter, 
       );
     });
 
+    await writeAuditEventIfPaid(db, vaultId, {
+      type: 'COLLECTION_CREATED',
+      actorUid: uid,
+      payload: { collection_id: id, name: String(name).slice(0, 120), request_id: req.requestId || null },
+    });
+
     return res.json({ ok: true, collectionId: id });
   } catch (err) {
     const msg = err?.message || 'Failed to create collection';
@@ -2296,7 +2368,16 @@ app.post('/vaults/:vaultId/assets', requireFirebaseAuth, writeRateLimiter, async
     if (!can.ok) return res.status(can.status).json({ error: can.error });
 
     const quota = await assertAndIncrementVaultDailyQuota(db, vaultId, { kind: 'write', actorUid: uid });
-    if (!quota.ok) return res.status(quota.status).json({ error: quota.error, tier: quota.tier, limits: quota.limits, dateKey: quota.dateKey });
+    if (!quota.ok) {
+      await maybeWriteDailyQuotaExceededAuditOnceIfPaid(db, vaultId, {
+        actorUid: uid,
+        quota,
+        kind: 'write',
+        requestId: req.requestId,
+        path: String(req.originalUrl || req.url || ''),
+      });
+      return res.status(quota.status).json({ error: quota.error, tier: quota.tier, limits: quota.limits, dateKey: quota.dateKey });
+    }
 
     const within = await assertUnderAssetLimit(db, vaultId);
     if (!within.ok) return res.status(within.status).json({ error: within.error });
@@ -2353,6 +2434,17 @@ app.post('/vaults/:vaultId/assets', requireFirebaseAuth, writeRateLimiter, async
       );
     });
 
+    await writeAuditEventIfPaid(db, vaultId, {
+      type: 'ASSET_CREATED',
+      actorUid: uid,
+      payload: {
+        asset_id: id,
+        collection_id: String(collectionId),
+        title: String(title).slice(0, 120),
+        request_id: req.requestId || null,
+      },
+    });
+
     return res.json({ ok: true, assetId: id });
   } catch (err) {
     const msg = err?.message || 'Failed to create asset';
@@ -2389,16 +2481,27 @@ app.post('/vaults/:vaultId/assets/:assetId/delete', requireFirebaseAuth, destruc
     if (!allowed) return res.status(403).json({ error: 'Delete permission required' });
 
     const quota = await assertAndIncrementVaultDailyQuota(db, vaultId, { kind: 'destructive', actorUid: uid });
-    if (!quota.ok) return res.status(quota.status).json({ error: quota.error, tier: quota.tier, limits: quota.limits, dateKey: quota.dateKey });
+    if (!quota.ok) {
+      await maybeWriteDailyQuotaExceededAuditOnceIfPaid(db, vaultId, {
+        actorUid: uid,
+        quota,
+        kind: 'destructive',
+        requestId: req.requestId,
+        path: String(req.originalUrl || req.url || ''),
+      });
+      return res.status(quota.status).json({ error: quota.error, tier: quota.tier, limits: quota.limits, dateKey: quota.dateKey });
+    }
 
     await ensureVaultUsage(db, vaultId);
     const usageRef = getVaultUsageRef(db, vaultId);
     const assetRef = db.collection('vaults').doc(vaultId).collection('assets').doc(assetId);
     const now = Date.now();
 
+    let deleted = false;
     await db.runTransaction(async (tx) => {
       const a = await tx.get(assetRef);
       if (!a.exists) return;
+      deleted = true;
       tx.delete(assetRef);
 
       const usageSnap = await tx.get(usageRef);
@@ -2413,6 +2516,14 @@ app.post('/vaults/:vaultId/assets/:assetId/delete', requireFirebaseAuth, destruc
         { merge: true }
       );
     });
+
+    if (deleted) {
+      await writeAuditEventIfPaid(db, vaultId, {
+        type: 'ASSET_DELETED',
+        actorUid: uid,
+        payload: { asset_id: assetId, request_id: req.requestId || null },
+      });
+    }
 
     return res.json({ ok: true });
   } catch (err) {
@@ -2449,11 +2560,24 @@ app.post('/vaults/:vaultId/collections/:collectionId/delete', requireFirebaseAut
     if (!allowed) return res.status(403).json({ error: 'Delete permission required' });
 
     const quota = await assertAndIncrementVaultDailyQuota(db, vaultId, { kind: 'destructive', actorUid: uid });
-    if (!quota.ok) return res.status(quota.status).json({ error: quota.error, tier: quota.tier, limits: quota.limits, dateKey: quota.dateKey });
+    if (!quota.ok) {
+      await maybeWriteDailyQuotaExceededAuditOnceIfPaid(db, vaultId, {
+        actorUid: uid,
+        quota,
+        kind: 'destructive',
+        requestId: req.requestId,
+        path: String(req.originalUrl || req.url || ''),
+      });
+      return res.status(quota.status).json({ error: quota.error, tier: quota.tier, limits: quota.limits, dateKey: quota.dateKey });
+    }
 
     const vaultRef = db.collection('vaults').doc(vaultId);
     const colRef = vaultRef.collection('collections').doc(collectionId);
     const assetsRef = vaultRef.collection('assets');
+
+    // Idempotency + safety: if the collection doesn't exist, do not delete anything and do not decrement usage counters.
+    const colSnap = await colRef.get();
+    if (!colSnap.exists) return res.json({ ok: true, deletedAssets: 0 });
 
     // Delete assets in pages to avoid batch limits.
     let deletedAssets = 0;
@@ -2495,6 +2619,16 @@ app.post('/vaults/:vaultId/collections/:collectionId/delete', requireFirebaseAut
         },
         { merge: true }
       );
+    });
+
+    await writeAuditEventIfPaid(db, vaultId, {
+      type: 'COLLECTION_DELETED',
+      actorUid: uid,
+      payload: {
+        collection_id: collectionId,
+        deleted_assets: deletedAssets,
+        request_id: req.requestId || null,
+      },
     });
 
     return res.json({ ok: true, deletedAssets });
