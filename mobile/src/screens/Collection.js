@@ -6,6 +6,7 @@ import ShareModal from '../components/ShareModal';
 import LambHeader from '../components/LambHeader';
 import BackButton from '../components/BackButton';
 import { getCollectionCapabilities } from '../policies/capabilities';
+import { runWithMinimumDuration } from '../utils/timing';
 
 export default function Collection({ navigation, route }) {
   const { collectionId } = route.params || {};
@@ -26,15 +27,11 @@ export default function Collection({ navigation, route }) {
   const handleRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
-    const startedAt = Date.now();
     try {
-      await refreshData?.();
+      await runWithMinimumDuration(async () => {
+        await refreshData?.();
+      }, 800);
     } finally {
-      const elapsed = Date.now() - startedAt;
-      const minMs = 800;
-      if (elapsed < minMs) {
-        await new Promise((r) => setTimeout(r, minMs - elapsed));
-      }
       setRefreshing(false);
     }
   };

@@ -5,6 +5,7 @@ import BackButton from '../components/BackButton';
 import SubscriptionManager from '../components/SubscriptionManager';
 import { useData } from '../context/DataContext';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
+import { runWithMinimumDuration } from '../utils/timing';
 
 export default function Membership({ navigation }) {
   const { refreshData, theme, vaults, currentUser } = useData();
@@ -19,15 +20,11 @@ export default function Membership({ navigation }) {
   const handleRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
-    const startedAt = Date.now();
     try {
-      await refreshData?.();
+      await runWithMinimumDuration(async () => {
+        await refreshData?.();
+      }, 800);
     } finally {
-      const elapsed = Date.now() - startedAt;
-      const minMs = 800;
-      if (elapsed < minMs) {
-        await new Promise((r) => setTimeout(r, minMs - elapsed));
-      }
       setRefreshing(false);
     }
   };

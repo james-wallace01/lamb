@@ -3,15 +3,8 @@ import { StyleSheet, View, Text, TouchableOpacity, ScrollView, TextInput, Alert,
 import { useData } from '../context/DataContext';
 import ShareModal from '../components/ShareModal';
 import LambHeader from '../components/LambHeader';
-
-const getInitials = (user) => {
-  const first = (user?.firstName || '').toString().trim();
-  const last = (user?.lastName || '').toString().trim();
-  const a = first ? first[0] : '';
-  const b = last ? last[0] : '';
-  const initials = `${a}${b}`.toUpperCase();
-  return initials || '?';
-};
+import { getInitials } from '../utils/user';
+import { runWithMinimumDuration } from '../utils/timing';
 
 export default function Home({ navigation }) {
   const { loading, vaults, currentUser, addVault, logout, refreshData, theme, membershipAccess, vaultMemberships, acceptInvitationCode } = useData();
@@ -29,15 +22,11 @@ export default function Home({ navigation }) {
   const handleRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
-    const startedAt = Date.now();
     try {
-      await refreshData?.();
+      await runWithMinimumDuration(async () => {
+        await refreshData?.();
+      }, 800);
     } finally {
-      const elapsed = Date.now() - startedAt;
-      const minMs = 800;
-      if (elapsed < minMs) {
-        await new Promise((r) => setTimeout(r, minMs - elapsed));
-      }
       setRefreshing(false);
     }
   };

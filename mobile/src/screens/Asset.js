@@ -17,6 +17,7 @@ import ShareModal from '../components/ShareModal';
 import LambHeader from '../components/LambHeader';
 import BackButton from '../components/BackButton';
 import { getAssetCapabilities } from '../policies/capabilities';
+import { runWithMinimumDuration } from '../utils/timing';
 
 function formatCurrency(val) {
   if (!val) return '';
@@ -69,15 +70,11 @@ export default function Asset({ route, navigation }) {
   const handleRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
-    const startedAt = Date.now();
     try {
-      await refreshData?.();
+      await runWithMinimumDuration(async () => {
+        await refreshData?.();
+      }, 800);
     } finally {
-      const elapsed = Date.now() - startedAt;
-      const minMs = 800;
-      if (elapsed < minMs) {
-        await new Promise((r) => setTimeout(r, minMs - elapsed));
-      }
       setRefreshing(false);
     }
   };
