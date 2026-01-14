@@ -295,6 +295,8 @@ export default function Vault({ navigation, route }) {
               }}
               disabled={!canShareOnline}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel="Share collection"
             >
               <Text style={styles.sharePillText}>Share</Text>
             </TouchableOpacity>
@@ -369,6 +371,8 @@ export default function Vault({ navigation, route }) {
                                   onPress={() => removeDraftImage(img)}
                                   disabled={!canEditOnline}
                                   hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                                  accessibilityRole="button"
+                                  accessibilityLabel="Remove image"
                                 >
                                   <Text style={styles.removeImageBtnText}>✕</Text>
                                 </TouchableOpacity>
@@ -378,6 +382,8 @@ export default function Vault({ navigation, route }) {
                                     onPress={() => setDraftHero(img)}
                                     disabled={!canEditOnline}
                                     hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                                    accessibilityRole="button"
+                                    accessibilityLabel="Set as hero image"
                                   >
                                     <Text style={styles.makeHeroBtnText}>☆</Text>
                                   </TouchableOpacity>
@@ -452,7 +458,12 @@ export default function Vault({ navigation, route }) {
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.title, { color: theme.text }]}>{vault?.name || 'Vault'}</Text>
                       </View>
-                      <TouchableOpacity style={styles.infoButton} onPress={() => setInfoVisible(true)}>
+                      <TouchableOpacity
+                        style={styles.infoButton}
+                        onPress={() => setInfoVisible(true)}
+                        accessibilityRole="button"
+                        accessibilityLabel="Vault info"
+                      >
                         <Text style={styles.infoButtonText}>ℹ</Text>
                       </TouchableOpacity>
                     </View>

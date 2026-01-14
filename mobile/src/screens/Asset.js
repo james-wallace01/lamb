@@ -494,6 +494,8 @@ export default function Asset({ route, navigation }) {
                             onPress={() => removeDraftImage(img)}
                             disabled={!canEditOnline}
                             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                            accessibilityRole="button"
+                            accessibilityLabel="Remove image"
                           >
                             <Text style={styles.removeImageBtnText}>✕</Text>
                           </TouchableOpacity>
@@ -503,6 +505,8 @@ export default function Asset({ route, navigation }) {
                               onPress={() => setDraftHero(img)}
                               disabled={!canEditOnline}
                               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                              accessibilityRole="button"
+                              accessibilityLabel="Set as hero image"
                             >
                               <Text style={styles.makeHeroBtnText}>☆</Text>
                             </TouchableOpacity>
@@ -592,7 +596,12 @@ export default function Asset({ route, navigation }) {
           <View style={{ flex: 1 }}>
             <Text style={[styles.title, { color: theme.text }]}>{asset.title}</Text>
           </View>
-          <TouchableOpacity style={styles.infoButton} onPress={() => setInfoVisible(true)}>
+          <TouchableOpacity
+            style={styles.infoButton}
+            onPress={() => setInfoVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Asset info"
+          >
             <Text style={styles.infoButtonText}>ℹ</Text>
           </TouchableOpacity>
         </View>

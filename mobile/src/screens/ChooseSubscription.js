@@ -340,6 +340,7 @@ export default function ChooseSubscription({ navigation, route }) {
       <LambHeader />
       <Text style={[styles.title, { color: theme.text }]}>Choose Your Membership</Text>
       <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Subscriptions are billed by Apple and can be managed in App Store Subscriptions.</Text>
+      <Text style={[styles.subtitle, { color: theme.textMuted }]}>Auto-renews until canceled. Cancel anytime in App Store Subscriptions.</Text>
 
       <View style={styles.plansContainer}>
         {tiers.map((tier) => {

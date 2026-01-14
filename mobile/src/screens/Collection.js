@@ -320,6 +320,8 @@ export default function Collection({ navigation, route }) {
               }}
               disabled={!canShareOnline}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel="Share asset"
             >
               <Text style={styles.sharePillText}>Share</Text>
             </TouchableOpacity>
@@ -349,7 +351,12 @@ export default function Collection({ navigation, route }) {
         <View style={{ flex: 1 }}>
           <Text style={[styles.title, { color: theme.text }]}>{collection?.name || 'Collection'}</Text>
         </View>
-        <TouchableOpacity style={styles.infoButton} onPress={() => setInfoVisible(true)}>
+        <TouchableOpacity
+          style={styles.infoButton}
+          onPress={() => setInfoVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Collection info"
+        >
           <Text style={styles.infoButtonText}>ℹ</Text>
         </TouchableOpacity>
       </View>
