@@ -264,7 +264,7 @@ export default function SignUp({ navigation }) {
     >
       <LambHeader />
       <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
-      <Text style={[styles.tagline, { color: theme.textSecondary }]}>Take Control</Text>
+      <Text style={[styles.tagline, { color: theme.textSecondary }]}>Simple Asset Management</Text>
       <Text style={[styles.title, { color: theme.text }]}>Create Account</Text>
       
       <TextInput style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]} placeholder="First name" placeholderTextColor={theme.placeholder} value={firstName} onChangeText={setFirstName} />

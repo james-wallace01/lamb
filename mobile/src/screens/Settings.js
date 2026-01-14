@@ -1,19 +1,34 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, RefreshControl, TouchableOpacity, Linking } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, RefreshControl, TouchableOpacity, Linking, Platform } from 'react-native';
 import LambHeader from '../components/LambHeader';
 import SubscriptionManager from '../components/SubscriptionManager';
 import { useData } from '../context/DataContext';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 import { runWithMinimumDuration } from '../utils/timing';
 
+const FEEDBACK_EMAIL = 'support@lamb.app';
+
 export default function Membership({ navigation }) {
-  const { refreshData, theme, vaults, currentUser } = useData();
+  const { refreshData, theme, vaults, currentUser, showAlert } = useData();
   const [refreshing, setRefreshing] = useState(false);
 
   const ownsAnyVault = (vaults || []).some((v) => v?.ownerId && currentUser?.id && v.ownerId === currentUser.id);
 
   const openLegalLink = (url) => {
     Linking.openURL(url).catch(() => {});
+  };
+
+  const handleFeedback = () => {
+    const subject = encodeURIComponent('LAMB Feedback');
+    const who = currentUser?.email || currentUser?.username || currentUser?.id || '';
+    const body = encodeURIComponent(
+      `Hi!\n\nMy feedback:\n\n\n---\nUser: ${who}\nPlatform: ${Platform.OS}`
+    );
+    const mailto = `mailto:${encodeURIComponent(FEEDBACK_EMAIL)}?subject=${subject}&body=${body}`;
+
+    Linking.openURL(mailto).catch(() => {
+      showAlert?.('Feedback', `Unable to open your email app. Please email us at ${FEEDBACK_EMAIL}.`);
+    });
   };
 
   const handleRefresh = async () => {
@@ -66,6 +81,18 @@ export default function Membership({ navigation }) {
               <Text style={[styles.legalLink, { color: theme.link }]}>{item.label}</Text>
             </TouchableOpacity>
           ))}
+        </View>
+
+        <View style={[styles.legalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Feedback</Text>
+          <TouchableOpacity
+            style={styles.legalRow}
+            onPress={handleFeedback}
+            accessibilityRole="button"
+            accessibilityLabel="Send app feedback"
+          >
+            <Text style={[styles.legalLink, { color: theme.link }]}>Send Feedback</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.spacer} />

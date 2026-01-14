@@ -42,7 +42,7 @@ export default function SignIn({ navigation }) {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <LambHeader />
       <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
-      <Text style={[styles.tagline, { color: theme.textSecondary }]}>Take Control</Text>
+      <Text style={[styles.tagline, { color: theme.textSecondary }]}>Simple Asset Management</Text>
       <Text style={[styles.title, { color: theme.text }]}>Sign In</Text>
       <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Use your LAMB username or email.</Text>
 
