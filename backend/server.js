@@ -2301,142 +2301,159 @@ app.post('/account/delete', requireFirebaseAuth, accountDeleteRateLimiter, async
     const confirm = typeof req.body?.confirm === 'string' ? req.body.confirm : '';
     if (confirm !== 'DELETE') return res.status(400).json({ error: 'Missing confirm=DELETE' });
 
-    // 1) Discover vault memberships for this user (also used for cleanup below).
-    let membershipDocs = [];
-    let vaultIds = new Set();
-    const ownedVaultIds = new Set();
+    // Return immediately so mobile UX is snappy; do the heavy work in the background.
+    const requestId = req.requestId || generateRequestId();
+    res.status(202).json({ ok: true, queued: true, requestId });
 
-    try {
-      const membershipSnap = await db
-        .collectionGroup('memberships')
-        .where(firebaseAdmin.firestore.FieldPath.documentId(), '==', uid)
-        .get();
+    setImmediate(() => {
+      (async () => {
+        const dbBg = getFirestoreDb();
+        if (!dbBg) throw new Error('Firebase is not configured on this server');
 
-      membershipDocs = membershipSnap.docs || [];
-      for (const d of membershipDocs) {
-        const vaultRef = d.ref?.parent?.parent;
-        const vaultId = vaultRef && vaultRef.id ? String(vaultRef.id) : null;
-        if (!vaultId) continue;
-        vaultIds.add(vaultId);
+        safeLogJson('info', 'account_delete_queued', { requestId, uid });
 
-        const data = d.data() || {};
-        if (data.role === 'OWNER') ownedVaultIds.add(vaultId);
-      }
-    } catch (e) {
-      console.warn('[account delete] membership discovery failed', { message: e?.message || String(e) });
-    }
+        // 1) Discover vault memberships for this user (also used for cleanup below).
+        let membershipDocs = [];
+        let vaultIds = new Set();
+        const ownedVaultIds = new Set();
 
-    // Fallback: also attempt to discover owned vaults via top-level vault fields.
-    // (May require indexes; best-effort only.)
-    try {
-      const [activeOwnerSnap, ownerSnap] = await Promise.all([
-        db.collection('vaults').where('activeOwnerId', '==', uid).limit(500).get(),
-        db.collection('vaults').where('ownerId', '==', uid).limit(500).get(),
-      ]);
-      activeOwnerSnap.docs.forEach((d) => ownedVaultIds.add(String(d.id)));
-      ownerSnap.docs.forEach((d) => ownedVaultIds.add(String(d.id)));
-    } catch {
-      // ignore
-    }
+        try {
+          const membershipSnap = await dbBg
+            .collectionGroup('memberships')
+            .where(firebaseAdmin.firestore.FieldPath.documentId(), '==', uid)
+            .get();
 
-    // 2) Delete vaults owned by the user.
-    for (const vaultId of ownedVaultIds) {
-      try {
-        await deleteVaultRecursive(db, vaultId);
-      } catch (e) {
-        console.warn('[account delete] failed deleting owned vault', { vaultId: String(vaultId), message: e?.message || String(e) });
-      }
-    }
+          membershipDocs = membershipSnap.docs || [];
+          for (const d of membershipDocs) {
+            const vaultRef = d.ref?.parent?.parent;
+            const vaultId = vaultRef && vaultRef.id ? String(vaultRef.id) : null;
+            if (!vaultId) continue;
+            vaultIds.add(vaultId);
 
-    // 3) Remove memberships and permission grants for the user in any remaining vaults.
-    try {
-      for (const group of chunkArray(membershipDocs, 400)) {
-        const batch = db.batch();
-        group.forEach((d) => batch.delete(d.ref));
-        await batch.commit();
-      }
+            const data = d.data() || {};
+            if (data.role === 'OWNER') ownedVaultIds.add(vaultId);
+          }
+        } catch (e) {
+          console.warn('[account delete] membership discovery failed', { requestId, uid, message: e?.message || String(e) });
+        }
 
-      const deleteUserGrantsInVault = async (vaultId) => {
-        const grantsRef = db.collection('vaults').doc(String(vaultId)).collection('permissionGrants');
-        let last = null;
-        while (true) {
-          let q = grantsRef.orderBy(firebaseAdmin.firestore.FieldPath.documentId()).limit(400);
-          if (last) q = q.startAfter(last);
-          const snap = await q.get();
-          if (snap.empty) break;
+        // Fallback: also attempt to discover owned vaults via top-level vault fields.
+        // (May require indexes; best-effort only.)
+        try {
+          const [activeOwnerSnap, ownerSnap] = await Promise.all([
+            dbBg.collection('vaults').where('activeOwnerId', '==', uid).limit(500).get(),
+            dbBg.collection('vaults').where('ownerId', '==', uid).limit(500).get(),
+          ]);
+          activeOwnerSnap.docs.forEach((d) => ownedVaultIds.add(String(d.id)));
+          ownerSnap.docs.forEach((d) => ownedVaultIds.add(String(d.id)));
+        } catch {
+          // ignore
+        }
 
-          const targets = snap.docs.filter((d) => String(d.id).endsWith(`:${uid}`));
-          if (targets.length > 0) {
-            const batch = db.batch();
-            targets.forEach((d) => batch.delete(d.ref));
+        // 2) Delete vaults owned by the user.
+        for (const vaultId of ownedVaultIds) {
+          try {
+            await deleteVaultRecursive(dbBg, vaultId);
+          } catch (e) {
+            console.warn('[account delete] failed deleting owned vault', { requestId, uid, vaultId: String(vaultId), message: e?.message || String(e) });
+          }
+        }
+
+        // 3) Remove memberships and permission grants for the user in any remaining vaults.
+        try {
+          for (const group of chunkArray(membershipDocs, 400)) {
+            const batch = dbBg.batch();
+            group.forEach((d) => batch.delete(d.ref));
             await batch.commit();
           }
 
-          last = snap.docs[snap.docs.length - 1];
-          if (snap.size < 400) break;
-        }
-      };
+          const deleteUserGrantsInVault = async (vaultId) => {
+            const grantsRef = dbBg.collection('vaults').doc(String(vaultId)).collection('permissionGrants');
+            let last = null;
+            while (true) {
+              let q = grantsRef.orderBy(firebaseAdmin.firestore.FieldPath.documentId()).limit(400);
+              if (last) q = q.startAfter(last);
+              const snap = await q.get();
+              if (snap.empty) break;
 
-      for (const vaultId of vaultIds) {
-        // Owned vaults are already deleted above; grants cleanup here is for shared vaults.
-        if (ownedVaultIds.has(String(vaultId))) continue;
-        try {
-          await deleteUserGrantsInVault(vaultId);
+              const targets = snap.docs.filter((d) => String(d.id).endsWith(`:${uid}`));
+              if (targets.length > 0) {
+                const batch = dbBg.batch();
+                targets.forEach((d) => batch.delete(d.ref));
+                await batch.commit();
+              }
+
+              last = snap.docs[snap.docs.length - 1];
+              if (snap.size < 400) break;
+            }
+          };
+
+          for (const vaultId of vaultIds) {
+            // Owned vaults are already deleted above; grants cleanup here is for shared vaults.
+            if (ownedVaultIds.has(String(vaultId))) continue;
+            try {
+              await deleteUserGrantsInVault(vaultId);
+            } catch (e) {
+              console.warn('[account delete] failed deleting grants', { requestId, uid, vaultId: String(vaultId), message: e?.message || String(e) });
+            }
+          }
         } catch (e) {
-          console.warn('[account delete] failed deleting grants', { vaultId: String(vaultId), message: e?.message || String(e) });
+          console.warn('[account delete] membership cleanup failed', { requestId, uid, message: e?.message || String(e) });
         }
-      }
-    } catch (e) {
-      console.warn('[account delete] membership cleanup failed', { message: e?.message || String(e) });
-    }
 
-    // 3) Delete user-scoped root docs.
-    await Promise.all([
-      db.collection('users').doc(uid).delete().catch(() => {}),
-      db.collection('notificationSettings').doc(uid).delete().catch(() => {}),
-      db.collection('userSubscriptions').doc(uid).delete().catch(() => {}),
-    ]);
+        // 4) Delete user-scoped root docs.
+        await Promise.all([
+          dbBg.collection('users').doc(uid).delete().catch(() => {}),
+          dbBg.collection('notificationSettings').doc(uid).delete().catch(() => {}),
+          dbBg.collection('userSubscriptions').doc(uid).delete().catch(() => {}),
+        ]);
 
-    // 4) Delete user audit events.
-    try {
-      const userAuditRef = db.collection('userAuditEvents').doc(uid);
-      await deleteCollectionInPages(userAuditRef.collection('events'));
-      await userAuditRef.delete().catch(() => {});
-    } catch (e) {
-      console.warn('[account delete] user audit cleanup failed', { message: e?.message || String(e) });
-    }
+        // 5) Delete user audit events.
+        try {
+          const userAuditRef = dbBg.collection('userAuditEvents').doc(uid);
+          await deleteCollectionInPages(userAuditRef.collection('events'));
+          await userAuditRef.delete().catch(() => {});
+        } catch (e) {
+          console.warn('[account delete] user audit cleanup failed', { requestId, uid, message: e?.message || String(e) });
+        }
 
-    // 5) Best-effort: delete email events for this recipient uid (may be large).
-    try {
-      let last = null;
-      while (true) {
-        let q = db.collection('emailEvents').where('recipient_uid', '==', uid).orderBy(firebaseAdmin.firestore.FieldPath.documentId()).limit(400);
-        if (last) q = q.startAfter(last);
-        const snap = await q.get();
-        if (snap.empty) break;
+        // 6) Best-effort: delete email events for this recipient uid (may be large).
+        try {
+          let last = null;
+          while (true) {
+            let q = dbBg.collection('emailEvents').where('recipient_uid', '==', uid).orderBy(firebaseAdmin.firestore.FieldPath.documentId()).limit(400);
+            if (last) q = q.startAfter(last);
+            const snap = await q.get();
+            if (snap.empty) break;
 
-        const batch = db.batch();
-        snap.docs.forEach((d) => batch.delete(d.ref));
-        await batch.commit();
+            const batch = dbBg.batch();
+            snap.docs.forEach((d) => batch.delete(d.ref));
+            await batch.commit();
 
-        last = snap.docs[snap.docs.length - 1];
-        if (snap.size < 400) break;
-      }
-    } catch {
-      // ignore; deletion is still successful without this.
-    }
+            last = snap.docs[snap.docs.length - 1];
+            if (snap.size < 400) break;
+          }
+        } catch {
+          // ignore; deletion is still successful without this.
+        }
 
-    // 6) Delete the Firebase Auth user.
-    try {
-      await firebaseAdmin.auth().deleteUser(uid);
-    } catch (e) {
-      // If the user is already gone, treat as success.
-      if (e?.code !== 'auth/user-not-found') {
-        console.warn('[account delete] auth delete failed', { message: e?.message || String(e) });
-      }
-    }
+        // 7) Delete the Firebase Auth user.
+        try {
+          await firebaseAdmin.auth().deleteUser(uid);
+        } catch (e) {
+          // If the user is already gone, treat as success.
+          if (e?.code !== 'auth/user-not-found') {
+            console.warn('[account delete] auth delete failed', { requestId, uid, message: e?.message || String(e) });
+          }
+        }
 
-    return res.json({ ok: true });
+        safeLogJson('info', 'account_delete_completed', { requestId, uid });
+      })().catch((err) => {
+        console.error('Error deleting account (async):', { requestId, uid, message: err?.message || String(err) });
+      });
+    });
+
+    return;
   } catch (err) {
     console.error('Error deleting account:', err);
     return res.status(500).json({ error: err?.message || 'Failed to delete account' });
