@@ -1467,6 +1467,41 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Debug endpoint: email configuration status (owner-only).
+// Does not reveal secrets; intended for verifying staging/prod config.
+app.get('/debug/email-status', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const uid = req.firebaseUser?.uid ? String(req.firebaseUser.uid) : '';
+    if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Owner-only: require the caller to own at least one vault.
+    const ownsSnap = await db.collection('vaults').where('activeOwnerId', '==', uid).limit(1).get();
+    if (ownsSnap.empty) return res.status(403).json({ error: 'Owner access required' });
+
+    const providerRaw = String(process.env.EMAIL_PROVIDER || 'none').trim().toLowerCase();
+    const provider = providerRaw || 'none';
+    const from = String(process.env.EMAIL_FROM || '').trim();
+    const adminAlertEmail = getAdminAlertEmail();
+
+    return res.json({
+      ok: true,
+      email: {
+        enabled: !!isEmailEnabled(),
+        provider,
+        fromConfigured: !!from,
+        adminAlertConfigured: !!adminAlertEmail,
+        sendgridKeyConfigured: !!String(process.env.SENDGRID_API_KEY || '').trim(),
+        smtpHostConfigured: !!String(process.env.SMTP_HOST || '').trim(),
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || 'Failed to load email status' });
+  }
+});
+
 // Paid-owner invitation system.
 // Owners create invite codes; invitees accept using a Firebase-authenticated endpoint.
 
