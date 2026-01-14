@@ -82,7 +82,7 @@ export default function VersionFooter() {
   const dotStyle =
     status === 'connected' ? styles.dotGreen : status === 'offline' ? styles.dotRed : styles.dotAmber;
 
-  const statusLabel = status === 'connected' ? 'Connected' : status === 'offline' ? 'Offline' : 'Connecting…';
+  const statusLabel = status === 'connected' ? 'Connected' : status === 'offline' ? 'Offline — read-only' : 'Connecting…';
 
   return (
     <View
