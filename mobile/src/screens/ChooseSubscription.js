@@ -6,11 +6,12 @@ import LambHeader from '../components/LambHeader';
 import { API_URL } from '../config/api';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 import { apiFetch } from '../utils/apiFetch';
+import { safeIapCall } from '../utils/iap';
 import * as RNIap from 'react-native-iap';
 import { IAP_PRODUCTS } from '../config/iap';
 
 export default function ChooseSubscription({ navigation, route }) {
-  const { subscriptionTiers, convertPrice, theme } = useData();
+  const { subscriptionTiers, convertPrice, theme, register, loading, ensureFirebaseSignupAuth, refreshData } = useData();
   const insets = useSafeAreaInsets();
   const { firstName, lastName, email, username, password } = route.params || {};
   const isUpgrade = String(route?.params?.mode || '') === 'upgrade';
@@ -18,7 +19,6 @@ export default function ChooseSubscription({ navigation, route }) {
   const [submitting, setSubmitting] = useState(false);
   const [iapReady, setIapReady] = useState(false);
   const [iapInitError, setIapInitError] = useState(null);
-  const { register, loading, ensureFirebaseSignupAuth, refreshData } = useData();
 
   const iapNativeAvailable =
     Platform.OS === 'ios' &&
@@ -28,14 +28,6 @@ export default function ChooseSubscription({ navigation, route }) {
       NativeModules?.RNIapIosSk2 ||
       NativeModules?.RNIapIosStorekit2
     );
-
-  const safeIapCall = async (fn) => {
-    try {
-      return await Promise.resolve(fn());
-    } catch {
-      return null;
-    }
-  };
 
   useEffect(() => {
     if (Platform.OS !== 'ios') return;
