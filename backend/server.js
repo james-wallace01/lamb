@@ -324,6 +324,97 @@ const buildPasswordChangedEmail = () => {
   };
 };
 
+const buildSubscriptionStartedEmail = ({ vaultName } = {}) => {
+  const appName = getPublicAppName();
+  const safeVault = vaultName ? String(vaultName) : 'your vault';
+  return {
+    subject: `Subscription started for “${safeVault}”`,
+    text: [
+      `Your ${appName} subscription is active for the vault “${safeVault}”.`,
+      '',
+      'If you did not expect this, review your billing settings immediately.',
+    ].join('\n'),
+  };
+};
+
+const buildSubscriptionCancelledEmail = ({ vaultName } = {}) => {
+  const appName = getPublicAppName();
+  const safeVault = vaultName ? String(vaultName) : 'your vault';
+  return {
+    subject: `Your subscription has been cancelled`,
+    text: [
+      `Your ${appName} subscription for the vault “${safeVault}” has been cancelled.`,
+      '',
+      'You will retain access until the end of the billing period (if applicable).',
+      '',
+      'If this wasn’t expected, review your subscription settings.',
+    ].join('\n'),
+  };
+};
+
+const buildPaymentFailedEmail = ({ vaultName } = {}) => {
+  const appName = getPublicAppName();
+  const safeVault = vaultName ? String(vaultName) : 'your vault';
+  return {
+    subject: `Payment failed for “${safeVault}”`,
+    text: [
+      `We couldn’t process a payment for your ${appName} subscription on the vault “${safeVault}”.`,
+      '',
+      'To avoid interruptions, update your payment method as soon as possible.',
+    ].join('\n'),
+  };
+};
+
+const getUserEmailAndName = async (db, uid) => {
+  if (!db || !uid) return { email: null, name: null };
+  const snap = await db.collection('users').doc(String(uid)).get();
+  const d = snap.exists ? (snap.data() || {}) : {};
+  const email = normalizeEmail(d.email) || null;
+  const name = [d.firstName, d.lastName].filter(Boolean).join(' ').trim() || d.username || null;
+  return { email, name };
+};
+
+const sendBillingEmailToVaultOwner = async ({ db, vaultId, type, stripeEventId } = {}) => {
+  if (!db || !vaultId || !type) return { ok: false, skipped: true };
+
+  const vaultSnap = await db.collection('vaults').doc(String(vaultId)).get();
+  const vault = vaultSnap.exists ? (vaultSnap.data() || {}) : {};
+  const ownerUid = typeof vault.activeOwnerId === 'string' ? vault.activeOwnerId : null;
+  if (!ownerUid) return { ok: false, skipped: true };
+
+  const { email } = await getUserEmailAndName(db, ownerUid);
+  if (!email) return { ok: false, skipped: true };
+
+  const vaultName = vault.name || null;
+
+  const msg =
+    type === 'SUBSCRIPTION_STARTED'
+      ? buildSubscriptionStartedEmail({ vaultName })
+      : type === 'SUBSCRIPTION_CANCELLED'
+        ? buildSubscriptionCancelledEmail({ vaultName })
+        : buildPaymentFailedEmail({ vaultName });
+
+  const auditEventId = await writeUserAuditEvent(db, ownerUid, {
+    type,
+    actorUid: 'system',
+    payload: { vault_id: String(vaultId), stripe_event_id: stripeEventId || null },
+  });
+
+  return await sendNotificationEmailIdempotent({
+    db,
+    dedupeKey: `stripe:${String(stripeEventId || 'unknown')}:vault:${String(vaultId)}:owner:${String(ownerUid)}:type:${String(type)}`,
+    category: NOTIFICATION_CATEGORIES.billing,
+    to: email,
+    recipientUid: String(ownerUid),
+    recipientRole: ROLE_OWNER,
+    vaultId: String(vaultId),
+    auditEventId,
+    subject: msg.subject,
+    text: msg.text,
+    html: msg.html,
+  });
+};
+
 const isPaidStatus = (status) => {
   const s = typeof status === 'string' ? status : '';
   return s === 'active' || s === 'trialing' || s === 'past_due';
@@ -745,6 +836,26 @@ app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), as
         });
 
         await upsertVaultSubscriptionFromStripe({ eventType: event.type, stripeSubscription: sub });
+
+        // Best-effort billing notifications (mandatory; owners only).
+        try {
+          const db = getFirestoreDb();
+          if (db) {
+            const customerId = typeof sub?.customer === 'string' ? sub.customer : sub?.customer?.id;
+            const metaVaultId = typeof sub?.metadata?.vaultId === 'string' ? sub.metadata.vaultId : '';
+            const vaultId = metaVaultId || (await inferVaultIdForStripeCustomer(db, customerId));
+            if (vaultId) {
+              if (event.type === 'customer.subscription.created') {
+                await sendBillingEmailToVaultOwner({ db, vaultId, type: 'SUBSCRIPTION_STARTED', stripeEventId: event.id });
+              }
+              if (event.type === 'customer.subscription.deleted' || sub?.status === 'canceled' || sub?.cancel_at_period_end) {
+                await sendBillingEmailToVaultOwner({ db, vaultId, type: 'SUBSCRIPTION_CANCELLED', stripeEventId: event.id });
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[stripe webhook] billing email failed', { type: event.type, message: e?.message || String(e) });
+        }
         break;
       }
 
@@ -766,6 +877,22 @@ app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), as
           try {
             const sub = await stripe.subscriptions.retrieve(subId);
             await upsertVaultSubscriptionFromStripe({ eventType: event.type, stripeSubscription: sub });
+
+            if (event.type === 'invoice.payment_failed') {
+              try {
+                const db = getFirestoreDb();
+                if (db) {
+                  const customerId = typeof sub?.customer === 'string' ? sub.customer : sub?.customer?.id;
+                  const metaVaultId = typeof sub?.metadata?.vaultId === 'string' ? sub.metadata.vaultId : '';
+                  const vaultId = metaVaultId || (await inferVaultIdForStripeCustomer(db, customerId));
+                  if (vaultId) {
+                    await sendBillingEmailToVaultOwner({ db, vaultId, type: 'PAYMENT_FAILED', stripeEventId: event.id });
+                  }
+                }
+              } catch (e) {
+                console.warn('[stripe webhook] payment failed email send error', { message: e?.message || String(e) });
+              }
+            }
           } catch (err) {
             console.warn('[stripe webhook] failed to retrieve subscription for invoice', {
               invoiceId: invoice?.id,
@@ -1804,6 +1931,49 @@ app.post('/invitations/accept', requireFirebaseAuth, sensitiveRateLimiter, async
       actorUid: uid,
       payload: { invitation_id: code },
     });
+
+    // Best-effort: notify the active owner that access was accepted.
+    try {
+      const vaultSnap = await db.collection('vaults').doc(String(vaultId)).get();
+      const vault = vaultSnap.exists ? (vaultSnap.data() || {}) : {};
+      const ownerUid = typeof vault.activeOwnerId === 'string' ? vault.activeOwnerId : null;
+      if (ownerUid && ownerUid !== uid) {
+        const ownerProfile = await getUserEmailAndName(db, ownerUid);
+        const actorProfile = await getUserEmailAndName(db, uid);
+        const vaultName = vault.name ? String(vault.name) : 'your vault';
+
+        const auditEventId = await writeUserAuditEvent(db, ownerUid, {
+          type: 'ACCESS_ACCEPTED',
+          actorUid: uid,
+          payload: { vault_id: String(vaultId), accepted_by: String(uid) },
+        });
+
+        if (ownerProfile?.email) {
+          const subject = `Access accepted for your Vault “${vaultName}”`;
+          const who = actorProfile?.name || 'Someone';
+          const text = [
+            `${who} has accepted your invitation to help manage assets in the Vault “${vaultName}”.`,
+            '',
+            'You can review or update their access at any time in the app.',
+          ].join('\n');
+
+          await sendNotificationEmailIdempotent({
+            db,
+            dedupeKey: `vault:${String(vaultId)}:invite-accepted:${String(code)}:to-owner:${String(ownerUid)}`,
+            category: NOTIFICATION_CATEGORIES.accessChanges,
+            to: ownerProfile.email,
+            recipientUid: String(ownerUid),
+            recipientRole: ROLE_OWNER,
+            vaultId: String(vaultId),
+            auditEventId,
+            subject,
+            text,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[invite accept] owner email failed', { message: e?.message || String(e) });
+    }
 
     const vaultSnap = await db.collection('vaults').doc(String(vaultId)).get();
     const vault = vaultSnap.exists ? { id: vaultSnap.id, ...(vaultSnap.data() || {}) } : null;

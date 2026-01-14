@@ -94,6 +94,15 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Per-user notification settings.
+    // Users can only access their own settings.
+    match /notificationSettings/{userId} {
+      allow read: if isSignedIn() && uid() == userId;
+      allow create: if isSignedIn() && uid() == userId;
+      allow update: if isSignedIn() && uid() == userId;
+      allow delete: if false;
+    }
+
     // Vault subscriptions (one doc per vaultId).
     // Owners can read. Writes should be server-only (Stripe webhook / admin).
     match /vaultSubscriptions/{vaultId} {

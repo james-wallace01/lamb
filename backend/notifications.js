@@ -23,7 +23,7 @@ const defaultCategoryForRole = ({ category, role }) => {
   if (category === NOTIFICATION_CATEGORIES.billing) return r === ROLE_OWNER;
   if (category === NOTIFICATION_CATEGORIES.security) return true;
 
-  if (category === NOTIFICATION_CATEGORIES.accessChanges) return r === ROLE_OWNER;
+  if (category === NOTIFICATION_CATEGORIES.accessChanges) return true;
   if (category === NOTIFICATION_CATEGORIES.destructiveActions) return r === ROLE_OWNER;
   if (category === NOTIFICATION_CATEGORIES.structuralChanges) return false;
   if (category === NOTIFICATION_CATEGORIES.activityDigest) return false;
@@ -37,7 +37,7 @@ const getRoleDefaults = (role) => {
     emailEnabled: true,
     categories: {
       [NOTIFICATION_CATEGORIES.billing]: r === ROLE_OWNER,
-      [NOTIFICATION_CATEGORIES.accessChanges]: r === ROLE_OWNER,
+      [NOTIFICATION_CATEGORIES.accessChanges]: true,
       [NOTIFICATION_CATEGORIES.destructiveActions]: r === ROLE_OWNER,
       [NOTIFICATION_CATEGORIES.structuralChanges]: false,
       [NOTIFICATION_CATEGORIES.activityDigest]: false,
@@ -97,6 +97,9 @@ const updateNotificationSettings = async (db, uid, patch) => {
   if (!db || !uid) return null;
   const ref = db.collection('notificationSettings').doc(String(uid));
 
+  const existing = await getNotificationSettings(db, uid);
+  const existingCats = existing && typeof existing.categories === 'object' && existing.categories ? existing.categories : {};
+
   const next = {};
   if (Object.prototype.hasOwnProperty.call(patch || {}, 'emailEnabled')) {
     next.emailEnabled = patch.emailEnabled !== false;
@@ -106,7 +109,7 @@ const updateNotificationSettings = async (db, uid, patch) => {
   }
 
   if (patch && typeof patch.categories === 'object' && patch.categories) {
-    const cats = {};
+    const cats = { ...existingCats };
     for (const [k, v] of Object.entries(patch.categories)) {
       if (!Object.values(NOTIFICATION_CATEGORIES).includes(k)) continue;
       if (k === NOTIFICATION_CATEGORIES.billing || k === NOTIFICATION_CATEGORIES.security) continue; // enforced server-side

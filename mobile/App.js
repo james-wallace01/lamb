@@ -16,6 +16,7 @@ import CollectionScreen from './src/screens/Collection';
 import AssetScreen from './src/screens/Asset';
 import MembershipScreen from './src/screens/Settings';
 import ProfileScreen from './src/screens/Profile';
+import EmailNotificationsScreen from './src/screens/EmailNotifications';
 import SignInScreen from './src/screens/SignIn';
 import SignUpScreen from './src/screens/SignUp';
 import FreeTrialScreen from './src/screens/FreeTrial';
@@ -51,6 +52,7 @@ const MainStack = () => {
     <Stack.Screen name="Asset" component={AssetScreen} options={{ headerShown: false }} />
     <Stack.Screen name="Membership" component={MembershipScreen} options={{ headerShown: false }} />
     <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
+    <Stack.Screen name="EmailNotifications" component={EmailNotificationsScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
 };
@@ -69,6 +71,7 @@ const LimitedStack = () => {
       <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Membership" component={MembershipScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="EmailNotifications" component={EmailNotificationsScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
 };

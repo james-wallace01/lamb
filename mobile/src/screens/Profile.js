@@ -16,7 +16,7 @@ const getInitials = (user) => {
   return initials || '?';
 };
 
-export default function Profile() {
+export default function Profile({ navigation }) {
   const {
     currentUser,
     updateCurrentUser,
@@ -735,6 +735,16 @@ export default function Profile() {
                   <Text style={[styles.legalLink, { color: theme.link }]}>{item.label}</Text>
                 </TouchableOpacity>
               ))}
+            </View>
+
+            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Notifications</Text>
+              <TouchableOpacity
+                style={[styles.button, { marginTop: 0 }]}
+                onPress={() => navigation?.navigate?.('EmailNotifications')}
+              >
+                <Text style={styles.buttonText}>Email Notifications</Text>
+              </TouchableOpacity>
             </View>
           </>
         ) : (
