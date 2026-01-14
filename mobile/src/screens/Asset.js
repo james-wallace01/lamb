@@ -49,6 +49,8 @@ export default function Asset({ route, navigation }) {
     defaultHeroImage,
     retainVaultAssets,
     releaseVaultAssets,
+    retainVaultCollections,
+    releaseVaultCollections,
   } = useData();
 
   const asset = useMemo(() => assets.find((a) => a.id === assetId), [assetId, assets]);
@@ -100,10 +102,12 @@ export default function Asset({ route, navigation }) {
     const vId = routeVaultId ? String(routeVaultId) : (asset?.vaultId ? String(asset.vaultId) : null);
     if (!vId) return;
     retainVaultAssets?.(vId);
+    retainVaultCollections?.(vId);
     return () => {
       releaseVaultAssets?.(vId);
+      releaseVaultCollections?.(vId);
     };
-  }, [routeVaultId, asset?.vaultId, retainVaultAssets, releaseVaultAssets]);
+  }, [routeVaultId, asset?.vaultId, retainVaultAssets, releaseVaultAssets, retainVaultCollections, releaseVaultCollections]);
 
   const draftPreviewImages = editDraft.heroImage && (editDraft.images || []).includes(editDraft.heroImage)
     ? [editDraft.heroImage, ...(editDraft.images || []).filter((img) => img !== editDraft.heroImage)]

@@ -533,11 +533,13 @@ export function DataProvider({ children }) {
   const lastSubscriptionSyncAtRef = useRef(0);
   const ownerMembershipUnsubsRef = useRef([]);
   const vaultDocUnsubsRef = useRef([]);
-  const vaultCollectionsUnsubsRef = useRef([]);
+  const vaultCollectionsUnsubsRef = useRef(new Map());
   const vaultAssetsUnsubsRef = useRef(new Map());
   const vaultGrantUnsubsRef = useRef([]);
+  const dynamicVaultCollectionRefCountsRef = useRef(new Map());
   const dynamicVaultAssetRefCountsRef = useRef(new Map());
   const ownerVaultIdsRef = useRef([]);
+  const reconcileVaultCollectionListenersRef = useRef(null);
   const reconcileVaultAssetListenersRef = useRef(null);
 
   const membershipRequiredResult = useMemo(
@@ -972,15 +974,22 @@ export function DataProvider({ children }) {
       };
 
       const cleanupVaultCollectionListeners = () => {
-        const unsubs = vaultCollectionsUnsubsRef.current || [];
-        unsubs.forEach((fn) => {
+        const map = vaultCollectionsUnsubsRef.current;
+        if (map && typeof map.forEach === 'function') {
+          map.forEach((fn) => {
+            try {
+              fn?.();
+            } catch {
+              // ignore
+            }
+          });
           try {
-            fn?.();
+            map.clear?.();
           } catch {
             // ignore
           }
-        });
-        vaultCollectionsUnsubsRef.current = [];
+        }
+        vaultCollectionsUnsubsRef.current = new Map();
       };
 
       const cleanupVaultAssetListeners = () => {
@@ -1048,6 +1057,58 @@ export function DataProvider({ children }) {
         return [...base.filter((x) => String(x?.[vaultField]) !== vId), ...nextItems];
       };
 
+      const getDynamicCollectionVaultIds = () => {
+        const out = [];
+        const map = dynamicVaultCollectionRefCountsRef.current;
+        if (!map || typeof map.entries !== 'function') return out;
+        for (const [vId, count] of map.entries()) {
+          const n = Number(count) || 0;
+          if (n > 0 && vId) out.push(String(vId));
+        }
+        return out;
+      };
+
+      const reconcileVaultCollectionListeners = ({ baseVaultIds = [] } = {}) => {
+        const base = Array.isArray(baseVaultIds) ? baseVaultIds.map((x) => String(x)).filter(Boolean) : [];
+        const desired = new Set([...base, ...getDynamicCollectionVaultIds()]);
+
+        if (!(vaultCollectionsUnsubsRef.current instanceof Map)) {
+          vaultCollectionsUnsubsRef.current = new Map();
+        }
+
+        for (const [vId, unsub] of vaultCollectionsUnsubsRef.current.entries()) {
+          if (desired.has(vId)) continue;
+          try {
+            unsub?.();
+          } catch {
+            // ignore
+          }
+          vaultCollectionsUnsubsRef.current.delete(vId);
+          setCollections((prev) => (prev || []).filter((c) => String(c?.vaultId || '') !== String(vId)));
+        }
+
+        desired.forEach((vId) => {
+          if (!vId) return;
+          if (vaultCollectionsUnsubsRef.current.has(vId)) return;
+
+          const colRef = collection(firestore, 'vaults', String(vId), 'collections');
+          const unsub = onSnapshot(
+            colRef,
+            (csnap) => {
+              const remoteCollections = csnap.docs
+                .map((d) => ({ id: String(d.id), vaultId: String(vId), ...(d.data() || {}) }))
+                .filter((c) => c?.id);
+              setCollections((prev) => replaceForVault({ prev, vaultId: vId, vaultField: 'vaultId', items: remoteCollections }));
+            },
+            () => {
+              // ignore
+            }
+          );
+
+          vaultCollectionsUnsubsRef.current.set(vId, unsub);
+        });
+      };
+
       const getDynamicAssetVaultIds = () => {
         const out = [];
         const map = dynamicVaultAssetRefCountsRef.current;
@@ -1101,6 +1162,7 @@ export function DataProvider({ children }) {
       };
 
       reconcileVaultAssetListenersRef.current = reconcileVaultAssetListeners;
+      reconcileVaultCollectionListenersRef.current = reconcileVaultCollectionListeners;
 
       const normalizeMembershipDoc = ({ vaultId, docId, data }) => {
         const raw = data || {};
@@ -1210,28 +1272,12 @@ export function DataProvider({ children }) {
             );
           });
 
-          // Hydrate collections + assets + permissionGrants for each vault.
+          // Collections + assets are scoped to owned vaults by default, plus any vault retained by a screen.
           cleanupVaultCollectionListeners();
           cleanupVaultGrantListeners();
 
-          vaultCollectionsUnsubsRef.current = vaultIds.map((vaultId) => {
-            const colRef = collection(firestore, 'vaults', String(vaultId), 'collections');
-            return onSnapshot(
-              colRef,
-              (csnap) => {
-                const remoteCollections = csnap.docs
-                  .map((d) => ({ id: String(d.id), vaultId: String(vaultId), ...(d.data() || {}) }))
-                  .filter((c) => c?.id);
-                setCollections((prev) => replaceForVault({ prev, vaultId, vaultField: 'vaultId', items: remoteCollections }));
-              },
-              () => {
-                // ignore
-              }
-            );
-          });
-
-          // Assets are scoped to owned vaults by default, plus any vault retained by a screen.
           ownerVaultIdsRef.current = ownerVaultIds;
+          reconcileVaultCollectionListeners({ baseVaultIds: ownerVaultIds });
           reconcileVaultAssetListeners({ baseVaultIds: ownerVaultIds });
 
           vaultGrantUnsubsRef.current = vaultIds.map((vaultId) => {
@@ -2423,6 +2469,26 @@ export function DataProvider({ children }) {
     reconcileVaultAssetListenersRef.current?.({ baseVaultIds: ownerVaultIdsRef.current || [] });
   }, []);
 
+  const retainVaultCollections = useCallback((vaultId) => {
+    const vId = String(vaultId || '');
+    if (!vId) return;
+    const map = dynamicVaultCollectionRefCountsRef.current;
+    const next = (Number(map.get(vId)) || 0) + 1;
+    map.set(vId, next);
+    reconcileVaultCollectionListenersRef.current?.({ baseVaultIds: ownerVaultIdsRef.current || [] });
+  }, []);
+
+  const releaseVaultCollections = useCallback((vaultId) => {
+    const vId = String(vaultId || '');
+    if (!vId) return;
+    const map = dynamicVaultCollectionRefCountsRef.current;
+    const prev = Number(map.get(vId)) || 0;
+    const next = prev - 1;
+    if (next > 0) map.set(vId, next);
+    else map.delete(vId);
+    reconcileVaultCollectionListenersRef.current?.({ baseVaultIds: ownerVaultIdsRef.current || [] });
+  }, []);
+
   const value = useMemo(() => ({
     loading,
     backendReachable,
@@ -2508,6 +2574,8 @@ export function DataProvider({ children }) {
     getCurrencyInfo,
     retainVaultAssets,
     releaseVaultAssets,
+    retainVaultCollections,
+    releaseVaultCollections,
   }), [
     loading,
     backendReachable,
@@ -2526,6 +2594,8 @@ export function DataProvider({ children }) {
     membershipRequiredResult,
     retainVaultAssets,
     releaseVaultAssets,
+    retainVaultCollections,
+    releaseVaultCollections,
   ]);
 
   return (

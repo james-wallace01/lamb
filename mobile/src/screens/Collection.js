@@ -9,7 +9,7 @@ import { getCollectionCapabilities } from '../policies/capabilities';
 
 export default function Collection({ navigation, route }) {
   const { collectionId } = route.params || {};
-  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultAssets, releaseVaultAssets } = useData();
+  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultAssets, releaseVaultAssets, retainVaultCollections, releaseVaultCollections } = useData();
   const [newTitle, setNewTitle] = useState('');
   const [shareVisible, setShareVisible] = useState(false);
   const [shareTargetType, setShareTargetType] = useState(null);
@@ -45,6 +45,15 @@ export default function Collection({ navigation, route }) {
   const limit35 = (value = '') => String(value).slice(0, 35);
 
   const collection = useMemo(() => collections.find((c) => c.id === collectionId), [collectionId, collections]);
+
+  useEffect(() => {
+    const vId = collection?.vaultId ? String(collection.vaultId) : null;
+    if (!vId) return;
+    retainVaultCollections?.(vId);
+    return () => {
+      releaseVaultCollections?.(vId);
+    };
+  }, [collection?.vaultId, retainVaultCollections, releaseVaultCollections]);
 
   useEffect(() => {
     const vId = collection?.vaultId ? String(collection.vaultId) : null;

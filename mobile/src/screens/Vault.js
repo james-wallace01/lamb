@@ -9,7 +9,7 @@ import { getVaultCapabilities } from '../policies/capabilities';
 
 export default function Vault({ navigation, route }) {
   const { vaultId } = route.params || {};
-  const { loading, vaults, collections, addCollection, currentUser, getRoleForVault, canCreateCollectionsInVault, users, deleteVault, updateVault, refreshData, theme, defaultHeroImage, permissionGrants } = useData();
+  const { loading, vaults, collections, addCollection, currentUser, getRoleForVault, canCreateCollectionsInVault, users, deleteVault, updateVault, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultCollections, releaseVaultCollections } = useData();
   const [newName, setNewName] = useState('');
   const [shareVisible, setShareVisible] = useState(false);
   const [shareTargetType, setShareTargetType] = useState(null);
@@ -80,6 +80,15 @@ export default function Vault({ navigation, route }) {
       heroImage: ensureHero(vaultImages, storedHeroImage),
     });
   }, [vaultId, vault?.name, vault?.description, vault?.manager, storedHeroImage, vaultImages.join(',')]);
+
+  useEffect(() => {
+    const vId = vaultId ? String(vaultId) : null;
+    if (!vId) return;
+    retainVaultCollections?.(vId);
+    return () => {
+      releaseVaultCollections?.(vId);
+    };
+  }, [vaultId, retainVaultCollections, releaseVaultCollections]);
 
   const handleAddImages = async () => {
     if (!vault) return;

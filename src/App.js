@@ -715,16 +715,6 @@ export default function App() {
         );
 
         unsubs.push(
-          onSnapshot(collection(db, 'vaults', vaultId, 'collections'), (snap) => {
-            const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-            setCollections((prev) => {
-              const keep = (prev || []).filter((c) => c && c.vaultId !== vaultId);
-              return [...keep, ...rows];
-            });
-          })
-        );
-
-        unsubs.push(
           onSnapshot(collection(db, 'vaults', vaultId, 'memberships'), (snap) => {
             const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
             setVaultMemberships((prev) => {
@@ -775,6 +765,26 @@ export default function App() {
       vaultListenerUnsubsRef.current.clear();
     };
   }, [db, firebaseUser]);
+
+  // Subscribe to collections only for the currently selected vault.
+  // This avoids an N-vault fanout of unbounded collection listeners.
+  useEffect(() => {
+    if (!db || !firebaseUser) return;
+    if (!selectedVaultId) {
+      setCollections([]);
+      return;
+    }
+
+    const vaultId = String(selectedVaultId);
+    const unsub = onSnapshot(collection(db, 'vaults', vaultId, 'collections'), (snap) => {
+      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setCollections(rows);
+    });
+
+    return () => {
+      try { unsub(); } catch (e) {}
+    };
+  }, [db, firebaseUser, selectedVaultId]);
 
   // Subscribe to assets only for the currently selected vault.
   // This avoids an N-vault fanout of unbounded asset listeners while keeping
