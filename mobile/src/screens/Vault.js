@@ -483,6 +483,8 @@ export default function Vault({ navigation, route }) {
                             style={[styles.shareButton, styles.actionButton, !canShareOnline && styles.buttonDisabled]}
                             onPress={() => openShare('vault', vaultId)}
                             disabled={!canShareOnline}
+                            accessibilityRole="button"
+                            accessibilityLabel="Share vault"
                           >
                             <Text style={styles.secondaryButtonText}>Share</Text>
                           </TouchableOpacity>

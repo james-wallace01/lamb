@@ -622,6 +622,8 @@ export default function Asset({ route, navigation }) {
               style={[styles.shareButton, styles.actionButton, !canShareOnline && styles.buttonDisabled]}
               onPress={() => setShowShare(true)}
               disabled={!canShareOnline}
+              accessibilityRole="button"
+              accessibilityLabel="Share asset"
             >
               <Text style={styles.secondaryButtonText}>Share</Text>
             </TouchableOpacity>
