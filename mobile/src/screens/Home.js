@@ -89,13 +89,13 @@ export default function Home({ navigation }) {
           </View>
 
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}> 
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Join a vault</Text>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Join a Vault</Text>
             <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Have an invite code? Paste it here to join as a delegate.</Text>
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, alignItems: 'center' }}>
               <TextInput
                 value={inviteCode}
                 onChangeText={setInviteCode}
-                placeholder="Invite code"
+                placeholder="Invite Code"
                 placeholderTextColor={theme.placeholder}
                 style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, flex: 1 }]}
                 autoCapitalize="none"
@@ -111,7 +111,7 @@ export default function Home({ navigation }) {
           </View>
 
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}> 
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Membership required</Text>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Membership Required</Text>
             <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Your membership isn’t active. You can manage your membership, update your profile, and revoke sharing.</Text>
 
             {!currentUser?.subscription?.tier ? (
@@ -127,7 +127,7 @@ export default function Home({ navigation }) {
                 ]}
                 onPress={() => navigation.navigate('ChooseSubscription', { mode: 'upgrade' })}
               >
-                <Text style={[styles.secondaryText, { color: '#fff' }]}>Choose membership</Text>
+                <Text style={[styles.secondaryText, { color: '#fff' }]}>Choose Membership</Text>
               </TouchableOpacity>
             ) : null}
           </View>

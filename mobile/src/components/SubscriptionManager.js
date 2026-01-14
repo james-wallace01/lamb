@@ -110,7 +110,7 @@ export default function SubscriptionManager() {
       ) : (
         <View style={[styles.currentPlanCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Text style={[styles.planName, { color: theme.text }]}>{tier.name}</Text>
-          <Text style={[styles.planDescription, { color: theme.textMuted }]}>Current plan</Text>
+          <Text style={[styles.planDescription, { color: theme.textMuted }]}>Current membership</Text>
           {localPrice ? (
             <Text style={[styles.planPrice, { color: theme.text }]}>
               {localPrice.symbol}{localPrice.amount}/{tier.period}
@@ -124,7 +124,7 @@ export default function SubscriptionManager() {
             onPress={openAppleSubscriptionSettings}
             disabled={submitting}
           >
-        <Text style={styles.primaryButtonText}>Manage in iOS Subscriptions</Text>
+        <Text style={styles.primaryButtonText}>Manage in App Store Subscriptions</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -136,7 +136,7 @@ export default function SubscriptionManager() {
       </TouchableOpacity>
 
       <Text style={[styles.note, { color: theme.textMuted }]}>
-        Subscriptions are billed and managed by Apple. If you already subscribed on this Apple ID, use Restore Purchases.
+        Subscriptions are billed and managed by Apple. If you already have an active subscription on this Apple ID, use Restore Purchases.
       </Text>
     </View>
   );

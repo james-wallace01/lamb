@@ -667,7 +667,7 @@ export default function Profile({ navigation }) {
 
             {!membershipAccess && (
               <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <Text style={[styles.sectionTitle, { color: theme.text }]}>Membership required</Text>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Membership Required</Text>
                 <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Only Profile and Membership are available until you renew.</Text>
               </View>
             )}

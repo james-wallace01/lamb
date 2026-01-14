@@ -192,7 +192,7 @@ export default function ChooseSubscription({ navigation, route }) {
 
     Alert.alert(
       'Success!',
-      `Your membership is active. You will be charged ${localPrice.symbol}${localPrice.amount}/${tier.period} by Apple unless you cancel in iOS Subscriptions.`
+      `Your membership is active. You will be charged ${localPrice.symbol}${localPrice.amount}/${tier.period} by Apple unless you cancel in App Store Subscriptions.`
     );
   };
 
@@ -250,7 +250,7 @@ export default function ChooseSubscription({ navigation, route }) {
     >
       <LambHeader />
       <Text style={[styles.title, { color: theme.text }]}>Choose Your Membership</Text>
-      <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Subscriptions are billed by Apple and can be managed in iOS Subscriptions.</Text>
+      <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Subscriptions are billed by Apple and can be managed in App Store Subscriptions.</Text>
 
       <View style={styles.plansContainer}>
         {tiers.map((tier) => {

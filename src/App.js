@@ -535,7 +535,7 @@ export default function App() {
     const rawTarget = (shareDialog.username || '').trim();
     if (!rawTarget) {
       if (shareDialog.type === 'vault') return showAlert("Enter an email address to invite.");
-      return showAlert("Enter a member uid/email/username to share with.");
+      return showAlert("Enter a delegate's username or email to share with.");
     }
 
     const permissions = normalizePermissions(shareDialog.permissions);
@@ -575,10 +575,10 @@ export default function App() {
           }
           if (currentUser && userId === currentUser.id) throw new Error('You cannot share with yourself.');
           if (!getMembershipForVault(String(collection.vaultId), userId)) {
-            throw new Error('User must already be a vault member.');
+            throw new Error('User must already be a vault delegate. Invite them to the vault first.');
           }
           await upsertPermissionGrant(String(collection.vaultId), 'COLLECTION', String(collection.id), String(userId), permissions);
-          showAlert(`Granted collection access to ${userId}`);
+          showAlert('Collection access granted.');
         } else if (shareDialog.type === 'asset') {
           const asset = assets.find((a) => a.id === shareDialog.targetId) || null;
           if (!asset) return;
@@ -592,10 +592,10 @@ export default function App() {
           }
           if (currentUser && userId === currentUser.id) throw new Error('You cannot share with yourself.');
           if (!getMembershipForVault(String(vaultId), userId)) {
-            throw new Error('User must already be a vault member.');
+            throw new Error('User must already be a vault delegate. Invite them to the vault first.');
           }
           await upsertPermissionGrant(String(vaultId), 'ASSET', String(asset.id), String(userId), permissions);
-          showAlert(`Granted asset access to ${userId}`);
+          showAlert('Asset access granted.');
         }
 
         setShareDialog((d) => ({ ...d, username: "" }));
