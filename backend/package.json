@@ -9,7 +9,10 @@
     "migrate-vault-model": "node scripts/migrateVaultModel.js",
     "wipe-remote": "node scripts/wipeRemoteData.js",
     "recompute-vault-usage": "node scripts/recomputeVaultUsage.js",
-    "prune-email-events": "node scripts/pruneEmailEvents.js"
+    "prune-email-events": "node scripts/pruneEmailEvents.js",
+    "prune-invitations": "node scripts/pruneInvitations.js",
+    "prune-daily-usage": "node scripts/pruneDailyUsage.js",
+    "prune-audit-events": "node scripts/pruneAuditEvents.js"
   },
   "dependencies": {
     "express": "^4.18.2",

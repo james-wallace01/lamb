@@ -189,6 +189,53 @@ npx firebase-tools use <your-project-id>
 npx firebase-tools deploy --only firestore:rules
 ```
 
+## Maintenance Scripts (Firebase Admin required)
+
+These scripts help manage data lifecycle and keep Firestore collections bounded.
+
+All scripts require Firebase Admin credentials (see **Firebase (optional)** above).
+
+### Prune invitations
+Deletes invitation docs older than a retention window (default 30 days).
+
+```bash
+cd backend
+npm run prune-invitations -- --dry-run
+npm run prune-invitations -- --days 30
+```
+
+Env var: `INVITATIONS_RETENTION_DAYS`
+
+### Prune daily usage docs
+Deletes `stats/dailyUsage_YYYY-MM-DD` docs older than a retention window (default 90 days).
+
+```bash
+cd backend
+npm run prune-daily-usage -- --dry-run
+npm run prune-daily-usage -- --days 90
+```
+
+Env var: `DAILY_USAGE_RETENTION_DAYS`
+
+### Prune audit events
+Deletes per-vault `auditEvents` older than tier-based retention:
+- BASIC: 30 days
+- PREMIUM: 180 days
+- PRO: 365 days
+
+```bash
+cd backend
+npm run prune-audit-events -- --dry-run
+
+# Override retention for all vaults
+npm run prune-audit-events -- --days 90
+
+# Limit how many vaults to scan (useful for testing)
+npm run prune-audit-events -- --vault-limit 10
+```
+
+Env var: `PRUNE_AUDIT_VAULT_LIMIT`
+
 ## Paid Owner Invitations
 
 The backend exposes a minimal invitation flow that writes canonical Firestore docs:
