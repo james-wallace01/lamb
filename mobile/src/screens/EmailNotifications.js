@@ -4,7 +4,7 @@ import BackButton from '../components/BackButton';
 import LambHeader from '../components/LambHeader';
 import { useData } from '../context/DataContext';
 import { apiFetch } from '../utils/apiFetch';
-import { API_URL } from '../config/stripe';
+import { API_URL } from '../config/api';
 
 const CATEGORIES = {
   billing: 'billing',

@@ -13,7 +13,7 @@ import {
   updatePassword as firebaseUpdatePassword,
 } from 'firebase/auth';
 import { collection, collectionGroup, deleteDoc, doc, documentId, getDoc, onSnapshot, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
-import { API_URL } from '../config/stripe';
+import { API_URL } from '../config/api';
 import NetInfo from '@react-native-community/netinfo';
 import { apiFetch } from '../utils/apiFetch';
 
@@ -634,76 +634,8 @@ export function DataProvider({ children }) {
     }
   };
 
-  const applySubscriptionSync = (subscription) => {
-    if (!currentUser || !subscription) return;
-
-    const nextSub = {
-      ...(currentUser.subscription || {}),
-      tier: subscription.tier || currentUser.subscription?.tier,
-      stripeSubscriptionId: subscription.id || currentUser.subscription?.stripeSubscriptionId,
-      stripeCustomerId: subscription.customer || currentUser.subscription?.stripeCustomerId,
-      cancelAtPeriodEnd: !!subscription.cancelAtPeriodEnd,
-      startDate:
-        typeof subscription.currentPeriodStartMs === 'number'
-          ? subscription.currentPeriodStartMs
-          : currentUser.subscription?.startDate,
-      renewalDate:
-        typeof subscription.currentPeriodEndMs === 'number'
-          ? subscription.currentPeriodEndMs
-          : currentUser.subscription?.renewalDate,
-    };
-
-    const prevSub = currentUser.subscription || {};
-    const changed =
-      prevSub.tier !== nextSub.tier ||
-      prevSub.stripeSubscriptionId !== nextSub.stripeSubscriptionId ||
-      prevSub.stripeCustomerId !== nextSub.stripeCustomerId ||
-      prevSub.cancelAtPeriodEnd !== nextSub.cancelAtPeriodEnd ||
-      prevSub.startDate !== nextSub.startDate ||
-      prevSub.renewalDate !== nextSub.renewalDate;
-
-    if (!changed) return;
-
-    const updatedUser = { ...currentUser, subscription: nextSub };
-    setCurrentUser(updatedUser);
-    setUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updatedUser : u)));
-  };
-
-  const syncSubscriptionFromServer = async ({ force = false } = {}) => {
-    if (!currentUser?.subscription) return { ok: true, skipped: true };
-    if (backendReachable === false) return { ok: false, message: 'Offline' };
-
-    const subscriptionId = currentUser.subscription?.stripeSubscriptionId || null;
-    const customerId = currentUser.subscription?.stripeCustomerId || null;
-    if (!subscriptionId && !customerId) return { ok: true, skipped: true };
-
-    // Throttle to avoid spamming the backend.
-    const now = Date.now();
-    if (!force && now - lastSubscriptionSyncAtRef.current < 15000) return { ok: true, skipped: true };
-    lastSubscriptionSyncAtRef.current = now;
-
-    try {
-      const resp = await apiFetch(`${API_URL}/subscription-status`, {
-        requireAuth: true,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subscriptionId, customerId }),
-      });
-
-      const json = await resp.json().catch(() => null);
-      if (!resp.ok) {
-        return { ok: false, message: json?.error || 'Subscription sync failed' };
-      }
-
-      if (json?.subscription) {
-        applySubscriptionSync(json.subscription);
-      }
-
-      return { ok: true };
-    } catch (error) {
-      return { ok: false, message: error?.message || 'Subscription sync failed' };
-    }
-  };
+  // Subscription state is managed by Apple IAP verification. The app can refresh app data
+  // and/or prompt the user to restore purchases, but there is no backend subscription sync endpoint.
 
   const acceptInvitationCode = async (code) => {
     const raw = typeof code === 'string' ? code.trim() : '';
@@ -898,13 +830,6 @@ export function DataProvider({ children }) {
           }
         }
 
-        // Best-effort: sync subscription state from the server.
-        // This keeps cancelAtPeriodEnd/renewalDate aligned with Stripe.
-        try {
-          await syncSubscriptionFromServer();
-        } catch {
-          // ignore
-        }
         setLoading(false);
       })();
     }, []);
@@ -912,13 +837,9 @@ export function DataProvider({ children }) {
     useEffect(() => {
       if (loading) return;
       if (!currentUser) return;
-      // Keep membership state in sync with Stripe when online.
-      syncSubscriptionFromServer();
     }, [
       loading,
       currentUser?.id,
-      currentUser?.subscription?.stripeSubscriptionId,
-      currentUser?.subscription?.stripeCustomerId,
       currentUser?.subscription?.tier,
       currentUser?.subscription?.cancelAtPeriodEnd,
       backendReachable,
@@ -1640,7 +1561,7 @@ export function DataProvider({ children }) {
     }
   };
 
-  const register = async ({ firstName, lastName, email, username, password, subscriptionTier, stripeSubscriptionId, stripeCustomerId, initialVaultId }) => {
+  const register = async ({ firstName, lastName, email, username, password, subscriptionTier, initialVaultId }) => {
     const first = validateName(firstName, 'First name');
     if (!first.ok) return { ok: false, message: first.message };
     const last = validateName(lastName, 'Last name');
@@ -1697,8 +1618,6 @@ export function DataProvider({ children }) {
         startDate: now,
         trialEndsAt,
         renewalDate: trialEndsAt,
-        stripeSubscriptionId: stripeSubscriptionId || null,
-        stripeCustomerId: stripeCustomerId || null,
         cancelAtPeriodEnd: false,
       },
     };
@@ -2326,7 +2245,7 @@ export function DataProvider({ children }) {
     return 'reviewer';
   };
 
-  const updateSubscription = (subscriptionTier, stripeSubscriptionId) => {
+  const updateSubscription = (subscriptionTier) => {
     if (!currentUser) return { ok: false, message: 'Not signed in' };
     if (!subscriptionTier) return { ok: false, message: 'Invalid membership tier' };
     
@@ -2340,7 +2259,6 @@ export function DataProvider({ children }) {
       subscription: {
         ...currentUser.subscription,
         tier: tierUpper,
-        stripeSubscriptionId: stripeSubscriptionId || currentUser.subscription?.stripeSubscriptionId,
         cancelAtPeriodEnd: false
       }
     };
@@ -2422,7 +2340,7 @@ export function DataProvider({ children }) {
     return { featuresLost, featuresGained };
   };
 
-  // LAMB pricing is defined in AUD. (If/when we add localization, App Store / Stripe price objects
+  // LAMB pricing is defined in AUD. (If/when we add localization, App Store price objects
   // should be used instead of hard-coded FX rates.)
   const getCurrencyInfo = () => ({ code: 'AUD', rate: 1.0 });
 
@@ -2491,7 +2409,6 @@ export function DataProvider({ children }) {
     disableBiometricSignIn,
     biometricLogin,
     refreshData,
-    syncSubscriptionFromServer,
     acceptInvitationCode: wrapOnlineAsync(acceptInvitationCode),
     recordActivity,
     enforceSessionTimeout,

@@ -1,15 +1,13 @@
 import 'react-native-gesture-handler';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { AppState, View, Text, TouchableOpacity, Linking } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { enableScreens } from 'react-native-screens';
 import { StatusBar } from 'expo-status-bar';
-import { StripeProvider } from '@stripe/stripe-react-native';
 import { DataProvider } from './src/context/DataContext';
 import { useData } from './src/context/DataContext';
-import { fetchStripePublishableKey, APPLE_PAY_MERCHANT_ID } from './src/config/stripe';
 import HomeScreen from './src/screens/Home';
 import VaultScreen from './src/screens/Vault';
 import CollectionScreen from './src/screens/Collection';
@@ -152,56 +150,17 @@ function SessionTimeoutBoundary({ children }) {
 }
 
 export default function App() {
-  const [stripeKey, setStripeKey] = useState(null);
-  const [stripeKeyError, setStripeKeyError] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const key = await fetchStripePublishableKey();
-        if (!cancelled) setStripeKey(key);
-      } catch (e) {
-        if (!cancelled) setStripeKeyError(e?.message || 'Failed to load Stripe configuration');
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  if (stripeKeyError) {
-    return (
-      <SafeAreaProvider>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-          <Text style={{ fontSize: 18, fontWeight: '800', marginBottom: 8 }}>Startup error</Text>
-          <Text style={{ textAlign: 'center', opacity: 0.8 }}>{stripeKeyError}</Text>
-        </View>
-      </SafeAreaProvider>
-    );
-  }
-
-  if (!stripeKey) {
-    return (
-      <SafeAreaProvider>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-          <Text style={{ fontSize: 16, fontWeight: '700' }}>Loading…</Text>
-        </View>
-      </SafeAreaProvider>
-    );
-  }
-
   return (
     <SafeAreaProvider>
-      <StripeProvider publishableKey={stripeKey} merchantIdentifier={APPLE_PAY_MERCHANT_ID}>
-        <DataProvider>
-          <NavigationContainer>
-            <SessionTimeoutBoundary>
-              <RootNavigator />
-            </SessionTimeoutBoundary>
-          </NavigationContainer>
-          <VersionFooter />
-          <ThemedStatusBar />
-        </DataProvider>
-      </StripeProvider>
+      <DataProvider>
+        <NavigationContainer>
+          <SessionTimeoutBoundary>
+            <RootNavigator />
+          </SessionTimeoutBoundary>
+        </NavigationContainer>
+        <VersionFooter />
+        <ThemedStatusBar />
+      </DataProvider>
     </SafeAreaProvider>
   );
 }

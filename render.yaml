@@ -13,16 +13,12 @@ services:
       - key: PORT
         value: 3001
       # Set these in Render Dashboard (do not commit real values)
-      - key: STRIPE_SECRET_KEY
-        sync: false
-      - key: STRIPE_PUBLISHABLE_KEY
-        sync: false
-      - key: STRIPE_WEBHOOK_SECRET
+      - key: APPLE_IAP_SHARED_SECRET
         sync: false
       # Firebase Admin credentials (recommended for Render): base64(JSON) or raw JSON
       - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false
-      # Optional: require Firebase auth for Stripe endpoints
+      # Optional: require Firebase auth for protected endpoints
       - key: REQUIRE_FIREBASE_AUTH
         value: "true"
 
@@ -40,16 +36,12 @@ services:
       - key: PORT
         value: 3001
       # Set these in Render Dashboard (do not commit real values)
-      - key: STRIPE_SECRET_KEY
-        sync: false
-      - key: STRIPE_PUBLISHABLE_KEY
-        sync: false
-      - key: STRIPE_WEBHOOK_SECRET
+      - key: APPLE_IAP_SHARED_SECRET
         sync: false
       # Firebase Admin credentials (recommended for Render): base64(JSON) or raw JSON
       - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false
-      # Optional: require Firebase auth for Stripe endpoints
+      # Optional: require Firebase auth for protected endpoints
       - key: REQUIRE_FIREBASE_AUTH
         value: "true"
 

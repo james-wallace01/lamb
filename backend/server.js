@@ -1,5 +1,5 @@
-// LAMB Backend Server for Stripe Payment Processing
-// Install dependencies: npm install express stripe cors dotenv
+// LAMB Backend Server
+// Install dependencies: npm install express cors dotenv
 // Run: node server.js
 
 const express = require('express');
@@ -8,9 +8,8 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
+const https = require('https');
 require('dotenv').config();
-const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-const stripe = typeof stripeSecretKey === 'string' && stripeSecretKey.trim() ? require('stripe')(stripeSecretKey.trim()) : null;
 const { initFirebaseAdmin, firebaseEnabled, requireFirebaseAuth } = require('./firebaseAdmin');
 const firebaseAdmin = require('firebase-admin');
 const { sendEmail, isEmailEnabled } = require('./email');
@@ -202,64 +201,10 @@ app.use('/images', express.static(path.join(__dirname, '..', 'public', 'images')
 
 const PORT = process.env.PORT || 3001;
 
-const isStripeConfigured = () => !!stripe;
-
 const getFirestoreDb = () => {
   if (!firebaseEnabled()) return null;
   try {
     return firebaseAdmin.firestore();
-  } catch {
-    return null;
-  }
-};
-
-const toStripeMetadata = (obj) => {
-  const out = {};
-  for (const [k, v] of Object.entries(obj || {})) {
-    if (v == null) continue;
-    const s = String(v);
-    if (!s) continue;
-    out[k] = s;
-  }
-  return out;
-};
-
-const normalizeVaultSubStatus = (stripeSubscription) => {
-  const stripeStatus = typeof stripeSubscription?.status === 'string' ? stripeSubscription.status : '';
-  const cancelAtPeriodEnd = !!stripeSubscription?.cancel_at_period_end;
-
-  // Firestore rules treat these as paid.
-  if (stripeStatus === 'active' || stripeStatus === 'trialing' || stripeStatus === 'past_due') return stripeStatus;
-
-  // Everything else is not paid; distinguish explicit cancels for UX/debugging.
-  if (stripeStatus === 'canceled' || cancelAtPeriodEnd) return 'canceled';
-  return stripeStatus || 'none';
-};
-
-const inferFirebaseUidForStripeCustomer = async (customerId) => {
-  if (!customerId) return null;
-  try {
-    const customer = await stripe.customers.retrieve(customerId);
-    const firebaseUid = typeof customer?.metadata?.firebaseUid === 'string' ? customer.metadata.firebaseUid.trim() : '';
-    return firebaseUid || null;
-  } catch {
-    return null;
-  }
-};
-
-const inferPrimaryVaultIdForFirebaseUid = async (db, firebaseUid) => {
-  if (!db || !firebaseUid) return null;
-  try {
-    // Avoid orderBy to reduce index requirements; pick min createdAt in memory.
-    const ownedSnap = await db.collection('vaults').where('activeOwnerId', '==', String(firebaseUid)).limit(50).get();
-    if (ownedSnap.empty) return null;
-    let best = null;
-    for (const doc of ownedSnap.docs) {
-      const data = doc.data() || {};
-      const createdAt = typeof data.createdAt === 'number' ? data.createdAt : Number.MAX_SAFE_INTEGER;
-      if (!best || createdAt < best.createdAt) best = { id: doc.id, createdAt };
-    }
-    return best?.id || null;
   } catch {
     return null;
   }
@@ -278,88 +223,8 @@ const revokePaidFeaturesForOwner = async (db, ownerUid, { actorUid = 'system', r
   }
 };
 
-const upsertUserSubscriptionFromStripe = async ({ eventType, stripeSubscription }) => {
-  const db = getFirestoreDb();
-  if (!db) {
-    const msg = 'Firebase is not configured; cannot sync userSubscriptions from Stripe webhooks.';
-    if (isProd) throw new Error(msg);
-    console.warn(`[stripe webhook] ${msg}`);
-    return;
-  }
-
-  const customerId = typeof stripeSubscription?.customer === 'string' ? stripeSubscription.customer : stripeSubscription?.customer?.id;
-
-  const metaUid = typeof stripeSubscription?.metadata?.firebaseUid === 'string' ? stripeSubscription.metadata.firebaseUid.trim() : '';
-  const firebaseUid = metaUid || (await inferFirebaseUidForStripeCustomer(customerId));
-
-  if (!firebaseUid) {
-    console.warn('[stripe webhook] Unable to determine firebaseUid for subscription', {
-      eventType,
-      subscriptionId: stripeSubscription?.id,
-      customerId,
-    });
-    return;
-  }
-
-  const metaTier = typeof stripeSubscription?.metadata?.tier === 'string' ? stripeSubscription.metadata.tier : '';
-  const tier = metaTier ? metaTier.toUpperCase() : null;
-  const status = normalizeVaultSubStatus(stripeSubscription);
-
-  const payload = {
-    user_id: firebaseUid,
-    tier,
-    status,
-    stripeSubscriptionId: stripeSubscription?.id || null,
-    stripeCustomerId: customerId || null,
-    cancelAtPeriodEnd: !!stripeSubscription?.cancel_at_period_end,
-    trialEndsAt: stripeSubscription?.trial_end ? stripeSubscription.trial_end * 1000 : null,
-    renewalDate: stripeSubscription?.current_period_end ? stripeSubscription.current_period_end * 1000 : null,
-    currentPeriodStart: stripeSubscription?.current_period_start ? stripeSubscription.current_period_start * 1000 : null,
-    currentPeriodEnd: stripeSubscription?.current_period_end ? stripeSubscription.current_period_end * 1000 : null,
-    updatedAt: Date.now(),
-    lastStripeEventType: eventType || null,
-  };
-
-  // Detect paid->unpaid transitions for cleanup.
-  let prevStatus = null;
-  try {
-    const prevSnap = await db.collection('userSubscriptions').doc(String(firebaseUid)).get();
-    prevStatus = prevSnap.exists ? (prevSnap.data() || {}).status : null;
-  } catch {
-    prevStatus = null;
-  }
-
-  await db.collection('userSubscriptions').doc(String(firebaseUid)).set(payload, { merge: true });
-
-  const wasPaid = isPaidStatus(prevStatus);
-  const nowPaid = isPaidStatus(status);
-  if (wasPaid && !nowPaid) {
-    try {
-      await revokePaidFeaturesForOwner(db, firebaseUid, {
-        actorUid: 'system',
-        reason: `SUBSCRIPTION_${String(status || 'NONE').toUpperCase()}`,
-      });
-    } catch (err) {
-      console.warn('[subscription] downgrade cleanup failed', { userId: firebaseUid, status, message: err?.message || String(err) });
-    }
-  }
-};
-
 // Optional Firebase Admin initialization (used for verifying Firebase ID tokens)
 initFirebaseAdmin();
-
-// If Stripe isn't configured, still allow /health and /me so Firebase auth can be tested.
-app.use((req, res, next) => {
-  if (isStripeConfigured()) return next();
-  if (req.path === '/health' || req.path === '/me' || req.path === '/public-config' || req.path === '/email-available') return next();
-  return res.status(503).json({ error: 'Stripe is not configured on this server' });
-});
-
-app.get('/public-config', (req, res) => {
-  res.json({
-    stripePublishableKey: (process.env.STRIPE_PUBLISHABLE_KEY || '').trim() || null,
-  });
-});
 
 const maybeRequireFirebaseAuth = (req, res, next) => {
   const requireAuth = process.env.NODE_ENV === 'production' || String(process.env.REQUIRE_FIREBASE_AUTH).toLowerCase() === 'true';
@@ -516,8 +381,7 @@ const getUserEmailAndName = async (db, uid) => {
   const name = [d.firstName, d.lastName].filter(Boolean).join(' ').trim() || d.username || null;
   return { email, name };
 };
-
-const sendBillingEmailToVaultOwner = async ({ db, vaultId, type, stripeEventId } = {}) => {
+const sendBillingEmailToVaultOwner = async ({ db, vaultId, type, billingEventId } = {}) => {
   if (!db || !vaultId || !type) return { ok: false, skipped: true };
 
   const vaultSnap = await db.collection('vaults').doc(String(vaultId)).get();
@@ -540,12 +404,12 @@ const sendBillingEmailToVaultOwner = async ({ db, vaultId, type, stripeEventId }
   const auditEventId = await writeUserAuditEvent(db, ownerUid, {
     type,
     actorUid: 'system',
-    payload: { vault_id: String(vaultId), stripe_event_id: stripeEventId || null },
+    payload: { vault_id: String(vaultId), billing_event_id: billingEventId || null },
   });
 
   return await sendNotificationEmailIdempotent({
     db,
-    dedupeKey: `stripe:${String(stripeEventId || 'unknown')}:vault:${String(vaultId)}:owner:${String(ownerUid)}:type:${String(type)}`,
+    dedupeKey: `billing:${String(billingEventId || 'unknown')}:vault:${String(vaultId)}:owner:${String(ownerUid)}:type:${String(type)}`,
     category: NOTIFICATION_CATEGORIES.billing,
     to: email,
     recipientUid: String(ownerUid),
@@ -1331,249 +1195,182 @@ const generateInviteCode = (vaultId) => {
   return `${String(vaultId)}_${rand}`;
 };
 
-const assertStripeCustomerOwnedByFirebaseUser = async (customerId, firebaseUser) => {
-  if (!customerId) return { ok: false, status: 400, error: 'Missing customerId' };
-  if (!firebaseUser?.uid) return { ok: false, status: 401, error: 'Missing authenticated user' };
-
-  const customer = await stripe.customers.retrieve(customerId);
-  if (!customer || customer.deleted) return { ok: false, status: 404, error: 'Stripe customer not found' };
-
-  const uid = String(firebaseUser.uid);
-  const tokenEmail = normalizeEmail(firebaseUser.email);
-
-  const metaUid = typeof customer.metadata?.firebaseUid === 'string' ? customer.metadata.firebaseUid : '';
-  const customerEmail = normalizeEmail(customer.email);
-
-  const matchesUid = metaUid && metaUid === uid;
-  const matchesEmail = tokenEmail && customerEmail && tokenEmail === customerEmail;
-
-  if (matchesUid || matchesEmail) {
-    // Best-effort: stamp ownership metadata for future strict checks.
-    if (!matchesUid) {
-      try {
-        await stripe.customers.update(customerId, {
-          metadata: {
-            ...(customer.metadata || {}),
-            firebaseUid: uid,
-            firebaseEmail: tokenEmail || customerEmail || null,
-          },
-        });
-      } catch {
-        // ignore
-      }
-    }
-    return { ok: true, customer };
-  }
-
-  return { ok: false, status: 403, error: 'Forbidden' };
-};
-
-// Stripe webhooks require the raw request body to validate signatures.
-// This MUST be registered before express.json().
-app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), async (req, res) => {
-  if (!isStripeConfigured()) {
-    return res.status(503).json({ error: 'Stripe is not configured on this server' });
-  }
-
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!secret || !String(secret).trim()) {
-    return res.status(500).json({ error: 'STRIPE_WEBHOOK_SECRET is not set' });
-  }
-
-  const sig = req.headers['stripe-signature'];
-  if (!sig) {
-    return res.status(400).json({ error: 'Missing Stripe-Signature header' });
-  }
-
-  let event;
-  try {
-    event = stripe.webhooks.constructEvent(req.body, sig, String(secret).trim());
-  } catch (err) {
-    return res.status(400).json({ error: `Webhook signature verification failed: ${err?.message || 'invalid signature'}` });
-  }
-
-  try {
-    switch (event.type) {
-      // Subscription lifecycle
-      case 'customer.subscription.created':
-      case 'customer.subscription.updated':
-      case 'customer.subscription.deleted': {
-        const sub = event.data.object;
-        console.log('[stripe webhook]', event.type, {
-          requestId: req.requestId,
-          eventId: event.id,
-          id: sub?.id,
-          status: sub?.status,
-          customer: sub?.customer,
-          cancel_at_period_end: sub?.cancel_at_period_end,
-          current_period_end: sub?.current_period_end,
-        });
-
-        await upsertUserSubscriptionFromStripe({ eventType: event.type, stripeSubscription: sub });
-
-        // Best-effort billing notifications (mandatory; owners only).
-        try {
-          const db = getFirestoreDb();
-          if (db) {
-            const customerId = typeof sub?.customer === 'string' ? sub.customer : sub?.customer?.id;
-            const metaUid = typeof sub?.metadata?.firebaseUid === 'string' ? sub.metadata.firebaseUid.trim() : '';
-            const firebaseUid = metaUid || (await inferFirebaseUidForStripeCustomer(customerId));
-            const vaultId = firebaseUid ? await inferPrimaryVaultIdForFirebaseUid(db, firebaseUid) : null;
-            if (vaultId) {
-              if (event.type === 'customer.subscription.created') {
-                await sendBillingEmailToVaultOwner({ db, vaultId, type: 'SUBSCRIPTION_STARTED', stripeEventId: event.id });
-              }
-              if (event.type === 'customer.subscription.deleted' || sub?.status === 'canceled' || sub?.cancel_at_period_end) {
-                await sendBillingEmailToVaultOwner({ db, vaultId, type: 'SUBSCRIPTION_CANCELLED', stripeEventId: event.id });
-              }
-            }
-          }
-        } catch (e) {
-          console.warn('[stripe webhook] billing email failed', {
-            requestId: req.requestId,
-            eventId: event.id,
-            type: event.type,
-            message: e?.message || String(e),
-          });
-
-          // Best-effort alert for operators (idempotent per stripe event).
-          try {
-            const db = getFirestoreDb();
-            if (db) {
-              await sendAdminAlertEmailBestEffort({
-                db,
-                requestId: req.requestId,
-                dedupeKey: `admin:stripe:webhook:${String(event.id)}:billing-email-failed`,
-                subject: `${getPublicAppName()} alert: Stripe billing email failed`,
-                text: [
-                  `requestId: ${req.requestId || 'unknown'}`,
-                  `eventId: ${event.id}`,
-                  `type: ${event.type}`,
-                  `error: ${e?.message || String(e)}`,
-                ].join('\n'),
-              });
-            }
-          } catch {
-            // ignore
-          }
-        }
-        break;
-      }
-
-      // Invoicing/payment status
-      case 'invoice.payment_succeeded':
-      case 'invoice.payment_failed': {
-        const invoice = event.data.object;
-        console.log('[stripe webhook]', event.type, {
-          requestId: req.requestId,
-          eventId: event.id,
-          id: invoice?.id,
-          customer: invoice?.customer,
-          subscription: invoice?.subscription,
-          status: invoice?.status,
-          paid: invoice?.paid,
-        });
-
-        // Best-effort: sync the linked subscription since invoice events are often what users notice first.
-        const subId = typeof invoice?.subscription === 'string' ? invoice.subscription : invoice?.subscription?.id;
-        if (subId) {
-          try {
-            const sub = await stripe.subscriptions.retrieve(subId);
-            await upsertUserSubscriptionFromStripe({ eventType: event.type, stripeSubscription: sub });
-
-            if (event.type === 'invoice.payment_failed') {
-              try {
-                const db = getFirestoreDb();
-                if (db) {
-                  const customerId = typeof sub?.customer === 'string' ? sub.customer : sub?.customer?.id;
-                  const metaUid = typeof sub?.metadata?.firebaseUid === 'string' ? sub.metadata.firebaseUid.trim() : '';
-                  const firebaseUid = metaUid || (await inferFirebaseUidForStripeCustomer(customerId));
-                  const vaultId = firebaseUid ? await inferPrimaryVaultIdForFirebaseUid(db, firebaseUid) : null;
-                  if (vaultId) {
-                    await sendBillingEmailToVaultOwner({ db, vaultId, type: 'PAYMENT_FAILED', stripeEventId: event.id });
-                  }
-                }
-              } catch (e) {
-                console.warn('[stripe webhook] payment failed email send error', {
-                  requestId: req.requestId,
-                  eventId: event.id,
-                  message: e?.message || String(e),
-                });
-
-                // Best-effort alert for operators (idempotent per stripe event).
-                try {
-                  const db = getFirestoreDb();
-                  if (db) {
-                    await sendAdminAlertEmailBestEffort({
-                      db,
-                      requestId: req.requestId,
-                      dedupeKey: `admin:stripe:webhook:${String(event.id)}:payment-failed-email-error`,
-                      subject: `${getPublicAppName()} alert: Stripe payment_failed email error`,
-                      text: [
-                        `requestId: ${req.requestId || 'unknown'}`,
-                        `eventId: ${event.id}`,
-                        `type: ${event.type}`,
-                        `error: ${e?.message || String(e)}`,
-                      ].join('\n'),
-                    });
-                  }
-                } catch {
-                  // ignore
-                }
-              }
-            }
-          } catch (err) {
-            console.warn('[stripe webhook] failed to retrieve subscription for invoice', {
-              requestId: req.requestId,
-              eventId: event.id,
-              invoiceId: invoice?.id,
-              subscription: subId,
-              message: err?.message || String(err),
-            });
-          }
-        }
-        break;
-      }
-
-      default:
-        // Keep logs quiet for unhandled events.
-        break;
-    }
-
-    return res.json({ received: true });
-  } catch (err) {
-    console.error('Error handling webhook:', {
-      requestId: req.requestId,
-      eventId: event?.id,
-      message: err?.message || String(err),
-    });
-
-    // Best-effort alert for operators (idempotent per stripe event).
-    try {
-      const db = getFirestoreDb();
-      if (db) {
-        await sendAdminAlertEmailBestEffort({
-          db,
-          requestId: req.requestId,
-          dedupeKey: `admin:stripe:webhook:${String(event?.id || 'unknown')}:handler-failed`,
-          subject: `${getPublicAppName()} alert: Stripe webhook handler failed`,
-          text: [
-            `requestId: ${req.requestId || 'unknown'}`,
-            `eventId: ${event?.id || 'unknown'}`,
-            `type: ${event?.type || 'unknown'}`,
-            `error: ${err?.message || String(err)}`,
-          ].join('\n'),
-        });
-      }
-    } catch {
-      // ignore
-    }
-    return res.status(500).json({ error: 'Webhook handler failed' });
-  }
-});
-
 // JSON parser for all non-webhook routes.
 app.use(express.json({ limit: '200kb' }));
+
+// ---- Apple IAP (Option A) ----
+
+const APPLE_VERIFY_URL_PROD = 'https://buy.itunes.apple.com/verifyReceipt';
+const APPLE_VERIFY_URL_SANDBOX = 'https://sandbox.itunes.apple.com/verifyReceipt';
+
+const postJson = (url, payload) =>
+  new Promise((resolve, reject) => {
+    try {
+      const json = JSON.stringify(payload || {});
+      const req = https.request(
+        url,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(json),
+          },
+          timeout: 15_000,
+        },
+        (res) => {
+          let body = '';
+          res.setEncoding('utf8');
+          res.on('data', (chunk) => {
+            body += chunk;
+          });
+          res.on('end', () => {
+            try {
+              const parsed = body ? JSON.parse(body) : null;
+              resolve({ statusCode: res.statusCode || 0, body: parsed });
+            } catch {
+              reject(new Error(`Invalid JSON from Apple verifyReceipt (status ${res.statusCode || 0})`));
+            }
+          });
+        }
+      );
+
+      req.on('error', (err) => reject(err));
+      req.on('timeout', () => {
+        req.destroy(new Error('Apple verifyReceipt request timed out'));
+      });
+      req.write(json);
+      req.end();
+    } catch (err) {
+      reject(err);
+    }
+  });
+
+const appleTierForProductId = (productId) => {
+  const id = String(productId || '');
+  if (id.includes('.basic.')) return 'BASIC';
+  if (id.includes('.premium.')) return 'PREMIUM';
+  if (id.includes('.pro.')) return 'PRO';
+  return null;
+};
+
+const verifyAppleReceipt = async (receiptData) => {
+  const sharedSecret = String(process.env.APPLE_IAP_SHARED_SECRET || '').trim();
+  if (!sharedSecret) {
+    throw new Error('APPLE_IAP_SHARED_SECRET is not set');
+  }
+
+  const payload = {
+    'receipt-data': String(receiptData || ''),
+    password: sharedSecret,
+    'exclude-old-transactions': true,
+  };
+
+  const first = await postJson(APPLE_VERIFY_URL_PROD, payload);
+  const status = typeof first?.body?.status === 'number' ? first.body.status : null;
+
+  // 21007: production endpoint received a sandbox receipt.
+  if (status === 21007) {
+    return await postJson(APPLE_VERIFY_URL_SANDBOX, payload);
+  }
+
+  return first;
+};
+
+// Verifies iOS subscription receipts and stores per-user entitlements in userSubscriptions/{uid}.
+app.post('/iap/verify', requireFirebaseAuth, billingRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const uid = String(req.firebaseUser?.uid || '');
+    if (!uid) return res.status(401).json({ error: 'Missing authenticated user' });
+
+    const receiptData = req.body?.receiptData || req.body?.receipt || req.body?.transactionReceipt;
+    if (!receiptData) return res.status(400).json({ error: 'Missing receiptData' });
+
+    const appleResp = await verifyAppleReceipt(receiptData);
+    const appleBody = appleResp?.body || null;
+    const appleStatus = typeof appleBody?.status === 'number' ? appleBody.status : null;
+
+    if (appleStatus !== 0) {
+      return res.status(400).json({ ok: false, status: appleStatus, error: 'Apple receipt verification failed' });
+    }
+
+    const latest = Array.isArray(appleBody?.latest_receipt_info)
+      ? appleBody.latest_receipt_info
+      : Array.isArray(appleBody?.receipt?.in_app)
+        ? appleBody.receipt.in_app
+        : [];
+
+    const mostRecent = latest
+      .map((r) => {
+        const expiresMs = r?.expires_date_ms != null ? Number(r.expires_date_ms) : null;
+        return {
+          productId: r?.product_id || null,
+          expiresDateMs: Number.isFinite(expiresMs) ? expiresMs : null,
+          originalTransactionId: r?.original_transaction_id || null,
+          transactionId: r?.transaction_id || null,
+        };
+      })
+      .filter((r) => r.expiresDateMs)
+      .sort((a, b) => (b.expiresDateMs || 0) - (a.expiresDateMs || 0))[0] || null;
+
+    const now = Date.now();
+    const expiresDateMs = mostRecent?.expiresDateMs || null;
+    const active = !!(expiresDateMs && expiresDateMs > now);
+    const tier = normalizeTier(appleTierForProductId(mostRecent?.productId) || req.body?.tier || 'BASIC');
+    const status = active ? 'active' : 'canceled';
+
+    // Detect paid->unpaid transitions for cleanup.
+    let prevStatus = null;
+    try {
+      const prevSnap = await db.collection('userSubscriptions').doc(uid).get();
+      prevStatus = prevSnap.exists ? (prevSnap.data() || {}).status : null;
+    } catch {
+      prevStatus = null;
+    }
+
+    await db
+      .collection('userSubscriptions')
+      .doc(uid)
+      .set(
+        {
+          user_id: uid,
+          tier,
+          status,
+          source: 'APPLE_IAP',
+          appleStatus,
+          appleProductId: mostRecent?.productId || null,
+          appleTransactionId: mostRecent?.transactionId || null,
+          appleOriginalTransactionId: mostRecent?.originalTransactionId || null,
+          expiresDateMs,
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+
+    const wasPaid = isPaidStatus(prevStatus);
+    const nowPaid = isPaidStatus(status);
+    if (wasPaid && !nowPaid) {
+      try {
+        await revokePaidFeaturesForOwner(db, uid, { actorUid: 'system', reason: 'IAP_EXPIRED_OR_CANCELED' });
+      } catch (err) {
+        console.warn('[subscription] downgrade cleanup failed', { userId: uid, status, message: err?.message || String(err) });
+      }
+    }
+
+    return res.json({
+      ok: true,
+      tier,
+      status,
+      expiresDateMs,
+      productId: mostRecent?.productId || null,
+    });
+  } catch (err) {
+    console.error('IAP verify failed:', { requestId: req.requestId, message: err?.message || String(err) });
+    return res.status(500).json({ error: err?.message || 'IAP verify failed' });
+  }
+});
 
 // Notification settings (per-user).
 // NOTE: UI preferences are advisory; the backend enforces mandatory categories.
@@ -1657,602 +1454,14 @@ app.post('/email-available', emailAvailabilityRateLimiter, async (req, res) => {
   }
 });
 
-// Price amounts in cents
-const PRICE_MAP = {
-  BASIC: 499,
-  PREMIUM: 999,
-  PRO: 1999
-};
-
-// Cache for Stripe Price IDs
-let stripePriceIds = {};
-
-// Initialize Stripe Products and Prices
-async function initializeStripePrices() {
-  try {
-    if (!isStripeConfigured()) {
-      console.warn('Skipping Stripe price initialization: STRIPE_SECRET_KEY is not set.');
-      stripePriceIds = {};
-      return;
-    }
-    console.log('Initializing Stripe products and prices...');
-    
-    for (const [tier, amount] of Object.entries(PRICE_MAP)) {
-      const products = await stripe.products.search({
-        query: `name:'LAMB ${tier} Plan'`,
-      });
-
-      let product;
-      if (products.data.length > 0) {
-        product = products.data[0];
-      } else {
-        product = await stripe.products.create({
-          name: `LAMB ${tier} Plan`,
-          description: `${tier} subscription plan`,
-        });
-      }
-
-      const prices = await stripe.prices.list({
-        product: product.id,
-        active: true,
-      });
-
-      let price;
-      const existingPrice = prices.data.find(p => p.unit_amount === amount && p.recurring?.interval === 'month');
-      
-      if (existingPrice) {
-        price = existingPrice;
-      } else {
-        price = await stripe.prices.create({
-          product: product.id,
-          unit_amount: amount,
-          currency: 'aud',
-          recurring: { interval: 'month' },
-        });
-      }
-
-      stripePriceIds[tier] = price.id;
-    }
-    
-    console.log('Stripe prices ready:', stripePriceIds);
-  } catch (error) {
-    console.error('Error initializing Stripe prices:', error);
-  }
-}
-
-async function getOrCreateCustomer(email, name, firebaseUser) {
-  const normalized = normalizeEmail(email);
-  const customers = await stripe.customers.list({ email: normalized, limit: 1 });
-  if (customers.data.length > 0) {
-    const existing = customers.data[0];
-    // Best-effort: stamp ownership metadata if we can.
-    if (firebaseUser?.uid) {
-      const uid = String(firebaseUser.uid);
-      const metaUid = typeof existing.metadata?.firebaseUid === 'string' ? existing.metadata.firebaseUid : '';
-      if (!metaUid || metaUid !== uid) {
-        try {
-          await stripe.customers.update(existing.id, {
-            metadata: {
-              ...(existing.metadata || {}),
-              firebaseUid: uid,
-              firebaseEmail: normalizeEmail(firebaseUser.email) || normalized || null,
-            },
-          });
-        } catch {
-          // ignore
-        }
-      }
-    }
-    return existing;
-  }
-
-  const metadata = firebaseUser?.uid
-    ? { firebaseUid: String(firebaseUser.uid), firebaseEmail: normalizeEmail(firebaseUser.email) || normalized || null }
-    : undefined;
-
-  return await stripe.customers.create({ email: normalized, name, metadata });
-}
-
-// Signup flow: runs before the user has an ID token, so this endpoint must not require Firebase auth.
-app.post('/create-subscription', maybeRequireFirebaseAuth, authRateLimiter, async (req, res) => {
-  try {
-    const tokenEmail = normalizeEmail(req.firebaseUser?.email);
-    const email = tokenEmail || normalizeEmail(req.body?.email);
-    const name = typeof req.body?.name === 'string' && req.body.name.trim() ? req.body.name.trim() : 'LAMB User';
-    const { subscriptionTier } = req.body;
-
-    if (!email) {
-      return res.status(400).json({ error: 'Missing email' });
-    }
-
-    const customer = await getOrCreateCustomer(email, name, req.firebaseUser);
-    if (req.firebaseUser?.uid) {
-      const ownership = await assertStripeCustomerOwnedByFirebaseUser(customer.id, req.firebaseUser);
-      if (!ownership.ok) return res.status(ownership.status).json({ error: ownership.error });
-    }
-    const ephemeralKey = await stripe.ephemeralKeys.create(
-      { customer: customer.id },
-      { apiVersion: '2024-11-20.acacia' }
-    );
-
-    // Collect a valid payment method up-front (no charge yet)
-    const setupIntent = await stripe.setupIntents.create({
-      customer: customer.id,
-      payment_method_types: ['card'],
-      usage: 'off_session',
-      metadata: toStripeMetadata({
-        tier: subscriptionTier,
-        firebaseUid: req.firebaseUser?.uid,
-      }),
-    });
-
-    if (!setupIntent.client_secret) {
-      throw new Error('Failed to create setup intent');
-    }
-
-    res.json({
-      setupIntentClientSecret: setupIntent.client_secret,
-      setupIntentId: setupIntent.id,
-      ephemeralKey: ephemeralKey.secret,
-      customer: customer.id,
-    });
-  } catch (error) {
-    console.error('Error creating subscription:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Signup flow: runs before the user has an ID token, so this endpoint must not require Firebase auth.
-app.post('/start-trial-subscription', maybeRequireFirebaseAuth, authRateLimiter, async (req, res) => {
-  try {
-    const { customerId, subscriptionTier, setupIntentId } = req.body;
-    if (!customerId || !subscriptionTier || !setupIntentId) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    if (req.firebaseUser?.uid) {
-      const ownership = await assertStripeCustomerOwnedByFirebaseUser(customerId, req.firebaseUser);
-      if (!ownership.ok) return res.status(ownership.status).json({ error: ownership.error });
-    }
-
-    const setupIntent = await stripe.setupIntents.retrieve(setupIntentId);
-    if (setupIntent?.customer && String(setupIntent.customer) !== String(customerId)) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-    const paymentMethodId = setupIntent.payment_method;
-    if (!paymentMethodId) {
-      return res.status(400).json({ error: 'No payment method found' });
-    }
-
-    // Set default payment method for future invoices
-    await stripe.customers.update(customerId, {
-      invoice_settings: { default_payment_method: paymentMethodId },
-    });
-
-    const subscription = await stripe.subscriptions.create({
-      customer: customerId,
-      items: [{ price: stripePriceIds[subscriptionTier] }],
-      trial_period_days: 14,
-      payment_settings: {
-        save_default_payment_method: 'on_subscription',
-        payment_method_types: ['card'],
-      },
-      metadata: toStripeMetadata({
-        tier: subscriptionTier,
-        firebaseUid: req.firebaseUser?.uid,
-      }),
-    });
-
-    res.json({ subscriptionId: subscription.id });
-  } catch (error) {
-    console.error('Error starting trial subscription:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/update-subscription', maybeRequireFirebaseAuth, billingRateLimiter, async (req, res) => {
-  try {
-    const { subscriptionId, newSubscriptionTier } = req.body;
-    console.log(`Updating subscription ${subscriptionId} to ${newSubscriptionTier}`);
-    
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-
-    if (req.firebaseUser?.uid) {
-      const customerId = typeof subscription.customer === 'string' ? subscription.customer : subscription.customer?.id;
-      const ownership = await assertStripeCustomerOwnedByFirebaseUser(customerId, req.firebaseUser);
-      if (!ownership.ok) return res.status(ownership.status).json({ error: ownership.error });
-    }
-    
-    const updatedSubscription = await stripe.subscriptions.update(subscriptionId, {
-      items: [{
-        id: subscription.items.data[0].id,
-        price: stripePriceIds[newSubscriptionTier],
-      }],
-      proration_behavior: 'always_invoice',
-      payment_behavior: 'default_incomplete',
-      payment_settings: {
-        payment_method_types: ['card'],
-        save_default_payment_method: 'on_subscription'
-      },
-      metadata: toStripeMetadata({
-        ...(subscription?.metadata || {}),
-        tier: newSubscriptionTier,
-      }),
-    });
-
-    if (updatedSubscription.latest_invoice) {
-      let invoice = await stripe.invoices.retrieve(updatedSubscription.latest_invoice, {
-        expand: ['payment_intent']
-      });
-      
-      console.log(`Invoice status: ${invoice.status}, amount_due: ${invoice.amount_due}`);
-      
-      if (invoice.amount_due > 0) {
-        // If invoice is in draft, we need to finalize it to get a payment intent
-        // But we set collection_method to prevent automatic charge attempt
-        if (invoice.status === 'draft') {
-          console.log('Finalizing invoice with manual collection...');
-          
-          // Update invoice to prevent automatic charge
-          await stripe.invoices.update(invoice.id, {
-            collection_method: 'charge_automatically',
-            auto_advance: false  // Prevents automatic payment attempt
-          });
-          
-          // Now finalize to create payment intent
-          invoice = await stripe.invoices.finalize(invoice.id);
-          
-          // Re-retrieve with payment_intent expanded
-          invoice = await stripe.invoices.retrieve(invoice.id, {
-            expand: ['payment_intent']
-          });
-        }
-        
-        if (invoice.payment_intent) {
-          console.log(`Payment intent status: ${invoice.payment_intent.status}`);
-          console.log(`Payment intent client_secret exists: ${!!invoice.payment_intent.client_secret}`);
-          
-          const ephemeralKey = await stripe.ephemeralKeys.create(
-            { customer: subscription.customer },
-            { apiVersion: '2024-11-20.acacia' }
-          );
-          
-          return res.json({
-            requiresPayment: true,
-            clientSecret: invoice.payment_intent.client_secret,
-            ephemeralKey: ephemeralKey.secret,
-            customer: subscription.customer,
-            invoiceId: invoice.id,
-          });
-        }
-      }
-    }
-
-    console.log('No payment required for subscription update');
-    res.json({ requiresPayment: false, subscriptionId: updatedSubscription.id });
-  } catch (error) {
-    console.error('Error updating subscription:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/confirm-payment', maybeRequireFirebaseAuth, authRateLimiter, async (req, res) => {
-  try {
-    const { invoiceId } = req.body;
-    
-    // Retrieve the invoice to get the payment intent
-    const invoice = await stripe.invoices.retrieve(invoiceId, {
-      expand: ['payment_intent']
-    });
-
-    if (req.firebaseUser?.uid) {
-      const customerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
-      const ownership = await assertStripeCustomerOwnedByFirebaseUser(customerId, req.firebaseUser);
-      if (!ownership.ok) return res.status(ownership.status).json({ error: ownership.error });
-    }
-    
-    if (!invoice.payment_intent) {
-      return res.json({ success: false, status: 'no_payment' });
-    }
-    
-    const paymentIntent = invoice.payment_intent;
-    
-    console.log('Payment intent status:', paymentIntent.status, 'Invoice status:', invoice.status);
-    
-    // Check if payment succeeded
-    if (paymentIntent.status === 'succeeded') {
-      // Payment succeeded, mark invoice as paid if needed
-      if (invoice.status === 'open') {
-        await stripe.invoices.pay(invoiceId);
-      }
-      return res.json({ success: true, status: 'succeeded' });
-    }
-    
-    // Check for other statuses
-    if (paymentIntent.status === 'processing') {
-      return res.json({ success: false, status: 'processing' });
-    }
-    
-    if (paymentIntent.status === 'requires_payment_method' || paymentIntent.status === 'requires_action') {
-      return res.json({ success: false, status: 'requires_payment_method' });
-    }
-    
-    // Payment failed or cancelled
-    return res.json({ success: false, status: paymentIntent.status, error: 'Payment did not complete' });
-  } catch (error) {
-    console.error('Error confirming payment:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/confirm-subscription-payment', maybeRequireFirebaseAuth, authRateLimiter, async (req, res) => {
-  try {
-    const { subscriptionId } = req.body;
-    
-    // Retrieve the subscription to get the latest invoice
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
-      expand: ['latest_invoice.payment_intent']
-    });
-
-    if (req.firebaseUser?.uid) {
-      const customerId = typeof subscription.customer === 'string' ? subscription.customer : subscription.customer?.id;
-      const ownership = await assertStripeCustomerOwnedByFirebaseUser(customerId, req.firebaseUser);
-      if (!ownership.ok) return res.status(ownership.status).json({ error: ownership.error });
-    }
-    
-    if (!subscription.latest_invoice) {
-      return res.json({ success: false, status: 'no_invoice' });
-    }
-    
-    const invoice = subscription.latest_invoice;
-    const paymentIntent = invoice.payment_intent;
-    
-    if (!paymentIntent) {
-      return res.json({ success: false, status: 'no_payment_intent' });
-    }
-    
-    console.log('Subscription payment intent status:', paymentIntent.status, 'Invoice status:', invoice.status);
-    
-    // Check if payment succeeded
-    if (paymentIntent.status === 'succeeded') {
-      return res.json({ success: true, status: 'succeeded' });
-    }
-    
-    // Check for other statuses
-    if (paymentIntent.status === 'processing') {
-      return res.json({ success: false, status: 'processing' });
-    }
-    
-    if (paymentIntent.status === 'requires_payment_method' || paymentIntent.status === 'requires_action') {
-      return res.json({ success: false, status: 'requires_payment_method' });
-    }
-    
-    // Payment failed or cancelled
-    return res.json({ success: false, status: paymentIntent.status, error: 'Payment did not complete' });
-  } catch (error) {
-    console.error('Error confirming subscription payment:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/schedule-subscription-change', maybeRequireFirebaseAuth, billingRateLimiter, async (req, res) => {
-  try {
-    const { subscriptionId, newSubscriptionTier } = req.body;
-    if (!subscriptionId) {
-      return res.status(400).json({ error: 'Missing subscriptionId' });
-    }
-    if (!newSubscriptionTier || !stripePriceIds[newSubscriptionTier]) {
-      return res.status(400).json({ error: 'Invalid newSubscriptionTier' });
-    }
-
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-
-    if (req.firebaseUser?.uid) {
-      const customerId = typeof subscription.customer === 'string' ? subscription.customer : subscription.customer?.id;
-      const ownership = await assertStripeCustomerOwnedByFirebaseUser(customerId, req.firebaseUser);
-      if (!ownership.ok) return res.status(ownership.status).json({ error: ownership.error });
-    }
-
-    // Stripe allows only one schedule per subscription.
-    // If the subscription already has a schedule, reuse it; otherwise create a new one.
-    const existingScheduleId =
-      (typeof subscription.schedule === 'string' && subscription.schedule) ||
-      (typeof subscription.subscription_schedule === 'string' && subscription.subscription_schedule) ||
-      null;
-
-    const schedule = existingScheduleId
-      ? await stripe.subscriptionSchedules.retrieve(existingScheduleId)
-      : await stripe.subscriptionSchedules.create({ from_subscription: subscriptionId });
-
-    const phaseStart = schedule?.phases?.[0]?.start_date || Math.floor(Date.now() / 1000);
-    const currentPriceId = subscription?.items?.data?.[0]?.price?.id;
-    if (!currentPriceId) {
-      return res.status(500).json({ error: 'Subscription is missing price information' });
-    }
-
-    const updatedSchedule = await stripe.subscriptionSchedules.update(schedule.id, {
-      phases: [
-        {
-          items: [{ price: currentPriceId }],
-          start_date: phaseStart,
-          end_date: subscription.current_period_end,
-        },
-        {
-          items: [{ price: stripePriceIds[newSubscriptionTier] }],
-          start_date: subscription.current_period_end,
-        },
-      ],
-      end_behavior: 'release',
-    });
-
-    res.json({
-      scheduleId: updatedSchedule.id,
-      changeDate: new Date(subscription.current_period_end * 1000),
-    });
-  } catch (error) {
-    console.error('Error scheduling subscription change:', error);
-    res.status(500).json({ error: error?.message || 'Failed to schedule subscription change' });
-  }
-});
-
-app.post('/cancel-subscription', maybeRequireFirebaseAuth, billingRateLimiter, async (req, res) => {
-  try {
-    const { subscriptionId, immediate } = req.body;
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-
-    if (req.firebaseUser?.uid) {
-      const customerId = typeof subscription.customer === 'string' ? subscription.customer : subscription.customer?.id;
-      const ownership = await assertStripeCustomerOwnedByFirebaseUser(customerId, req.firebaseUser);
-      if (!ownership.ok) return res.status(ownership.status).json({ error: ownership.error });
-    }
-
-    if (immediate) {
-      const canceled = await stripe.subscriptions.cancel(subscriptionId);
-      res.json({ subscriptionId: canceled.id, status: 'canceled' });
-    } else {
-      const updated = await stripe.subscriptions.update(subscriptionId, {
-        cancel_at_period_end: true,
-      });
-      res.json({ 
-        subscriptionId: updated.id, 
-        status: 'canceling',
-        cancelAt: new Date(updated.current_period_end * 1000)
-      });
-    }
-  } catch (error) {
-    console.error('Error cancelling subscription:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/create-payment-intent', maybeRequireFirebaseAuth, billingRateLimiter, async (req, res) => {
-  try {
-    const { amount, currency, subscriptionTier } = req.body;
-    const tokenEmail = normalizeEmail(req.firebaseUser?.email);
-    const email = tokenEmail || normalizeEmail(req.body?.email);
-    if (!email) {
-      return res.status(400).json({ error: 'Missing email' });
-    }
-
-    const customer = await getOrCreateCustomer(email, 'LAMB User', req.firebaseUser);
-    if (req.firebaseUser?.uid) {
-      const ownership = await assertStripeCustomerOwnedByFirebaseUser(customer.id, req.firebaseUser);
-      if (!ownership.ok) return res.status(ownership.status).json({ error: ownership.error });
-    }
-    const ephemeralKey = await stripe.ephemeralKeys.create(
-      { customer: customer.id },
-      { apiVersion: '2024-11-20.acacia' }
-    );
-
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount,
-      currency,
-      customer: customer.id,
-      automatic_payment_methods: { enabled: true },
-      metadata: { subscriptionTier },
-    });
-
-    res.json({
-      paymentIntent: paymentIntent.client_secret,
-      ephemeralKey: ephemeralKey.secret,
-      customer: customer.id,
-    });
-  } catch (error) {
-    console.error('Error creating payment intent:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
-    stripe: isStripeConfigured() ? 'configured' : 'not_configured',
-    stripePrices: stripePriceIds,
+    billingProvider: 'apple_iap',
+    appleIapSecretConfigured: !!String(process.env.APPLE_IAP_SHARED_SECRET || '').trim(),
     firebase: firebaseEnabled() ? 'enabled' : 'disabled',
     requireFirebaseAuth: String(process.env.REQUIRE_FIREBASE_AUTH).toLowerCase() === 'true',
   });
-});
-
-// Server-side subscription validation/sync.
-// Requires a Firebase ID token and uses Stripe as the source of truth.
-app.post('/subscription-status', requireFirebaseAuth, billingRateLimiter, async (req, res) => {
-  try {
-    if (!isStripeConfigured()) {
-      return res.status(503).json({ error: 'Stripe is not configured on this server' });
-    }
-
-    const { subscriptionId, customerId } = req.body || {};
-    if (!subscriptionId && !customerId) {
-      return res.status(400).json({ error: 'Missing subscriptionId or customerId' });
-    }
-
-    const loadSubscription = async () => {
-      if (subscriptionId) {
-        return await stripe.subscriptions.retrieve(subscriptionId, {
-          expand: ['items.data.price', 'customer'],
-        });
-      }
-
-      // Fallback: pick the most relevant subscription for the customer.
-      const subs = await stripe.subscriptions.list({
-        customer: customerId,
-        status: 'all',
-        limit: 50,
-        expand: ['data.items.data.price'],
-      });
-
-      const ranked = (subs.data || []).slice().sort((a, b) => {
-        const score = (s) => {
-          const status = s?.status;
-          if (status === 'active') return 5;
-          if (status === 'trialing') return 4;
-          if (status === 'past_due') return 3;
-          if (status === 'unpaid') return 2;
-          if (status === 'canceled') return 1;
-          return 0;
-        };
-        const byScore = score(b) - score(a);
-        if (byScore !== 0) return byScore;
-        return (b?.created || 0) - (a?.created || 0);
-      });
-
-      return ranked[0] || null;
-    };
-
-    const subscription = await loadSubscription();
-    if (!subscription) {
-      return res.json({
-        ok: true,
-        subscription: null,
-      });
-    }
-
-    const derivedTier = (() => {
-      const metaTier = subscription?.metadata?.tier;
-      if (metaTier && typeof metaTier === 'string') return metaTier.toUpperCase();
-
-      const priceId = subscription?.items?.data?.[0]?.price?.id || subscription?.items?.data?.[0]?.price;
-      if (!priceId) return null;
-      const match = Object.entries(stripePriceIds || {}).find(([, id]) => id === priceId);
-      return match ? match[0] : null;
-    })();
-
-    res.json({
-      ok: true,
-      subscription: {
-        id: subscription.id,
-        customer: typeof subscription.customer === 'string' ? subscription.customer : subscription.customer?.id,
-        status: subscription.status,
-        tier: derivedTier,
-        cancelAtPeriodEnd: !!subscription.cancel_at_period_end,
-        currentPeriodStartMs: subscription.current_period_start ? subscription.current_period_start * 1000 : null,
-        currentPeriodEndMs: subscription.current_period_end ? subscription.current_period_end * 1000 : null,
-      },
-    });
-  } catch (error) {
-    console.error('Error validating subscription status:', error);
-    res.status(500).json({ error: error.message });
-  }
 });
 
 // Paid-owner invitation system.
@@ -3176,92 +2385,7 @@ app.get('/me', requireFirebaseAuth, (req, res) => {
   res.json({ uid: req.firebaseUser?.uid, email: req.firebaseUser?.email || null });
 });
 
-// Dangerous cleanup endpoints are disabled by default.
-// Use the CLI script instead: `npm run wipe-remote`.
-if (String(process.env.ENABLE_STRIPE_CLEANUP_ENDPOINTS).toLowerCase() === 'true') {
-  // Get all subscriptions for cleanup
-  app.get('/all-subscriptions', async (req, res) => {
-    try {
-      const subscriptions = await stripe.subscriptions.list({
-        limit: 100,
-        status: 'all'
-      });
-      
-      res.json({
-        total: subscriptions.data.length,
-        subscriptions: subscriptions.data.map(sub => ({
-          id: sub.id,
-          customer: sub.customer,
-          status: sub.status,
-          current_period_end: new Date(sub.current_period_end * 1000),
-          items: sub.items.data.map(item => ({
-            price: item.price.id,
-            quantity: item.quantity
-          }))
-        }))
-      });
-    } catch (error) {
-      console.error('Error listing subscriptions:', error);
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // Cancel all test subscriptions
-  app.post('/cleanup-subscriptions', async (req, res) => {
-    try {
-      console.log('Starting subscription cleanup...');
-      const subscriptions = await stripe.subscriptions.list({
-        limit: 100,
-        status: 'all'
-      });
-      
-      const canceled = [];
-      const errors = [];
-      
-      for (const sub of subscriptions.data) {
-        try {
-          if (sub.status !== 'canceled') {
-            console.log(`Canceling subscription ${sub.id}...`);
-            await stripe.subscriptions.cancel(sub.id);
-            canceled.push(sub.id);
-          }
-        } catch (error) {
-          errors.push({ subscriptionId: sub.id, error: error.message });
-        }
-      }
-      
-      // Delete test customers
-      const customers = await stripe.customers.list({
-        limit: 100
-      });
-      
-      const deletedCustomers = [];
-      for (const customer of customers.data) {
-        try {
-          console.log(`Deleting customer ${customer.id}...`);
-          await stripe.customers.del(customer.id);
-          deletedCustomers.push(customer.id);
-        } catch (error) {
-          // Some customers may have active subscriptions, that's okay
-          console.log(`Could not delete customer ${customer.id}: ${error.message}`);
-        }
-      }
-      
-      res.json({
-        message: 'Cleanup completed',
-        canceledSubscriptions: canceled,
-        deletedCustomers: deletedCustomers,
-        errors: errors
-      });
-    } catch (error) {
-      console.error('Error during cleanup:', error);
-      res.status(500).json({ error: error.message });
-    }
-  });
-}
-
 async function startServer() {
-  await initializeStripePrices();
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Backend running on http://0.0.0.0:${PORT}`);
   });

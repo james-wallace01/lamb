@@ -51,8 +51,6 @@ npm install
 The app reads these Expo public environment variables:
 - `EXPO_PUBLIC_LAMB_API_URL`
 
-Stripe publishable key is loaded at runtime from the backend (`/public-config`).
-
 For convenience, see [mobile/.env.example](mobile/.env.example).
 
 Examples:

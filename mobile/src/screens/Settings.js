@@ -7,7 +7,7 @@ import { useData } from '../context/DataContext';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 
 export default function Membership() {
-  const { refreshData, syncSubscriptionFromServer, theme, vaults, currentUser } = useData();
+  const { refreshData, theme, vaults, currentUser } = useData();
   const [refreshing, setRefreshing] = useState(false);
 
   const ownsAnyVault = (vaults || []).some((v) => v?.ownerId && currentUser?.id && v.ownerId === currentUser.id);
@@ -21,7 +21,6 @@ export default function Membership() {
     setRefreshing(true);
     const startedAt = Date.now();
     try {
-      await syncSubscriptionFromServer?.();
       await refreshData?.();
     } finally {
       const elapsed = Date.now() - startedAt;

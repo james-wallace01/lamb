@@ -6,7 +6,7 @@ import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 import { firebaseAuth, isFirebaseConfigured } from '../firebase';
-import { API_URL } from '../config/stripe';
+import { API_URL } from '../config/api';
 import { apiFetch } from '../utils/apiFetch';
 
 export default function SignUp({ navigation }) {

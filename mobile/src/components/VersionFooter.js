@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import appConfig from '../../app.json';
 import versionInfo from '../../../public/version.json';
-import { API_URL } from '../config/stripe';
+import { API_URL } from '../config/api';
 import { useData } from '../context/DataContext';
 import { apiFetch } from '../utils/apiFetch';
 

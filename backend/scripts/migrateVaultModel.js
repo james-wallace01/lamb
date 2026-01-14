@@ -253,8 +253,6 @@ const run = async () => {
       const payload = {
         vault_id: primaryVaultId,
         tier: legacySub.tier || null,
-        stripeSubscriptionId: legacySub.stripeSubscriptionId || null,
-        stripeCustomerId: legacySub.stripeCustomerId || null,
         cancelAtPeriodEnd: !!legacySub.cancelAtPeriodEnd,
         startDate: legacySub.startDate || null,
         trialEndsAt: legacySub.trialEndsAt || null,

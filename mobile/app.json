@@ -38,13 +38,6 @@
     },
     "plugins": [
       [
-        "@stripe/stripe-react-native",
-        {
-          "merchantIdentifier": "merchant.com.lamb",
-          "enableGooglePay": false
-        }
-      ],
-      [
         "expo-image-picker",
         {
           "photosPermission": "Allow LAMB to access your photo library to choose images for your profile, vaults, collections, and assets."

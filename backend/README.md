@@ -1,39 +1,25 @@
-# LAMB Stripe Payment Integration Guide
+# LAMB Backend
 
-## Setup Instructions
+This backend uses Apple In-App Purchases for subscription verification.
 
-### 1. Get Stripe API Keys
-1. Sign up at https://stripe.com
-2. Go to Developers > API Keys
-3. Copy your Publishable Key and Secret Key
+## Apple IAP receipt verification
 
-Important:
-- Never commit keys to git.
-- Don’t paste secret keys into chat.
+The mobile app calls `POST /iap/verify` with Apple receipt data. The backend verifies the receipt with Apple and upserts the authenticated user’s document in `userSubscriptions/{uid}`.
 
-### 2. Update Mobile App Configuration
-The mobile app loads the Stripe publishable key at runtime from the backend (`GET /public-config`).
+Required env var:
 
-Set the key on the backend via env var:
 ```
-STRIPE_PUBLISHABLE_KEY=pk_test_YOUR_KEY_HERE
+APPLE_IAP_SHARED_SECRET=your_app_store_connect_shared_secret
 ```
 
-### 3. Setup Backend Server
+## Setup Backend Server
 ```bash
 cd backend
 npm install
 cp .env.example .env
 ```
 
-Edit `.env` file and add your Stripe keys:
-```
-STRIPE_SECRET_KEY=sk_test_YOUR_KEY_HERE
-STRIPE_PUBLISHABLE_KEY=pk_test_YOUR_KEY_HERE
-STRIPE_WEBHOOK_SECRET=whsec_YOUR_WEBHOOK_SECRET_HERE
-```
-
-### 4. Start Backend Server
+### Start Backend Server
 ```bash
 cd backend
 npm start
@@ -76,7 +62,7 @@ Choose ONE option in [backend/.env](backend/.env):
   - `FIREBASE_CLIENT_EMAIL=...`
   - `FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"`
 
-### 3) (Optional) Require Firebase auth for Stripe endpoints
+### 3) (Optional) Require Firebase auth for protected endpoints
 Set:
 ```
 REQUIRE_FIREBASE_AUTH=true
@@ -88,29 +74,20 @@ When enabled, the backend expects an `Authorization: Bearer <Firebase_ID_Token>`
 Once configured, you can hit:
 - `GET /me` with `Authorization: Bearer <token>` to verify the server is validating tokens.
 
-### 5. Test the Integration
+### 5) Test the Integration
 1. Start the mobile app: `cd mobile && npm run ios`
 2. Sign up with a new account
-3. Select a subscription plan
-4. Use Stripe test card: `4242 4242 4242 4242`
-5. Any future expiry date and any CVC
-
-## Stripe Test Cards
-- **Success**: 4242 4242 4242 4242
-- **Declined**: 4000 0000 0000 0002
-- **Requires Auth**: 4000 0025 0000 3155
-
-Any future expiration date (e.g., 12/34)
-Any 3-digit CVC
+3. Select a membership plan
+4. Complete an Apple subscription purchase in the iOS sandbox
+5. The app will call `POST /iap/verify` and your `userSubscriptions/{uid}` doc should update
 
 ## Remote Data Wipe (DANGEROUS)
 
-This repo includes a CLI script to wipe *remote* account data in the configured services (Stripe + Firebase Auth).
+This repo includes a CLI script to wipe *remote* account data in Firebase Auth.
 
 It is **dry-run by default** and requires explicit confirmations to actually delete anything.
 
 ### What it deletes
-- **Stripe:** cancels all subscriptions, deletes all customers (for the Stripe account configured by `STRIPE_SECRET_KEY`)
 - **Firebase Auth:** deletes all Firebase Auth users in the Firebase project configured for Admin SDK
 
 ### Dry run
@@ -119,7 +96,7 @@ cd backend
 npm run wipe-remote
 ```
 
-### Execute (test mode Stripe recommended)
+### Execute
 ```bash
 cd backend
 REMOTE_WIPE_CONFIRM=DELETE_ALL_REMOTE_DATA \
@@ -128,11 +105,8 @@ npm run wipe-remote -- --execute
 ```
 
 ### Notes
-- The script **refuses to wipe Stripe live keys** unless you also set:
-  - `ALLOW_LIVE_STRIPE_WIPE=true`
-  - `LIVE_STRIPE_WIPE_CONFIRM=I_KNOW_THIS_IS_LIVE`
 - You can limit scope/size:
-  - `--scope stripe|firebase|all` (default `all`)
+  - `--scope firebase` (default `firebase`)
   - `--limit N`
 
 ## Firestore Vault Model Migration (DANGEROUS)
@@ -243,7 +217,6 @@ If you deploy with Render, this repo includes sample cron job definitions in [re
 Notes:
 - Cron jobs need Firebase Admin credentials, so ensure `FIREBASE_SERVICE_ACCOUNT_JSON` is set for the cron service in Render.
 - The blueprint defines both **staging** and **production** services with the same setup.
-- Use **Stripe test keys** for staging and **Stripe live keys** for production (set per-service in the Render dashboard).
 
 ## Paid Owner Invitations
 
@@ -347,7 +320,7 @@ When a vault transitions from a paid status (`active|trialing|past_due`) to an u
 - Deletes `permissionGrants`
 - Revokes pending invitations
 
-This is triggered during Stripe webhook subscription sync.
+This is triggered when subscription status is updated on the server (e.g. via `POST /iap/verify`).
 
 ## Production Deployment
 
@@ -368,71 +341,31 @@ This repo includes a Render Blueprint at [render.yaml](render.yaml) that deploys
 
 ### 2) Set environment variables in Render
 In Render → your service → **Environment**, set:
-- `STRIPE_SECRET_KEY` (test secret key, starts with `sk_test_...`)
-- `STRIPE_PUBLISHABLE_KEY` (publishable key, starts with `pk_test_...`)
-- `STRIPE_WEBHOOK_SECRET` (starts with `whsec_...`)
 - `FIREBASE_SERVICE_ACCOUNT_JSON`
   - Recommended: paste **base64(JSON)** of your Firebase service account key.
   - On macOS you can generate it with:
     - `base64 -i /absolute/path/to/serviceAccountKey.json | tr -d '\n'`
 - `REQUIRE_FIREBASE_AUTH=true` (recommended)
+- `APPLE_IAP_SHARED_SECRET` (required for iOS receipt verification)
 
 Note: for Render you generally *don't* use `GOOGLE_APPLICATION_CREDENTIALS` because you don't have a stable file path on disk.
-
-### 3) Add the Stripe webhook (Test mode)
-Stripe Dashboard (Test mode) → **Developers** → **Webhooks** → **Add endpoint**
-- Endpoint URL: `https://YOUR-RENDER-SERVICE.onrender.com/webhook`
-- Select events (recommended for subscriptions):
-  - `customer.subscription.created`
-  - `customer.subscription.updated`
-  - `customer.subscription.deleted`
-  - `invoice.payment_succeeded`
-  - `invoice.payment_failed`
-
-After creating the endpoint, copy its **Signing secret** (`whsec_...`) into Render as `STRIPE_WEBHOOK_SECRET`.
 
 ### Security Checklist:
 - [ ] Use environment variables for all keys
 - [ ] Never commit .env files to git
 - [ ] Enable HTTPS in production
-- [ ] Verify webhook signatures
+- [ ] Verify Apple receipts server-side
 - [ ] Implement rate limiting
 - [ ] Add authentication to endpoints
-- [ ] Use Stripe's live keys (not test keys)
-
-## Webhook Setup
-1. Go to Stripe Dashboard > Developers > Webhooks
-2. Add endpoint: `https://your-domain.com/webhook`
-3. Select events (recommended for subscriptions):
-  - `customer.subscription.created`
-  - `customer.subscription.updated`
-  - `customer.subscription.deleted`
-  - `invoice.payment_succeeded`
-  - `invoice.payment_failed`
-4. Copy webhook secret to `.env`
 
 ## API Endpoints
 
-### POST /create-payment-intent
-Creates a payment intent for subscription purchase
-```json
-{
-  "amount": 499,
-  "currency": "usd",
-  "email": "user@example.com",
-  "subscriptionTier": "basic"
-}
-```
-
-### POST /webhook
-Handles Stripe webhook events (payment success/failure)
+### POST /iap/verify
+Verifies an iOS subscription receipt with Apple and upserts `userSubscriptions/{uid}`.
 
 ### GET /health
 Health check endpoint
 
 ## Next Steps
-- Implement subscription management (cancel, upgrade, downgrade)
-- Add recurring billing with Stripe Subscriptions
-- Implement invoice generation
-- Add customer portal for self-service
-- Set up email notifications for payment events
+- Consider adding Apple Server Notifications (optional) for near real-time subscription updates
+- Keep weekly usage reconciliation + retention pruning jobs running in Render

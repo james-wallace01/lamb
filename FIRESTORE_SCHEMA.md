@@ -1,6 +1,6 @@
-# Firestore Canonical Schema (Vault Model)
+# Firestore Canonical Schema
 
-This project is migrating to Firestore as the canonical source of truth for roles, permissions, and paid gating.
+Firestore is the canonical source of truth for roles, permissions, and paid gating.
 
 ## Top-level collections
 
@@ -13,18 +13,21 @@ Recommended fields:
 - `firstName`, `lastName`, `username`: string
 - `createdAt`: number (ms)
 
-### `vaultSubscriptions/{vaultId}`
-One document per vault that represents the vault’s paid status.
+### `userSubscriptions/{uid}`
+One document per user that represents the user’s paid status. This is the canonical subscription source of truth.
 
-Fields (written by server/Stripe webhook only):
-- `vault_id`: string
+Fields (written by server only):
+- `user_id`: string
+- `provider`: string (e.g. `apple_iap`)
 - `status`: string (`active | trialing | past_due | canceled | none | ...`)
 - `tier`: string (`BASIC | PREMIUM | PRO | ...`) or null
-- `stripeCustomerId`: string or null
-- `stripeSubscriptionId`: string or null
+- `productId`: string or null
 - `cancelAtPeriodEnd`: boolean
 - `trialEndsAt`, `renewalDate`: number (ms) or null
 - `updatedAt`: number (ms)
+
+### `vaultSubscriptions/{vaultId}` (legacy)
+Optional legacy fallback for paid gating.
 
 ## Vaults
 

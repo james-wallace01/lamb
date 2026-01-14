@@ -294,7 +294,7 @@ export default function Collection({ navigation, route }) {
     <TouchableOpacity
       style={[
         styles.card,
-        styles.assetStripe,
+        styles.assetAccent,
         { backgroundColor: theme.surface, borderColor: theme.border },
       ]}
       onPress={() => navigation.navigate('Asset', { assetId: item.id, vaultId: collection?.vaultId ? String(collection.vaultId) : null })}
@@ -719,7 +719,7 @@ const styles = StyleSheet.create({
   subtitleDim: { color: '#7d8497' },
   subtitle: { color: '#c5c5d0' },
   card: { padding: 14, borderRadius: 10, backgroundColor: '#11121a', borderWidth: 1, borderColor: '#1f2738' },
-  assetStripe: { borderLeftWidth: 4, borderLeftColor: '#16a34a', paddingLeft: 12 },
+  assetAccent: { borderLeftWidth: 4, borderLeftColor: '#16a34a', paddingLeft: 12 },
   cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },

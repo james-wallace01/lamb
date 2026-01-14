@@ -1,13 +1,14 @@
 {
   "name": "lamb-backend",
   "version": "1.0.0",
-  "description": "Backend server for LAMB payment processing",
+  "description": "Backend server for LAMB",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
     "migrate-vault-model": "node scripts/migrateVaultModel.js",
     "wipe-remote": "node scripts/wipeRemoteData.js",
+    "get-user-subscription": "node scripts/getUserSubscription.js",
     "recompute-vault-usage": "node scripts/recomputeVaultUsage.js",
     "prune-email-events": "node scripts/pruneEmailEvents.js",
     "prune-invitations": "node scripts/pruneInvitations.js",
@@ -16,7 +17,6 @@
   },
   "dependencies": {
     "express": "^4.18.2",
-    "stripe": "^14.10.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "firebase-admin": "^12.6.0",

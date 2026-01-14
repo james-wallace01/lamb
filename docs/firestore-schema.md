@@ -26,25 +26,33 @@ Rules
 - Only the user can read/write their own doc.
 
 ### `/vaultSubscriptions/{vaultId}` (server-written)
-Vault subscription state used for paid gating.
+Legacy vault subscription state used for paid gating (back-compat fallback).
 
 Fields
 - `vault_id` (string)
 - `tier` (string|null) – e.g. `BASIC|PREMIUM|PRO` (optional)
-- `status` (string) – one of Stripe-like: `active|trialing|past_due|canceled|none|...`
-- `stripeSubscriptionId` (string|null)
-- `stripeCustomerId` (string|null)
+- `status` (string) – one of: `active|trialing|past_due|canceled|none|...`
 - `cancelAtPeriodEnd` (boolean)
 - `trialEndsAt` (number|null ms)
 - `renewalDate` (number|null ms)
 - `currentPeriodStart` (number|null ms)
 - `currentPeriodEnd` (number|null ms)
 - `updatedAt` (number ms)
-- `lastStripeEventType` (string|null)
 
 Rules
 - Readable by active members of the vault.
-- Writes are denied to clients; backend/Stripe webhook keeps this up to date.
+- Writes are denied to clients; backend keeps this up to date.
+
+### `/userSubscriptions/{uid}` (server-written, canonical)
+Per-user subscription state (one doc per Firebase Auth uid). This is the canonical source of truth used by rules to determine if a vault owner is paid.
+
+Fields (common)
+- `user_id` (string uid)
+- `tier` (string|null)
+- `status` (string) – one of: `active|trialing|past_due|canceled|none|...`
+- `provider` (string) – e.g. `apple_iap`
+- `productId` (string|null)
+- `updatedAt` (number ms)
 
 ## Vaults
 

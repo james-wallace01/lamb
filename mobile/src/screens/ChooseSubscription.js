@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Linking } from 'react-native';
-import * as ExpoLinking from 'expo-linking';
-import { useStripe } from '@stripe/stripe-react-native';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Linking, Platform, NativeModules } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
-import { API_URL, APPLE_PAY_COUNTRY_CODE, STRIPE_MERCHANT_DISPLAY_NAME } from '../config/stripe';
+import { API_URL } from '../config/api';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 import { apiFetch } from '../utils/apiFetch';
+import * as RNIap from 'react-native-iap';
+import { IAP_PRODUCTS } from '../config/iap';
 
 export default function ChooseSubscription({ navigation, route }) {
   const { subscriptionTiers, convertPrice, theme } = useData();
@@ -15,8 +15,44 @@ export default function ChooseSubscription({ navigation, route }) {
   const { firstName, lastName, email, username, password } = route.params || {};
   const [selectedTier, setSelectedTier] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [iapReady, setIapReady] = useState(false);
+  const [iapInitError, setIapInitError] = useState(null);
   const { register, loading, ensureFirebaseSignupAuth } = useData();
-  const { initPaymentSheet, presentPaymentSheet } = useStripe();
+
+  const iapNativeAvailable =
+    Platform.OS === 'ios' &&
+    !!(
+      NativeModules?.RNIapModule ||
+      NativeModules?.RNIapIos ||
+      NativeModules?.RNIapIosSk2 ||
+      NativeModules?.RNIapIosStorekit2
+    );
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    let mounted = true;
+    (async () => {
+      try {
+        if (!iapNativeAvailable) {
+          throw new Error('In-app purchases unavailable in this build');
+        }
+        await RNIap.initConnection();
+        if (mounted) {
+          setIapReady(true);
+          setIapInitError(null);
+        }
+      } catch {
+        if (mounted) {
+          setIapReady(false);
+          setIapInitError('In-app purchases are unavailable in this build.');
+        }
+      }
+    })();
+    return () => {
+      mounted = false;
+      RNIap.endConnection().catch(() => {});
+    };
+  }, []);
 
   const footerSpacer = 72 + (insets?.bottom || 0);
 
@@ -24,67 +60,30 @@ export default function ChooseSubscription({ navigation, route }) {
     Linking.openURL(url).catch(() => {});
   };
 
-  const initializePaymentSheet = async (tier) => {
-    try {
-      const returnURL = ExpoLinking.createURL('stripe-redirect');
-
-      // Collect valid payment info first (no charge yet)
-      const response = await apiFetch(`${API_URL}/create-subscription`, {
-        requireAuth: true,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email,
-          name: `${firstName} ${lastName}`,
-          subscriptionTier: tier.toUpperCase(),
-        }),
-      });
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        Alert.alert('Error', err.error || 'Unable to start signup. Please try again.');
-        return null;
-      }
-
-      const { setupIntentClientSecret, setupIntentId, ephemeralKey, customer } = await response.json();
-
-      if (!setupIntentClientSecret || !customer || !ephemeralKey) {
-        Alert.alert('Error', 'Unable to reach membership service. Please try again.');
-        return null;
-      }
-
-      const { error } = await initPaymentSheet({
-        merchantDisplayName: STRIPE_MERCHANT_DISPLAY_NAME,
-        customerId: customer,
-        customerEphemeralKeySecret: ephemeralKey,
-        setupIntentClientSecret: setupIntentClientSecret,
-        allowsDelayedPaymentMethods: true,
-        returnURL,
-        applePay: { merchantCountryCode: APPLE_PAY_COUNTRY_CODE },
-      });
-
-      if (error) {
-        Alert.alert('Error', error.message);
-        return null;
-      }
-
-      return { setupIntentId, customerId: customer };
-    } catch (error) {
-      const message = (error && error.message) ? String(error.message) : 'Network request failed';
-      Alert.alert(
-        'Network error',
-        `Unable to reach the membership service.\n\nPlease make sure the backend is running and reachable at:\n${API_URL}\n\nDetails: ${message}`
-      );
-      console.error(error);
-      return null;
-    }
+  const productIdForTier = (tierId) => {
+    const t = String(tierId || '').toUpperCase();
+    if (t === 'BASIC') return IAP_PRODUCTS.BASIC_MONTHLY;
+    if (t === 'PREMIUM') return IAP_PRODUCTS.PREMIUM_MONTHLY;
+    if (t === 'PRO') return IAP_PRODUCTS.PRO_MONTHLY;
+    return null;
   };
 
   const handleContinue = async () => {
     if (!selectedTier) {
       Alert.alert('Select Membership', 'Please choose a membership to continue');
+      return;
+    }
+
+    if (Platform.OS !== 'ios') {
+      Alert.alert('Unavailable', 'Membership purchases are currently available on iOS only.');
+      return;
+    }
+
+    if (!iapNativeAvailable || !iapReady) {
+      Alert.alert(
+        'In-app purchases unavailable',
+        `${iapInitError || 'This build cannot access Apple In-App Purchases.'}\n\nTo test purchases you need a native build (TestFlight or an EAS development build). Expo Go does not support react-native-iap.`
+      );
       return;
     }
 
@@ -101,46 +100,52 @@ export default function ChooseSubscription({ navigation, route }) {
 
     const tier = subscriptionTiers[selectedTier];
     const localPrice = convertPrice(tier.price);
-    const trialEndsAt = new Date(Date.now() + (14 * 24 * 60 * 60 * 1000));
-
-    // Initialize payment sheet
-    const subscriptionData = await initializePaymentSheet(selectedTier);
-    if (!subscriptionData) {
+    const productId = productIdForTier(selectedTier);
+    if (!productId) {
+      Alert.alert('Error', 'Invalid membership selection');
       setSubmitting(false);
       return;
     }
 
-    // Present payment sheet
-    const { error } = await presentPaymentSheet();
-    
-    if (error) {
-      Alert.alert('Payment cancelled', error.message);
+    let purchase = null;
+    try {
+      purchase = await RNIap.requestSubscription({ sku: productId });
+    } catch (e) {
+      const raw = e?.message ? String(e.message) : String(e || 'Purchase cancelled');
+      const msg = /buyProduct|of null|native module/i.test(raw)
+        ? 'In-app purchases are unavailable in this build. Use TestFlight (recommended) or create an EAS development build with react-native-iap included.'
+        : raw;
+      Alert.alert('Purchase', msg);
       setSubmitting(false);
       return;
     }
 
-    // Start 14-day free trial subscription (payment method is on file)
-    const startResponse = await apiFetch(`${API_URL}/start-trial-subscription`, {
+    const receiptData = purchase?.transactionReceipt || null;
+    if (!receiptData) {
+      Alert.alert('Error', 'Purchase completed but receipt was missing. Please try restoring purchases.');
+      setSubmitting(false);
+      return;
+    }
+
+    const verifyResp = await apiFetch(`${API_URL}/iap/verify`, {
       requireAuth: true,
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        customerId: subscriptionData.customerId,
-        subscriptionTier: selectedTier.toUpperCase(),
-        setupIntentId: subscriptionData.setupIntentId,
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform: 'ios', productId, receiptData, tier: selectedTier.toUpperCase() }),
     });
 
-    if (!startResponse.ok) {
-      const err = await startResponse.json().catch(() => ({}));
-      Alert.alert('Error', err.error || 'Unable to start free trial. Please try again.');
+    const verifyJson = await verifyResp.json().catch(() => null);
+    if (!verifyResp.ok) {
+      Alert.alert('Error', verifyJson?.error || 'Unable to verify purchase');
       setSubmitting(false);
       return;
     }
 
-    const { subscriptionId } = await startResponse.json();
+    try {
+      await RNIap.finishTransaction({ purchase, isConsumable: false });
+    } catch {
+      // ignore
+    }
 
     if (typeof __DEV__ !== 'undefined' && __DEV__) {
       console.log('Free trial subscription started - creating account');
@@ -152,8 +157,6 @@ export default function ChooseSubscription({ navigation, route }) {
       username,
       password,
       subscriptionTier: selectedTier.toUpperCase(),
-      stripeSubscriptionId: subscriptionId,
-      stripeCustomerId: subscriptionData.customerId,
     });
 
     setSubmitting(false);
@@ -165,7 +168,7 @@ export default function ChooseSubscription({ navigation, route }) {
 
     Alert.alert(
       'Success!',
-      `Your 14-day free trial has started. You will be charged ${localPrice.symbol}${localPrice.amount}/${tier.period} starting ${trialEndsAt.toLocaleDateString()} unless you cancel before then.`
+      `Your membership is active. You will be charged ${localPrice.symbol}${localPrice.amount}/${tier.period} by Apple unless you cancel in iOS Subscriptions.`
     );
   };
 
@@ -178,7 +181,7 @@ export default function ChooseSubscription({ navigation, route }) {
     >
       <LambHeader />
       <Text style={[styles.title, { color: theme.text }]}>Choose Your Membership</Text>
-      <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Add payment info to start a 14-day free trial. You won’t be charged until the trial ends.</Text>
+      <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Subscriptions are billed by Apple and can be managed in iOS Subscriptions.</Text>
 
       <View style={styles.plansContainer}>
         {tiers.map((tier) => {

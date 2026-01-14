@@ -162,7 +162,7 @@ export default function Home({ navigation }) {
     <TouchableOpacity
       style={[
         styles.card,
-        styles.vaultStripe,
+        styles.vaultAccent,
         { backgroundColor: theme.surface, borderColor: theme.border },
       ]}
       onPress={() => navigation.navigate('Vault', { vaultId: item.id })}
@@ -348,7 +348,7 @@ const styles = StyleSheet.create({
   quickTitle: { color: '#e5e7f0', fontWeight: '700', fontSize: 16 },
   quickMeta: { color: '#9aa1b5', fontSize: 12 },
   card: { padding: 14, borderRadius: 10, backgroundColor: '#11121a', borderWidth: 1, borderColor: '#1f2738' },
-  vaultStripe: { borderLeftWidth: 4, borderLeftColor: '#2563eb', paddingLeft: 12 },
+  vaultAccent: { borderLeftWidth: 4, borderLeftColor: '#2563eb', paddingLeft: 12 },
   cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },

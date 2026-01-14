@@ -5,7 +5,7 @@ This is a lightweight “definition of done” checklist for the canonical vault
 ## Canonical data model
 - Vault access is membership-based (`/vaults/{vaultId}/memberships/{uid}`), with roles limited to `OWNER` and `DELEGATE`.
 - Fine-grained access is represented by scoped grants (`/vaults/{vaultId}/permissionGrants/{grantId}`) for `COLLECTION` and `ASSET`.
-- Subscriptions are vault-scoped (`/vaultSubscriptions/{vaultId}`), not user-scoped.
+- Subscriptions are user-scoped (`/userSubscriptions/{uid}`); vault subscription docs are legacy/back-compat only.
 
 ## Firestore rules
 - Rules are the canonical authorization source for client reads/writes.
@@ -36,4 +36,4 @@ This is a lightweight “definition of done” checklist for the canonical vault
   - `FIREBASE_PROJECT_ID` + `FIREBASE_CLIENT_EMAIL` + `FIREBASE_PRIVATE_KEY`
 - Ensure `CORS_ORIGINS` includes deployed web origin.
 - Ensure production rules are deployed (`firestore.rules`).
-- Verify Stripe webhook + subscription state writes to `/vaultSubscriptions/{vaultId}`.
+- Verify Apple IAP receipt verification updates `/userSubscriptions/{uid}`.

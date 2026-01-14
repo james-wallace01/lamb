@@ -3,7 +3,7 @@ import { Alert, Modal, View, Text, TouchableOpacity, StyleSheet, TextInput, Scro
 import { useData } from '../context/DataContext';
 import { firestore } from '../firebase';
 import { collection, onSnapshot, orderBy, query as fsQuery } from 'firebase/firestore';
-import { API_URL } from '../config/stripe';
+import { API_URL } from '../config/api';
 import { apiFetch } from '../utils/apiFetch';
 
 // Roles are Vault-scoped and only OWNER/DELEGATE.
