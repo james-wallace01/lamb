@@ -83,6 +83,32 @@ const authRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const uidOrIpKey = (req) => {
+  const uid = req.firebaseUser?.uid;
+  if (uid) return `uid:${String(uid)}`;
+  return `ip:${String(req.ip || '')}`;
+};
+
+const makeUidRateLimiter = ({ name, windowMs, limit }) => {
+  const limiterName = String(name || 'rate_limit');
+  return rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: uidOrIpKey,
+    handler: (req, res, next, options) => {
+      const retryAfter = typeof options?.windowMs === 'number' ? Math.ceil(options.windowMs / 1000) : null;
+      return res.status(options?.statusCode || 429).json({
+        error: options?.message || 'Too many requests',
+        limiter: limiterName,
+        requestId: req.requestId || null,
+        retryAfterSeconds: retryAfter,
+      });
+    },
+  });
+};
+
 // Email enumeration protection: keep this tighter than other auth-adjacent endpoints.
 // This endpoint intentionally reveals whether an email exists, so we rate limit aggressively.
 const emailAvailabilityRateLimiter = rateLimit({
@@ -98,6 +124,14 @@ const sensitiveRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// Endpoint-specific abuse controls (prefer uid-based throttling when authed).
+const writeRateLimiter = makeUidRateLimiter({ name: 'write_ops', windowMs: 15 * 60 * 1000, limit: 300 });
+const destructiveRateLimiter = makeUidRateLimiter({ name: 'destructive_ops', windowMs: 15 * 60 * 1000, limit: 60 });
+const inviteRateLimiter = makeUidRateLimiter({ name: 'invite_ops', windowMs: 15 * 60 * 1000, limit: 30 });
+const securityNotifyRateLimiter = makeUidRateLimiter({ name: 'security_notify', windowMs: 15 * 60 * 1000, limit: 20 });
+const billingRateLimiter = makeUidRateLimiter({ name: 'billing', windowMs: 15 * 60 * 1000, limit: 60 });
+const vaultDeleteRateLimiter = makeUidRateLimiter({ name: 'vault_delete', windowMs: 60 * 60 * 1000, limit: 5 });
 
 // CORS is a browser security feature; native mobile clients are not restricted by it.
 // In production, if no allowlist is configured, explicitly block requests that include an Origin header.
@@ -1487,7 +1521,7 @@ app.post('/start-trial-subscription', maybeRequireFirebaseAuth, authRateLimiter,
   }
 });
 
-app.post('/update-subscription', maybeRequireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+app.post('/update-subscription', maybeRequireFirebaseAuth, billingRateLimiter, async (req, res) => {
   try {
     const { subscriptionId, newSubscriptionTier } = req.body;
     console.log(`Updating subscription ${subscriptionId} to ${newSubscriptionTier}`);
@@ -1672,7 +1706,7 @@ app.post('/confirm-subscription-payment', maybeRequireFirebaseAuth, authRateLimi
   }
 });
 
-app.post('/schedule-subscription-change', maybeRequireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+app.post('/schedule-subscription-change', maybeRequireFirebaseAuth, billingRateLimiter, async (req, res) => {
   try {
     const { subscriptionId, newSubscriptionTier } = req.body;
     if (!subscriptionId) {
@@ -1732,7 +1766,7 @@ app.post('/schedule-subscription-change', maybeRequireFirebaseAuth, sensitiveRat
   }
 });
 
-app.post('/cancel-subscription', maybeRequireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+app.post('/cancel-subscription', maybeRequireFirebaseAuth, billingRateLimiter, async (req, res) => {
   try {
     const { subscriptionId, immediate } = req.body;
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
@@ -1762,7 +1796,7 @@ app.post('/cancel-subscription', maybeRequireFirebaseAuth, sensitiveRateLimiter,
   }
 });
 
-app.post('/create-payment-intent', maybeRequireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+app.post('/create-payment-intent', maybeRequireFirebaseAuth, billingRateLimiter, async (req, res) => {
   try {
     const { amount, currency, subscriptionTier } = req.body;
     const tokenEmail = normalizeEmail(req.firebaseUser?.email);
@@ -1812,7 +1846,7 @@ app.get('/health', (req, res) => {
 
 // Server-side subscription validation/sync.
 // Requires a Firebase ID token and uses Stripe as the source of truth.
-app.post('/subscription-status', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+app.post('/subscription-status', requireFirebaseAuth, billingRateLimiter, async (req, res) => {
   try {
     if (!isStripeConfigured()) {
       return res.status(503).json({ error: 'Stripe is not configured on this server' });
@@ -1916,7 +1950,7 @@ app.get('/vaults/:vaultId/invitations', requireFirebaseAuth, sensitiveRateLimite
   }
 });
 
-app.post('/vaults/:vaultId/invitations', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+app.post('/vaults/:vaultId/invitations', requireFirebaseAuth, inviteRateLimiter, async (req, res) => {
   try {
     const db = getFirestoreDb();
     if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
@@ -1991,7 +2025,7 @@ app.post('/vaults/:vaultId/invitations', requireFirebaseAuth, sensitiveRateLimit
 // Resolve a user identifier (email or username) to a uid.
 // This is intentionally server-side because Firestore rules do not allow listing `/users` from clients.
 // Paid + owner gated to avoid creating a public user directory.
-app.post('/vaults/:vaultId/users/resolve', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+app.post('/vaults/:vaultId/users/resolve', requireFirebaseAuth, inviteRateLimiter, async (req, res) => {
   try {
     const db = getFirestoreDb();
     if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
@@ -2048,7 +2082,7 @@ app.post('/vaults/:vaultId/users/resolve', requireFirebaseAuth, sensitiveRateLim
 
 // Server-side create/delete for collections/assets.
 // These exist to enforce tier caps (max collections/assets) and prevent client-side bypass.
-app.post('/vaults/:vaultId/collections', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+app.post('/vaults/:vaultId/collections', requireFirebaseAuth, writeRateLimiter, async (req, res) => {
   try {
     const db = getFirestoreDb();
     if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
@@ -2120,7 +2154,7 @@ app.post('/vaults/:vaultId/collections', requireFirebaseAuth, sensitiveRateLimit
   }
 });
 
-app.post('/vaults/:vaultId/assets', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+app.post('/vaults/:vaultId/assets', requireFirebaseAuth, writeRateLimiter, async (req, res) => {
   try {
     const db = getFirestoreDb();
     if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
@@ -2202,7 +2236,7 @@ app.post('/vaults/:vaultId/assets', requireFirebaseAuth, sensitiveRateLimiter, a
   }
 });
 
-app.post('/vaults/:vaultId/assets/:assetId/delete', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+app.post('/vaults/:vaultId/assets/:assetId/delete', requireFirebaseAuth, destructiveRateLimiter, async (req, res) => {
   try {
     const db = getFirestoreDb();
     if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
@@ -2259,7 +2293,7 @@ app.post('/vaults/:vaultId/assets/:assetId/delete', requireFirebaseAuth, sensiti
   }
 });
 
-app.post('/vaults/:vaultId/collections/:collectionId/delete', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+app.post('/vaults/:vaultId/collections/:collectionId/delete', requireFirebaseAuth, destructiveRateLimiter, async (req, res) => {
   try {
     const db = getFirestoreDb();
     if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
@@ -2341,7 +2375,7 @@ app.post('/vaults/:vaultId/collections/:collectionId/delete', requireFirebaseAut
 
 // Account change notifications.
 // These send an informational email to the signed-in user's email address.
-app.post('/notifications/username-changed', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+app.post('/notifications/username-changed', requireFirebaseAuth, securityNotifyRateLimiter, async (req, res) => {
   try {
     const db = getFirestoreDb();
     if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
@@ -2384,7 +2418,7 @@ app.post('/notifications/username-changed', requireFirebaseAuth, sensitiveRateLi
   }
 });
 
-app.post('/notifications/password-changed', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+app.post('/notifications/password-changed', requireFirebaseAuth, securityNotifyRateLimiter, async (req, res) => {
   try {
     const db = getFirestoreDb();
     if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
@@ -2423,7 +2457,7 @@ app.post('/notifications/password-changed', requireFirebaseAuth, sensitiveRateLi
   }
 });
 
-app.post('/vaults/:vaultId/invitations/:code/revoke', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+app.post('/vaults/:vaultId/invitations/:code/revoke', requireFirebaseAuth, inviteRateLimiter, async (req, res) => {
   try {
     const db = getFirestoreDb();
     if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
@@ -2461,7 +2495,7 @@ app.post('/vaults/:vaultId/invitations/:code/revoke', requireFirebaseAuth, sensi
   }
 });
 
-app.post('/invitations/accept', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+app.post('/invitations/accept', requireFirebaseAuth, inviteRateLimiter, async (req, res) => {
   try {
     const db = getFirestoreDb();
     if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
@@ -2578,7 +2612,7 @@ app.post('/invitations/accept', requireFirebaseAuth, sensitiveRateLimiter, async
 // These exist because some operations cannot be safely performed client-side due to Firestore rule constraints
 // (e.g. recursive deletion) or cross-vault document moves.
 
-app.post('/vaults/:vaultId/delete', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+app.post('/vaults/:vaultId/delete', requireFirebaseAuth, vaultDeleteRateLimiter, async (req, res) => {
   try {
     const db = getFirestoreDb();
     if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
@@ -2604,7 +2638,7 @@ app.post('/vaults/:vaultId/delete', requireFirebaseAuth, sensitiveRateLimiter, a
   }
 });
 
-app.post('/vaults/:vaultId/assets/:assetId/move', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+app.post('/vaults/:vaultId/assets/:assetId/move', requireFirebaseAuth, destructiveRateLimiter, async (req, res) => {
   try {
     const db = getFirestoreDb();
     if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
@@ -2638,7 +2672,7 @@ app.post('/vaults/:vaultId/assets/:assetId/move', requireFirebaseAuth, sensitive
   }
 });
 
-app.post('/vaults/:vaultId/collections/:collectionId/move', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+app.post('/vaults/:vaultId/collections/:collectionId/move', requireFirebaseAuth, destructiveRateLimiter, async (req, res) => {
   try {
     const db = getFirestoreDb();
     if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
