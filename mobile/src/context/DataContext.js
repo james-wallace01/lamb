@@ -10,6 +10,8 @@ import {
   signOut,
   EmailAuthProvider,
   reauthenticateWithCredential,
+  sendEmailVerification,
+  updateEmail as firebaseUpdateEmail,
   updatePassword as firebaseUpdatePassword,
 } from 'firebase/auth';
 import { collection, collectionGroup, deleteDoc, doc, documentId, getDoc, onSnapshot, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
@@ -1670,10 +1672,11 @@ export function DataProvider({ children }) {
     return { ok: true, vaultId: vaultId || null };
   };
 
-    const updateCurrentUser = (patch) => {
+    const updateCurrentUser = async (patch) => {
       if (!currentUser) return { ok: false, message: 'Not signed in' };
 
       const prevUsername = currentUser?.username ? String(currentUser.username) : '';
+      const prevEmail = currentUser?.email ? normalizeEmail(String(currentUser.email)) : '';
 
       const nextPatch = { ...patch };
 
@@ -1711,9 +1714,44 @@ export function DataProvider({ children }) {
         return { ok: false, message: 'Email already taken' };
       }
 
+      const uid = currentUser?.id ? String(currentUser.id) : null;
+      if (!uid) return { ok: false, message: 'Not signed in' };
+      if (!firestore) return { ok: false, message: 'Firestore is not configured' };
+
+      // If the user is changing their auth email, update Firebase Auth first to avoid mismatches.
+      if (nextEmail && normalizeEmail(String(nextEmail)) !== prevEmail) {
+        if (!isFirebaseAuthEnabled() || !firebaseAuth?.currentUser) {
+          return { ok: false, message: 'Authentication is unavailable' };
+        }
+        try {
+          await firebaseUpdateEmail(firebaseAuth.currentUser, normalizeEmail(String(nextEmail)));
+          // Best-effort verification email.
+          sendEmailVerification(firebaseAuth.currentUser).catch(() => {});
+        } catch (error) {
+          return { ok: false, message: mapFirebaseAuthError(error) };
+        }
+      }
+
+      // Persist profile updates to Firestore (canonical).
+      try {
+        const ref = doc(firestore, 'users', uid);
+        const patchOut = {
+          updatedAt: Date.now(),
+        };
+        if (Object.prototype.hasOwnProperty.call(nextPatch, 'firstName')) patchOut.firstName = nextPatch.firstName;
+        if (Object.prototype.hasOwnProperty.call(nextPatch, 'lastName')) patchOut.lastName = nextPatch.lastName;
+        if (Object.prototype.hasOwnProperty.call(nextPatch, 'username')) patchOut.username = nextPatch.username;
+        if (Object.prototype.hasOwnProperty.call(nextPatch, 'email')) patchOut.email = nextPatch.email;
+        if (Object.prototype.hasOwnProperty.call(nextPatch, 'profileImage')) patchOut.profileImage = nextPatch.profileImage;
+
+        await setDoc(ref, patchOut, { merge: true });
+      } catch (error) {
+        return { ok: false, message: error?.message || 'Could not save profile' };
+      }
+
       const merged = withProfileImage({ ...currentUser, ...nextPatch });
       setCurrentUser(merged);
-      setUsers(prev => prev.map(u => u.id === currentUser.id ? merged : u));
+      setUsers((prev) => prev.map((u) => (u.id === currentUser.id ? merged : u)));
 
       // Best-effort notification email.
       const mergedUsername = merged?.username ? String(merged.username) : '';
@@ -1771,23 +1809,49 @@ export function DataProvider({ children }) {
         return validatePasswordStrength(password, { username: currentUser?.username, email: currentUser?.email });
       };
 
-      const deleteAccount = () => {
+      const deleteAccount = async () => {
         if (!currentUser) return { ok: false, message: 'Not signed in' };
+        if (!API_URL) return { ok: false, message: 'Account deletion is unavailable right now' };
+
         const userId = currentUser.id;
 
+        try {
+          const resp = await apiFetch(`${API_URL}/account/delete`, {
+            requireAuth: true,
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirm: 'DELETE' }),
+          });
+
+          if (!resp.ok) {
+            const json = await resp.json().catch(() => null);
+            if (json?.error) return { ok: false, message: String(json.error) };
+            const text = await resp.text().catch(() => '');
+            const msg = text && typeof text === 'string' ? text.trim() : '';
+            return { ok: false, message: msg ? `HTTP ${resp.status}: ${msg}` : `HTTP ${resp.status}: Could not delete account` };
+          }
+        } catch (error) {
+          return { ok: false, message: error?.message || 'Could not delete account' };
+        }
+
+        // Local cleanup + sign out.
         if (biometricUserId && biometricUserId === userId) {
           setBiometricUserId(null);
           SecureStore.deleteItemAsync(BIOMETRIC_SECURE_USER_ID_KEY).catch(() => {});
           SecureStore.deleteItemAsync(BIOMETRIC_ENABLED_USER_ID_KEY).catch(() => {});
         }
 
-        setUsers(prev => prev.filter(u => u.id !== userId));
-        setVaults(prev => prev.filter(v => v.ownerId !== userId));
-        setCollections(prev => prev.filter(c => c.ownerId !== userId));
-        setAssets(prev => prev.filter(a => a.ownerId !== userId));
+        setUsers((prev) => prev.filter((u) => u.id !== userId));
+        setVaults((prev) => prev.filter((v) => v.ownerId !== userId));
+        setCollections((prev) => prev.filter((c) => c.ownerId !== userId));
+        setAssets((prev) => prev.filter((a) => a.ownerId !== userId));
         setVaultMemberships((prev) => (prev || []).filter((m) => m?.user_id !== String(userId)));
         setPermissionGrants((prev) => (prev || []).filter((g) => g?.user_id !== String(userId)));
         setCurrentUser(null);
+
+        if (isFirebaseAuthEnabled()) {
+          signOut(firebaseAuth).catch(() => {});
+        }
         return { ok: true };
       };
 

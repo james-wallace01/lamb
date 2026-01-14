@@ -80,7 +80,7 @@ export default function Profile({ navigation }) {
     setShowConfirmNewPassword(false);
   }, [currentUser?.id]);
 
-  const handleSave = ({ exitEditMode } = {}) => {
+  const handleSave = async ({ exitEditMode } = {}) => {
     if (!currentUser) return;
 
     const normalize = (v) => String(v ?? '').trim();
@@ -121,14 +121,17 @@ export default function Profile({ navigation }) {
     };
     // Only set profileImage when the user explicitly selected one.
     if (draft.profileImage) patch.profileImage = draft.profileImage;
-    const result = updateCurrentUser(patch);
-    setLoading(false);
-    if (!result.ok) {
-      Alert.alert(result.message || 'Could not save');
-      return;
+    try {
+      const result = await updateCurrentUser(patch);
+      if (!result.ok) {
+        Alert.alert(result.message || 'Could not save');
+        return;
+      }
+      if (exitEditMode) setIsEditing(false);
+      Alert.alert('Profile updated');
+    } finally {
+      setLoading(false);
     }
-    if (exitEditMode) setIsEditing(false);
-    Alert.alert('Profile updated');
   };
 
   const ownedVaultsShared = useMemo(() => {
@@ -371,19 +374,19 @@ export default function Profile({ navigation }) {
   const handleDeleteAccount = () => {
     Alert.alert(
       'Delete account',
-      'This removes your account and data from this device. This action cannot be undone.',
+      'This permanently deletes your account and associated data. This action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => {
-            const res = deleteAccount();
+          onPress: async () => {
+            const res = await deleteAccount();
             if (!res.ok) {
               Alert.alert('Could not delete', res.message || 'Please try again');
               return;
             }
-            Alert.alert('Account deleted', 'Your account was removed from this device.');
+            Alert.alert('Account deleted', 'Your account has been deleted.');
           },
         },
       ]
@@ -427,9 +430,9 @@ export default function Profile({ navigation }) {
         <View style={styles.titleRow}>
           <Text style={[styles.title, { color: theme.text, marginBottom: 0 }]}>Profile</Text>
           <TouchableOpacity
-            onPress={() => {
+            onPress={async () => {
               if (isEditing) {
-                handleSave({ exitEditMode: true });
+                await handleSave({ exitEditMode: true });
                 return;
               }
               setDraft(currentUser || {});
@@ -562,7 +565,9 @@ export default function Profile({ navigation }) {
             {isEditing && (
               <TouchableOpacity
                 style={[styles.button, loading && styles.buttonDisabled]}
-                onPress={() => handleSave({ exitEditMode: true })}
+                onPress={async () => {
+                  await handleSave({ exitEditMode: true });
+                }}
                 disabled={loading || isOffline}
               >
                 <Text style={styles.buttonText}>{loading ? 'Saving...' : 'Done'}</Text>
@@ -730,9 +735,15 @@ export default function Profile({ navigation }) {
               >
                 <Text style={[styles.secondaryButtonText, { color: theme.textSecondary }]}>Sign out</Text>
               </TouchableOpacity>
+            </View>
 
-              <TouchableOpacity style={[styles.button, styles.deleteButton, isOffline && styles.buttonDisabled]} onPress={handleDeleteAccount} disabled={isOffline}>
-                <Text style={[styles.buttonText, styles.deleteButtonText]}>Delete Account</Text>
+            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Notifications</Text>
+              <TouchableOpacity
+                style={[styles.button, { marginTop: 0 }]}
+                onPress={() => navigation?.navigate?.('EmailNotifications')}
+              >
+                <Text style={styles.buttonText}>Email Notifications</Text>
               </TouchableOpacity>
             </View>
 
@@ -786,6 +797,16 @@ export default function Profile({ navigation }) {
               )}
             </View>
 
+            <TouchableOpacity
+              style={[styles.button, styles.deleteButton, isOffline && styles.buttonDisabled]}
+              onPress={handleDeleteAccount}
+              disabled={isOffline}
+              accessibilityRole="button"
+              accessibilityLabel="Delete account"
+            >
+              <Text style={[styles.buttonText, styles.deleteButtonText]}>Delete Account</Text>
+            </TouchableOpacity>
+
             <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Legal</Text>
               {LEGAL_LINK_ITEMS.map((item) => (
@@ -800,15 +821,6 @@ export default function Profile({ navigation }) {
               ))}
             </View>
 
-            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Notifications</Text>
-              <TouchableOpacity
-                style={[styles.button, { marginTop: 0 }]}
-                onPress={() => navigation?.navigate?.('EmailNotifications')}
-              >
-                <Text style={styles.buttonText}>Email Notifications</Text>
-              </TouchableOpacity>
-            </View>
           </>
         ) : (
           <Text style={styles.subtitle}>No user loaded.</Text>
