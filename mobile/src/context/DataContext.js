@@ -316,6 +316,8 @@ const hasActiveMembership = (user) => {
   return hasMembershipStillActive(user);
 };
 
+let didWarnMembershipIndexOnce = false;
+
 const VAULT_ROLE = {
   OWNER: 'OWNER',
   DELEGATE: 'DELEGATE',
@@ -1299,7 +1301,20 @@ export function DataProvider({ children }) {
         (err) => {
           // If this query fails (e.g. missing collectionGroup indexing), the app can appear to have "no vaults".
           // Keep local state stable, but surface the issue for debugging.
-          console.warn('[vaults] memberships collectionGroup snapshot error:', err?.message || err);
+          const msg = err?.message ? String(err.message) : String(err || 'Unknown error');
+          const looksLikeMissingIndex = /requires.*index|FAILED_PRECONDITION/i.test(msg);
+          if (looksLikeMissingIndex) {
+            if (!didWarnMembershipIndexOnce) {
+              didWarnMembershipIndexOnce = true;
+              console.warn(
+                '[vaults] memberships query needs a Firestore collectionGroup index on memberships.user_id (Shared Vaults may be incomplete until created).',
+                msg
+              );
+            }
+            return;
+          }
+
+          console.warn('[vaults] memberships collectionGroup snapshot error:', msg);
         }
       );
 

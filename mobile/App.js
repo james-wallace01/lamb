@@ -100,14 +100,13 @@ const LimitedStack = () => {
 };
 
 function RootNavigator() {
-  const { currentUser, loading, membershipAccess } = useData();
+  const { currentUser, loading } = useData();
   if (loading) return null;
 
   // Keyed navigators ensure we don't preserve route state across auth transitions.
   // This fixes cases where a screen name exists in both stacks (e.g. ChooseSubscription)
   // and the user remains on that screen after signup.
   if (!currentUser) return <AuthStack key="auth" />;
-  if (!membershipAccess) return <LimitedStack key="limited" />;
   return <MainStack key="main" />;
 }
 
@@ -161,7 +160,7 @@ function SessionTimeoutBoundary({ children }) {
 }
 
 function AppFrame() {
-  const { theme, currentUser, membershipAccess } = useData();
+  const { theme, currentUser } = useData();
   const [routeName, setRouteName] = useState(null);
 
   const updateRouteName = () => {
@@ -177,7 +176,7 @@ function AppFrame() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <NavigationContainer
-        key={`${currentUser?.id ? String(currentUser.id) : 'anon'}-${membershipAccess ? 'full' : 'limited'}`}
+        key={currentUser?.id ? String(currentUser.id) : 'anon'}
         ref={navigationRef}
         onReady={updateRouteName}
         onStateChange={updateRouteName}
