@@ -115,6 +115,17 @@ export default function SignIn({ navigation }) {
       <TouchableOpacity style={[styles.button, submitting && styles.buttonDisabled]} onPress={handleSubmit} disabled={submitting || loading}>
         <Text style={styles.buttonText}>{submitting ? 'Signing in…' : 'Sign In'}</Text>
       </TouchableOpacity>
+
+      <TouchableOpacity
+        onPress={() => {
+          const prefillEmail = identifier.includes('@') ? identifier.trim() : '';
+          navigation.navigate('ForgotPassword', { prefillEmail });
+        }}
+        disabled={submitting || loading}
+      >
+        <Text style={[styles.link, { color: theme.link, marginTop: 6 }]}>Forgot password?</Text>
+      </TouchableOpacity>
+
       <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
         <Text style={[styles.link, { color: theme.link }]}>Need an account? Sign up</Text>
       </TouchableOpacity>

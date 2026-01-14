@@ -17,6 +17,7 @@ import ProfileScreen from './src/screens/Profile';
 import EmailNotificationsScreen from './src/screens/EmailNotifications';
 import SignInScreen from './src/screens/SignIn';
 import SignUpScreen from './src/screens/SignUp';
+import ForgotPasswordScreen from './src/screens/ForgotPassword';
 import FreeTrialScreen from './src/screens/FreeTrial';
 import ChooseSubscriptionScreen from './src/screens/ChooseSubscription';
 import VersionFooter from './src/components/VersionFooter';
@@ -28,6 +29,7 @@ const Stack = createNativeStackNavigator();
 const AuthStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="SignIn" component={SignInScreen} />
+    <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
     <Stack.Screen name="SignUp" component={SignUpScreen} />
     <Stack.Screen name="FreeTrial" component={FreeTrialScreen} />
     <Stack.Screen name="ChooseSubscription" component={ChooseSubscriptionScreen} />
