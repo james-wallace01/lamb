@@ -7,7 +7,8 @@ import { useData } from '../context/DataContext';
 export default function LambHeader({ style }) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { theme } = useData();
+  const { theme, backendReachable } = useData();
+  const isOffline = backendReachable === false;
   
   const handlePress = () => {
     const state = navigation.getState?.();
@@ -26,20 +27,31 @@ export default function LambHeader({ style }) {
   };
 
   return (
-    <TouchableOpacity
-      onPress={handlePress}
-      activeOpacity={0.8}
-      style={[styles.container, { marginTop: Math.max(insets.top, 8) }, style]}
-    >
-      <View style={styles.titleWrap}>
-        <Text style={[styles.title, { color: theme.text }]}>LAMB</Text>
-      </View>
-    </TouchableOpacity>
+    <View style={[styles.wrapper, { marginTop: Math.max(insets.top, 8) }, style]}>
+      <TouchableOpacity
+        onPress={handlePress}
+        activeOpacity={0.8}
+        style={styles.container}
+      >
+        <View style={styles.titleWrap}>
+          <Text style={[styles.title, { color: theme.text }]}>LAMB</Text>
+        </View>
+      </TouchableOpacity>
+
+      {isOffline && (
+        <View style={[styles.offlineBanner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Text style={[styles.offlineText, { color: theme.textMuted }]}>Offline — read-only</Text>
+        </View>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { width: '100%', height: 44, justifyContent: 'center', alignItems: 'center', marginBottom: 16, alignSelf: 'center' },
+  wrapper: { width: '100%', alignSelf: 'center', marginBottom: 16 },
+  container: { width: '100%', height: 44, justifyContent: 'center', alignItems: 'center' },
   titleWrap: { paddingVertical: 0, paddingHorizontal: 0 },
   title: { fontSize: 22, fontWeight: '700', letterSpacing: 0.5 },
+  offlineBanner: { alignSelf: 'center', marginTop: 6, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999, borderWidth: 1 },
+  offlineText: { fontSize: 12, fontWeight: '700' },
 });

@@ -4,10 +4,11 @@ import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
 
 export default function SignIn({ navigation }) {
-  const { login, loading, biometricUserId, biometricLogin, users, theme } = useData();
+  const { login, loading, biometricUserId, biometricLogin, users, theme, backendReachable } = useData();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const isOffline = backendReachable === false;
 
   const biometricUserLabel = (() => {
     if (!biometricUserId) return null;
@@ -16,6 +17,10 @@ export default function SignIn({ navigation }) {
   })();
 
   const handleSubmit = async () => {
+    if (isOffline) {
+      Alert.alert('Offline', 'Internet connection required. Please reconnect and try again.');
+      return;
+    }
     if (!identifier || !password) {
       Alert.alert('Missing info', 'Please enter username/email and password');
       return;
@@ -45,10 +50,10 @@ export default function SignIn({ navigation }) {
           style={[
             styles.secondaryButton,
             { backgroundColor: theme.surface, borderColor: theme.border },
-            (submitting || loading) && styles.buttonDisabled,
+            (submitting || loading || isOffline) && styles.buttonDisabled,
           ]}
           onPress={async () => {
-            if (submitting || loading) return;
+            if (submitting || loading || isOffline) return;
             setSubmitting(true);
             try {
               const res = await biometricLogin?.();
@@ -59,7 +64,7 @@ export default function SignIn({ navigation }) {
               setSubmitting(false);
             }
           }}
-          disabled={submitting || loading}
+          disabled={submitting || loading || isOffline}
         >
           <Text style={styles.secondaryButtonText}>
             {biometricUserLabel ? `Sign in with Face ID (${biometricUserLabel})` : 'Sign in with Face ID'}
@@ -88,7 +93,11 @@ export default function SignIn({ navigation }) {
         value={password}
         onChangeText={setPassword}
       />
-      <TouchableOpacity style={[styles.button, submitting && styles.buttonDisabled]} onPress={handleSubmit} disabled={submitting || loading}>
+      <TouchableOpacity
+        style={[styles.button, (submitting || loading || isOffline) && styles.buttonDisabled]}
+        onPress={handleSubmit}
+        disabled={submitting || loading || isOffline}
+      >
         <Text style={styles.buttonText}>{submitting ? 'Signing in…' : 'Sign In'}</Text>
       </TouchableOpacity>
 
@@ -97,7 +106,7 @@ export default function SignIn({ navigation }) {
           const prefillEmail = identifier.includes('@') ? identifier.trim() : '';
           navigation.navigate('ForgotPassword', { prefillEmail });
         }}
-        disabled={submitting || loading}
+        disabled={submitting || loading || isOffline}
       >
         <Text style={[styles.link, { color: theme.link, marginTop: 6 }]}>Forgot password?</Text>
       </TouchableOpacity>

@@ -7,7 +7,8 @@ import { getInitials } from '../utils/user';
 import { runWithMinimumDuration } from '../utils/timing';
 
 export default function Home({ navigation }) {
-  const { loading, vaults, currentUser, addVault, refreshData, theme, membershipAccess, vaultMemberships, acceptInvitationCode } = useData();
+  const { loading, vaults, currentUser, addVault, refreshData, theme, membershipAccess, vaultMemberships, acceptInvitationCode, backendReachable } = useData();
+  const isOffline = backendReachable === false;
   const [newVaultName, setNewVaultName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
 
@@ -99,8 +100,9 @@ export default function Home({ navigation }) {
                 autoCorrect={false}
               />
               <TouchableOpacity
-                style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface, paddingHorizontal: 14, paddingVertical: 10 }]}
+                style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface, paddingHorizontal: 14, paddingVertical: 10 }, isOffline && styles.buttonDisabled]}
                 onPress={handleAcceptInvite}
+                disabled={isOffline}
               >
                 <Text style={[styles.secondaryText, { color: theme.textSecondary }]}>Join</Text>
               </TouchableOpacity>
@@ -121,8 +123,10 @@ export default function Home({ navigation }) {
                     alignSelf: 'flex-start',
                     marginTop: 10,
                   },
+                  isOffline && styles.buttonDisabled,
                 ]}
                 onPress={() => navigation.navigate('ChooseSubscription', { mode: 'upgrade' })}
+                disabled={isOffline}
               >
                 <Text style={[styles.secondaryText, { color: '#fff' }]}>Choose Membership</Text>
               </TouchableOpacity>
@@ -239,8 +243,9 @@ export default function Home({ navigation }) {
               autoCorrect={false}
             />
             <TouchableOpacity
-              style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface, paddingHorizontal: 14, paddingVertical: 10 }]}
+              style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface, paddingHorizontal: 14, paddingVertical: 10 }, isOffline && styles.buttonDisabled]}
               onPress={handleAcceptInvite}
+              disabled={isOffline}
             >
               <Text style={[styles.secondaryText, { color: theme.textSecondary }]}>Join</Text>
             </TouchableOpacity>
@@ -283,7 +288,8 @@ export default function Home({ navigation }) {
                   onChangeText={(text) => setNewVaultName(limit35(text || ''))}
                 />
                 <TouchableOpacity
-                  style={styles.addButton}
+                  style={[styles.addButton, isOffline && styles.buttonDisabled]}
+                  disabled={isOffline}
                   onPress={() => {
                     if (!newVaultName.trim()) return;
                     (async () => {
@@ -372,4 +378,5 @@ const styles = StyleSheet.create({
   input: { flex: 1, backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, borderRadius: 10, padding: 10, color: '#fff' },
   addButton: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#16a34a' },
   addButtonText: { color: '#fff', fontWeight: '700' },
+  buttonDisabled: { opacity: 0.6 },
 });

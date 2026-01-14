@@ -586,6 +586,7 @@ export function DataProvider({ children }) {
 
   const wrapFirestoreAsync = (fn) =>
     async (...args) => {
+      if (backendReachable === false) return offlineResult;
       if (!currentUser?.id) return { ok: false, message: 'Not signed in' };
       if (!firestore) return { ok: false, message: 'Firestore is not configured' };
       if (!isFirebaseAuthEnabled() || !firebaseAuth?.currentUser?.uid) {

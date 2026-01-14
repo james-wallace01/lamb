@@ -10,7 +10,8 @@ import { runWithMinimumDuration } from '../utils/timing';
 
 export default function Collection({ navigation, route }) {
   const { collectionId } = route.params || {};
-  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultAssets, releaseVaultAssets, retainVaultCollections, releaseVaultCollections } = useData();
+  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultAssets, releaseVaultAssets, retainVaultCollections, releaseVaultCollections, backendReachable } = useData();
+  const isOffline = backendReachable === false;
   const [newTitle, setNewTitle] = useState('');
   const [shareVisible, setShareVisible] = useState(false);
   const [shareTargetType, setShareTargetType] = useState(null);
@@ -91,6 +92,11 @@ export default function Collection({ navigation, route }) {
   const canMove = caps.canMove;
   const canShare = caps.canShare;
   const canDelete = caps.canDelete;
+  const canCreateOnline = canCreate && !isOffline;
+  const canEditOnline = canEdit && !isOffline;
+  const canMoveOnline = canMove && !isOffline;
+  const canShareOnline = canShare && !isOffline;
+  const canDeleteOnline = canDelete && !isOffline;
   const ownerVaults = vaults.filter(v => v.ownerId === collection?.ownerId);
   const collectionImages = collection?.images || [];
   const storedHeroImage = collection?.heroImage || null;
@@ -307,11 +313,12 @@ export default function Collection({ navigation, route }) {
         <View style={styles.cardActions}>
           {canShare && (
             <TouchableOpacity
-              style={styles.sharePill}
+              style={[styles.sharePill, !canShareOnline && styles.buttonDisabled]}
               onPress={(e) => {
                 e.stopPropagation();
                 openShare('asset', item.id);
               }}
+              disabled={!canShareOnline}
             >
               <Text style={styles.sharePillText}>Share</Text>
             </TouchableOpacity>
@@ -349,14 +356,18 @@ export default function Collection({ navigation, route }) {
       {(canEdit || canShare || canMove) && (
         <View style={styles.actionsRow}>
           <TouchableOpacity
-            style={[styles.primaryButton, styles.actionButton, !canEdit && styles.buttonDisabled]}
-            disabled={!canEdit}
+            style={[styles.primaryButton, styles.actionButton, !canEditOnline && styles.buttonDisabled]}
+            disabled={!canEditOnline}
             onPress={openEditModal}
           >
             <Text style={styles.primaryButtonText}>Edit</Text>
           </TouchableOpacity>
           {canShare ? (
-            <TouchableOpacity style={[styles.shareButton, styles.actionButton]} onPress={() => openShare('collection', collectionId)}>
+            <TouchableOpacity
+              style={[styles.shareButton, styles.actionButton, !canShareOnline && styles.buttonDisabled]}
+              onPress={() => openShare('collection', collectionId)}
+              disabled={!canShareOnline}
+            >
               <Text style={styles.secondaryButtonText}>Share</Text>
             </TouchableOpacity>
           ) : (
@@ -364,8 +375,9 @@ export default function Collection({ navigation, route }) {
           )}
           {canMove && (
             <TouchableOpacity
-              style={[styles.moveButton, styles.actionButton]}
+              style={[styles.moveButton, styles.actionButton, !canMoveOnline && styles.buttonDisabled]}
               onPress={() => setShowMoveBox(!showMoveBox)}
+              disabled={!canMoveOnline}
             >
               <Text style={styles.secondaryButtonText}>Move</Text>
             </TouchableOpacity>
@@ -404,13 +416,14 @@ export default function Collection({ navigation, route }) {
           placeholder="New asset title"
           placeholderTextColor={theme.placeholder}
           value={newTitle}
-          editable={canCreate}
+          editable={canCreateOnline}
           onChangeText={(text) => setNewTitle(limit35(text))}
         />
         <TouchableOpacity
-          style={[styles.addButton, !canCreate && styles.buttonDisabled]}
+          style={[styles.addButton, !canCreateOnline && styles.buttonDisabled]}
+          disabled={!canCreateOnline}
           onPress={() => {
-            if (!canCreate) return Alert.alert('No permission to add assets');
+            if (!canCreateOnline) return Alert.alert('Internet connection required. Please reconnect and try again.');
               const title = limit35(newTitle.trim());
               if (!title) return;
               (async () => {
@@ -433,6 +446,7 @@ export default function Collection({ navigation, route }) {
           <TouchableOpacity
             style={[styles.dropdownButton, { backgroundColor: theme.inputBg, borderColor: theme.border }]}
             onPress={() => setDropdownOpen(!dropdownOpen)}
+            disabled={!canMoveOnline}
           >
             <Text style={[styles.dropdownButtonText, { color: theme.text }]}>
               {moveVaultId ? ownerVaults.find(v => v.id === moveVaultId)?.name || 'Select vault...' : 'Select vault...'}
@@ -463,6 +477,7 @@ export default function Collection({ navigation, route }) {
                       setMoveVaultId(v.id);
                       setDropdownOpen(false);
                     }}
+                    disabled={!canMoveOnline}
                   >
                     <Text style={[styles.dropdownItemText, { color: theme.text }]}>{v.name || v.id}</Text>
                     {moveVaultId === v.id && <Text style={styles.checkmark}>✓</Text>}
@@ -472,8 +487,8 @@ export default function Collection({ navigation, route }) {
             </ScrollView>
           )}
           <TouchableOpacity
-            style={[styles.button, !moveVaultId && styles.buttonDisabled]}
-            disabled={!moveVaultId}
+            style={[styles.button, (!moveVaultId || !canMoveOnline) && styles.buttonDisabled]}
+            disabled={!moveVaultId || !canMoveOnline}
             onPress={() => {
               if (!moveVaultId) return Alert.alert('Select a vault');
               (async () => {
@@ -510,6 +525,7 @@ export default function Collection({ navigation, route }) {
                 placeholderTextColor={theme.placeholder}
                   value={editDraft.name}
                   onChangeText={(name) => setEditDraft((prev) => ({ ...prev, name: limit35(name) }))}
+                editable={canEditOnline}
               />
 
               <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Manager</Text>
@@ -519,6 +535,7 @@ export default function Collection({ navigation, route }) {
                 placeholderTextColor={theme.placeholder}
                 value={editDraft.manager}
                 onChangeText={(manager) => setEditDraft((prev) => ({ ...prev, manager }))}
+                editable={canEditOnline}
               />
 
               <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Description</Text>
@@ -528,13 +545,14 @@ export default function Collection({ navigation, route }) {
                 placeholderTextColor={theme.placeholder}
                 value={editDraft.description}
                 onChangeText={(description) => setEditDraft((prev) => ({ ...prev, description }))}
+                editable={canEditOnline}
                 multiline
               />
 
                 <View style={[styles.mediaCard, { marginTop: 12, backgroundColor: theme.surface, borderColor: theme.border }]}>
                   <View style={styles.mediaHeader}>
                     <Text style={[styles.sectionLabel, { color: theme.text }]}>Images</Text>
-                  <TouchableOpacity style={styles.addImageButton} disabled={!canEdit} onPress={addImagesToDraft}>
+                  <TouchableOpacity style={[styles.addImageButton, !canEditOnline && styles.buttonDisabled]} disabled={!canEditOnline} onPress={addImagesToDraft}>
                     <Text style={styles.addImageButtonText}>{(editDraft.images || []).length ? 'Add more' : 'Add images'}</Text>
                   </TouchableOpacity>
                   </View>
@@ -552,11 +570,11 @@ export default function Collection({ navigation, route }) {
                               </View>
                             )}
                             <Image source={toImageSource(img)} style={styles.thumb} />
-                            <TouchableOpacity style={styles.removeImageBtn} disabled={!canEdit} onPress={() => removeDraftImage(img)}>
+                            <TouchableOpacity style={styles.removeImageBtn} disabled={!canEditOnline} onPress={() => removeDraftImage(img)}>
                               <Text style={styles.removeImageBtnText}>✕</Text>
                             </TouchableOpacity>
                             {!isHeroImg && (
-                              <TouchableOpacity style={styles.makeHeroBtn} disabled={!canEdit} onPress={() => setDraftHero(img)}>
+                              <TouchableOpacity style={styles.makeHeroBtn} disabled={!canEditOnline} onPress={() => setDraftHero(img)}>
                                 <Text style={styles.makeHeroBtnText}>☆</Text>
                               </TouchableOpacity>
                             )}
@@ -572,15 +590,16 @@ export default function Collection({ navigation, route }) {
                 <Text style={styles.secondaryButtonText}>Close</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.primaryButton, !canEdit && styles.buttonDisabled]}
-                disabled={!canEdit}
+                style={[styles.primaryButton, !canEditOnline && styles.buttonDisabled]}
+                disabled={!canEditOnline}
                 onPress={handleSaveDraft}
               >
                 <Text style={styles.primaryButtonText}>Save</Text>
               </TouchableOpacity>
               {canDelete && (
                 <TouchableOpacity
-                  style={styles.dangerButton}
+                  style={[styles.dangerButton, !canDeleteOnline && styles.buttonDisabled]}
+                  disabled={!canDeleteOnline}
                   onPress={() => {
                     Alert.alert('Delete Collection?', 'This action cannot be undone.', [
                       { text: 'Cancel', style: 'cancel' },

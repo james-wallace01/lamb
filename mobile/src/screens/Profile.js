@@ -22,6 +22,7 @@ export default function Profile({ navigation }) {
     logout,
     deleteAccount,
     refreshData,
+    backendReachable,
     theme,
     isDarkMode,
     setDarkModeEnabled,
@@ -30,6 +31,7 @@ export default function Profile({ navigation }) {
     enableBiometricSignInForCurrentUser,
     disableBiometricSignIn,
   } = useData();
+  const isOffline = backendReachable === false;
   const [draft, setDraft] = useState(currentUser || {});
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -475,7 +477,7 @@ export default function Profile({ navigation }) {
             <TouchableOpacity
               style={[styles.button, loading && styles.buttonDisabled]}
               onPress={handleSave}
-              disabled={loading}
+              disabled={loading || isOffline}
             >
               <Text style={styles.buttonText}>{loading ? 'Saving...' : 'Save'}</Text>
             </TouchableOpacity>
@@ -533,7 +535,7 @@ export default function Profile({ navigation }) {
                 <TouchableOpacity
                   style={[styles.button, resettingPassword && styles.buttonDisabled]}
                   onPress={handleResetPassword}
-                  disabled={resettingPassword}
+                  disabled={resettingPassword || isOffline}
                 >
                   <Text style={styles.buttonText}>Reset Password</Text>
                 </TouchableOpacity>
@@ -627,7 +629,7 @@ export default function Profile({ navigation }) {
                     <TouchableOpacity
                       style={[styles.button, styles.actionButton, resettingPassword && styles.buttonDisabled]}
                       onPress={handlePerformResetPassword}
-                      disabled={resettingPassword}
+                      disabled={resettingPassword || isOffline}
                     >
                       <Text style={styles.buttonText}>{resettingPassword ? 'Resetting...' : 'Reset'}</Text>
                     </TouchableOpacity>
@@ -642,7 +644,7 @@ export default function Profile({ navigation }) {
                 <Text style={[styles.secondaryButtonText, { color: theme.textSecondary }]}>Sign out</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={[styles.button, styles.deleteButton]} onPress={handleDeleteAccount}>
+              <TouchableOpacity style={[styles.button, styles.deleteButton, isOffline && styles.buttonDisabled]} onPress={handleDeleteAccount} disabled={isOffline}>
                 <Text style={[styles.buttonText, styles.deleteButtonText]}>Delete Account</Text>
               </TouchableOpacity>
             </View>

@@ -10,7 +10,7 @@ import { API_URL } from '../config/api';
 import { apiFetch } from '../utils/apiFetch';
 
 export default function SignUp({ navigation }) {
-  const { register, loading, theme, ensureFirebaseSignupAuth } = useData();
+  const { register, loading, theme, ensureFirebaseSignupAuth, backendReachable } = useData();
   const insets = useSafeAreaInsets();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -21,6 +21,8 @@ export default function SignUp({ navigation }) {
   const [emailCheckError, setEmailCheckError] = useState(null);
   const [emailChecking, setEmailChecking] = useState(false);
   const [emailBlurred, setEmailBlurred] = useState(false);
+
+  const isOffline = backendReachable === false;
 
   const stripInvisibleChars = (value) => String(value || '').replace(/[\u200B-\u200D\uFEFF]/g, '');
   const normalizeEmail = (value) => stripInvisibleChars(value).trim().toLowerCase();
@@ -164,6 +166,10 @@ export default function SignUp({ navigation }) {
     !passwordInvalid;
 
   const handleSubmit = async () => {
+    if (isOffline) {
+      Alert.alert('Offline', 'Internet connection required. Please reconnect and try again.');
+      return;
+    }
     if (!firstName || !lastName || !email || !username || !password) {
       Alert.alert('Missing info', 'Please fill all fields');
       return;
@@ -327,9 +333,9 @@ export default function SignUp({ navigation }) {
       </View>
       
       <TouchableOpacity 
-        style={[styles.button, (!isFormValid || loading) && styles.buttonDisabled]} 
+        style={[styles.button, (!isFormValid || loading || isOffline) && styles.buttonDisabled]} 
         onPress={handleSubmit} 
-        disabled={!isFormValid || loading}
+        disabled={!isFormValid || loading || isOffline}
       >
         <Text style={styles.buttonText}>{loading ? 'Please wait…' : 'Continue'}</Text>
       </TouchableOpacity>

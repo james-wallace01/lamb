@@ -10,7 +10,8 @@ import { runWithMinimumDuration } from '../utils/timing';
 
 export default function Vault({ navigation, route }) {
   const { vaultId } = route.params || {};
-  const { loading, vaults, collections, addCollection, currentUser, getRoleForVault, canCreateCollectionsInVault, users, deleteVault, updateVault, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultCollections, releaseVaultCollections } = useData();
+  const { loading, vaults, collections, addCollection, currentUser, getRoleForVault, canCreateCollectionsInVault, users, deleteVault, updateVault, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultCollections, releaseVaultCollections, backendReachable } = useData();
+  const isOffline = backendReachable === false;
   const [newName, setNewName] = useState('');
   const [shareVisible, setShareVisible] = useState(false);
   const [shareTargetType, setShareTargetType] = useState(null);
@@ -56,6 +57,10 @@ export default function Vault({ navigation, route }) {
   const canEdit = caps.canEdit;
   const canShare = caps.canShare;
   const canDelete = caps.canDelete;
+  const canCreateOnline = canCreate && !isOffline;
+  const canEditOnline = canEdit && !isOffline;
+  const canShareOnline = canShare && !isOffline;
+  const canDeleteOnline = canDelete && !isOffline;
   const vaultImages = vault?.images || [];
   const storedHeroImage = vault?.heroImage || null;
   const heroImage = storedHeroImage || defaultHeroImage;
@@ -283,11 +288,12 @@ export default function Vault({ navigation, route }) {
         <View style={styles.cardActions}>
           {canShare && (
             <TouchableOpacity
-              style={styles.sharePill}
+              style={[styles.sharePill, !canShareOnline && styles.buttonDisabled]}
               onPress={(e) => {
                 e.stopPropagation();
                 openShare('collection', item.id);
               }}
+              disabled={!canShareOnline}
             >
               <Text style={styles.sharePillText}>Share</Text>
             </TouchableOpacity>
@@ -312,6 +318,7 @@ export default function Vault({ navigation, route }) {
                     placeholderTextColor={theme.placeholder}
                     value={editDraft.name}
                     onChangeText={(name) => setEditDraft((prev) => ({ ...prev, name: limit35(name || '') }))}
+                    editable={canEditOnline}
                   />
 
                   <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Manager</Text>
@@ -321,6 +328,7 @@ export default function Vault({ navigation, route }) {
                     placeholderTextColor={theme.placeholder}
                     value={editDraft.manager}
                     onChangeText={(manager) => setEditDraft((prev) => ({ ...prev, manager }))}
+                    editable={canEditOnline}
                   />
 
                   <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Description</Text>
@@ -330,13 +338,14 @@ export default function Vault({ navigation, route }) {
                     placeholderTextColor={theme.placeholder}
                     value={editDraft.description}
                     onChangeText={(description) => setEditDraft((prev) => ({ ...prev, description }))}
+                    editable={canEditOnline}
                     multiline
                   />
 
                     <View style={[styles.mediaCard, { marginTop: 12, backgroundColor: theme.surface, borderColor: theme.border }]}>
                       <View style={styles.mediaHeader}>
                         <Text style={[styles.sectionLabel, { color: theme.text }]}>Images</Text>
-                        <TouchableOpacity style={styles.addImageButton} onPress={addImagesToDraft}>
+                        <TouchableOpacity style={[styles.addImageButton, !canEditOnline && styles.buttonDisabled]} onPress={addImagesToDraft} disabled={!canEditOnline}>
                           <Text style={styles.addImageButtonText}>{(editDraft.images || []).length ? 'Add more' : 'Add images'}</Text>
                         </TouchableOpacity>
                       </View>
@@ -354,11 +363,11 @@ export default function Vault({ navigation, route }) {
                                   </View>
                                 )}
                                 <Image source={toImageSource(img)} style={styles.thumb} />
-                                <TouchableOpacity style={styles.removeImageBtn} onPress={() => removeDraftImage(img)}>
+                                <TouchableOpacity style={styles.removeImageBtn} onPress={() => removeDraftImage(img)} disabled={!canEditOnline}>
                                   <Text style={styles.removeImageBtnText}>✕</Text>
                                 </TouchableOpacity>
                                 {!isHeroImg && (
-                                  <TouchableOpacity style={styles.makeHeroBtn} onPress={() => setDraftHero(img)}>
+                                  <TouchableOpacity style={styles.makeHeroBtn} onPress={() => setDraftHero(img)} disabled={!canEditOnline}>
                                     <Text style={styles.makeHeroBtnText}>☆</Text>
                                   </TouchableOpacity>
                                 )}
@@ -374,15 +383,16 @@ export default function Vault({ navigation, route }) {
                     <Text style={styles.secondaryButtonText}>Close</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.primaryButton, !canEdit && styles.buttonDisabled]}
-                    disabled={!canEdit}
+                    style={[styles.primaryButton, !canEditOnline && styles.buttonDisabled]}
+                    disabled={!canEditOnline}
                     onPress={handleSaveDraft}
                   >
                     <Text style={styles.primaryButtonText}>Save</Text>
                   </TouchableOpacity>
                   {canDelete && (
                     <TouchableOpacity
-                      style={styles.dangerButton}
+                      style={[styles.dangerButton, !canDeleteOnline && styles.buttonDisabled]}
+                      disabled={!canDeleteOnline}
                       onPress={() => {
                         Alert.alert('Delete Vault?', 'This action cannot be undone.', [
                           { text: 'Cancel', style: 'cancel' },
@@ -440,14 +450,18 @@ export default function Vault({ navigation, route }) {
                     {(canEdit || canShare) && (
                       <View style={styles.actionsRow}>
                         <TouchableOpacity
-                          style={[styles.primaryButton, styles.actionButton, !canEdit && styles.buttonDisabled]}
-                          disabled={!canEdit}
+                          style={[styles.primaryButton, styles.actionButton, !canEditOnline && styles.buttonDisabled]}
+                          disabled={!canEditOnline}
                           onPress={openEditModal}
                         >
                           <Text style={styles.primaryButtonText}>Edit</Text>
                         </TouchableOpacity>
                         {canShare ? (
-                          <TouchableOpacity style={[styles.shareButton, styles.actionButton]} onPress={() => openShare('vault', vaultId)}>
+                          <TouchableOpacity
+                            style={[styles.shareButton, styles.actionButton, !canShareOnline && styles.buttonDisabled]}
+                            onPress={() => openShare('vault', vaultId)}
+                            disabled={!canShareOnline}
+                          >
                             <Text style={styles.secondaryButtonText}>Share</Text>
                           </TouchableOpacity>
                         ) : (
@@ -492,13 +506,14 @@ export default function Vault({ navigation, route }) {
                       placeholder="New collection name"
                       placeholderTextColor={theme.placeholder}
                       value={newName}
-                      editable={canCreate}
+                      editable={canCreateOnline}
                       onChangeText={(text) => setNewName(limit35(text || ''))}
                     />
                     <TouchableOpacity
-                      style={[styles.addButton, !canCreate && styles.buttonDisabled]}
+                      style={[styles.addButton, !canCreateOnline && styles.buttonDisabled]}
+                      disabled={!canCreateOnline}
                       onPress={() => {
-                        if (!canCreate) return Alert.alert('No permission to add collections');
+                        if (!canCreateOnline) return Alert.alert('Internet connection required. Please reconnect and try again.');
                         if (!newName.trim()) return;
                         (async () => {
                           const res = await addCollection({ vaultId, name: newName.trim() });

@@ -52,7 +52,10 @@ export default function Asset({ route, navigation }) {
     releaseVaultAssets,
     retainVaultCollections,
     releaseVaultCollections,
+    backendReachable,
   } = useData();
+
+  const isOffline = backendReachable === false;
 
   const asset = useMemo(() => assets.find((a) => a.id === assetId), [assetId, assets]);
   const owner = useMemo(() => users.find((u) => u.id === asset?.ownerId), [users, asset]);
@@ -123,6 +126,11 @@ export default function Asset({ route, navigation }) {
   const canShare = caps.canShare;
   const canClone = caps.canClone;
   const canDelete = caps.canDelete;
+  const canEditOnline = canEdit && !isOffline;
+  const canMoveOnline = canMove && !isOffline;
+  const canShareOnline = canShare && !isOffline;
+  const canCloneOnline = canClone && !isOffline;
+  const canDeleteOnline = canDelete && !isOffline;
 
   const assetImages = asset?.images || [];
   const storedHeroImage = asset?.heroImage || null;
@@ -354,7 +362,7 @@ export default function Asset({ route, navigation }) {
                 placeholderTextColor={theme.placeholder}
                 value={editDraft.title}
                 onChangeText={(title) => setEditDraft((prev) => ({ ...prev, title: limit35(title) }))}
-                editable={canEdit}
+                editable={canEditOnline}
               />
 
               <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Type</Text>
@@ -364,7 +372,7 @@ export default function Asset({ route, navigation }) {
                 placeholderTextColor={theme.placeholder}
                 value={editDraft.type}
                 onChangeText={(type) => setEditDraft((prev) => ({ ...prev, type }))}
-                editable={canEdit}
+                editable={canEditOnline}
               />
 
               <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Category</Text>
@@ -374,7 +382,7 @@ export default function Asset({ route, navigation }) {
                 placeholderTextColor={theme.placeholder}
                 value={editDraft.category}
                 onChangeText={(category) => setEditDraft((prev) => ({ ...prev, category }))}
-                editable={canEdit}
+                editable={canEditOnline}
               />
 
               <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Quantity</Text>
@@ -385,7 +393,7 @@ export default function Asset({ route, navigation }) {
                 keyboardType="numeric"
                 value={String(editDraft.quantity ?? 1)}
                 onChangeText={(quantity) => setEditDraft((prev) => ({ ...prev, quantity }))}
-                editable={canEdit}
+                editable={canEditOnline}
               />
 
               <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Value</Text>
@@ -396,7 +404,7 @@ export default function Asset({ route, navigation }) {
                 keyboardType="numeric"
                 value={formatCurrency(editDraft.value)}
                 onChangeText={(value) => setEditDraft((prev) => ({ ...prev, value: unformatCurrency(value) }))}
-                editable={canEdit}
+                editable={canEditOnline}
               />
 
               <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Estimate Value</Text>
@@ -407,7 +415,7 @@ export default function Asset({ route, navigation }) {
                 keyboardType="numeric"
                 value={formatCurrency(editDraft.estimateValue)}
                 onChangeText={(value) => setEditDraft((prev) => ({ ...prev, estimateValue: unformatCurrency(value) }))}
-                editable={canEdit}
+                editable={canEditOnline}
               />
 
               <Text style={[styles.modalLabel, { color: theme.textMuted }]}>RRP</Text>
@@ -418,7 +426,7 @@ export default function Asset({ route, navigation }) {
                 keyboardType="numeric"
                 value={formatCurrency(editDraft.rrp)}
                 onChangeText={(value) => setEditDraft((prev) => ({ ...prev, rrp: unformatCurrency(value) }))}
-                editable={canEdit}
+                editable={canEditOnline}
               />
 
               <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Purchase Price</Text>
@@ -429,7 +437,7 @@ export default function Asset({ route, navigation }) {
                 keyboardType="numeric"
                 value={formatCurrency(editDraft.purchasePrice)}
                 onChangeText={(value) => setEditDraft((prev) => ({ ...prev, purchasePrice: unformatCurrency(value) }))}
-                editable={canEdit}
+                editable={canEditOnline}
               />
 
               <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Manager</Text>
@@ -439,7 +447,7 @@ export default function Asset({ route, navigation }) {
                 placeholderTextColor={theme.placeholder}
                 value={editDraft.manager}
                 onChangeText={(manager) => setEditDraft((prev) => ({ ...prev, manager }))}
-                editable={canEdit}
+                editable={canEditOnline}
               />
 
               <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Description</Text>
@@ -449,7 +457,7 @@ export default function Asset({ route, navigation }) {
                 placeholderTextColor={theme.placeholder}
                 value={editDraft.description}
                 onChangeText={(description) => setEditDraft((prev) => ({ ...prev, description }))}
-                editable={canEdit}
+                editable={canEditOnline}
                 multiline
               />
 
@@ -457,9 +465,9 @@ export default function Asset({ route, navigation }) {
                 <View style={styles.mediaHeader}>
                   <Text style={[styles.sectionLabel, { color: theme.text }]}>Images</Text>
                   <TouchableOpacity
-                    style={[styles.addImageButton, !canEdit && styles.buttonDisabled]}
+                    style={[styles.addImageButton, !canEditOnline && styles.buttonDisabled]}
                     onPress={addImagesToDraft}
-                    disabled={!canEdit}
+                    disabled={!canEditOnline}
                   >
                     <Text style={styles.addImageButtonText}>
                       {(editDraft.images || []).length ? 'Add more' : 'Add images'}
@@ -484,7 +492,7 @@ export default function Asset({ route, navigation }) {
                           <TouchableOpacity
                             style={styles.removeImageBtn}
                             onPress={() => removeDraftImage(img)}
-                            disabled={!canEdit}
+                            disabled={!canEditOnline}
                           >
                             <Text style={styles.removeImageBtnText}>✕</Text>
                           </TouchableOpacity>
@@ -492,7 +500,7 @@ export default function Asset({ route, navigation }) {
                             <TouchableOpacity
                               style={styles.makeHeroBtn}
                               onPress={() => setDraftHero(img)}
-                              disabled={!canEdit}
+                              disabled={!canEditOnline}
                             >
                               <Text style={styles.makeHeroBtnText}>☆</Text>
                             </TouchableOpacity>
@@ -510,15 +518,16 @@ export default function Asset({ route, navigation }) {
                 <Text style={styles.secondaryButtonText}>Close</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.primaryButton, !canEdit && styles.buttonDisabled]}
-                disabled={!canEdit}
+                style={[styles.primaryButton, !canEditOnline && styles.buttonDisabled]}
+                disabled={!canEditOnline}
                 onPress={handleSaveDraft}
               >
                 <Text style={styles.primaryButtonText}>Save</Text>
               </TouchableOpacity>
               {canDelete && (
                 <TouchableOpacity
-                  style={styles.dangerButton}
+                  style={[styles.dangerButton, !canDeleteOnline && styles.buttonDisabled]}
+                  disabled={!canDeleteOnline}
                   onPress={() => {
                     Alert.alert('Delete Asset?', 'This action cannot be undone.', [
                       { text: 'Cancel', style: 'cancel' },
@@ -590,27 +599,39 @@ export default function Asset({ route, navigation }) {
 
         <View style={styles.actionsRow}>
           <TouchableOpacity
-            style={[styles.primaryButton, styles.actionButton, !canEdit && styles.buttonDisabled]}
-            disabled={!canEdit}
+            style={[styles.primaryButton, styles.actionButton, !canEditOnline && styles.buttonDisabled]}
+            disabled={!canEditOnline}
             onPress={openEditModal}
           >
             <Text style={styles.primaryButtonText}>Edit</Text>
           </TouchableOpacity>
 
           {canShare && (
-            <TouchableOpacity style={[styles.shareButton, styles.actionButton]} onPress={() => setShowShare(true)}>
+            <TouchableOpacity
+              style={[styles.shareButton, styles.actionButton, !canShareOnline && styles.buttonDisabled]}
+              onPress={() => setShowShare(true)}
+              disabled={!canShareOnline}
+            >
               <Text style={styles.secondaryButtonText}>Share</Text>
             </TouchableOpacity>
           )}
 
           {canMove && (
-            <TouchableOpacity style={[styles.moveButton, styles.actionButton]} onPress={() => setShowMoveBox(!showMoveBox)}>
+            <TouchableOpacity
+              style={[styles.moveButton, styles.actionButton, !canMoveOnline && styles.buttonDisabled]}
+              onPress={() => setShowMoveBox(!showMoveBox)}
+              disabled={!canMoveOnline}
+            >
               <Text style={styles.secondaryButtonText}>Move</Text>
             </TouchableOpacity>
           )}
 
           {canClone && (
-            <TouchableOpacity style={[styles.cloneButton, styles.actionButton]} onPress={handleCloneAsset}>
+            <TouchableOpacity
+              style={[styles.cloneButton, styles.actionButton, !canCloneOnline && styles.buttonDisabled]}
+              onPress={handleCloneAsset}
+              disabled={!canCloneOnline}
+            >
               <Text style={styles.cloneButtonText}>Clone</Text>
             </TouchableOpacity>
           )}
@@ -653,6 +674,7 @@ export default function Asset({ route, navigation }) {
             <TouchableOpacity
               style={[styles.dropdownButton, { backgroundColor: theme.inputBg, borderColor: theme.border }]}
               onPress={() => setVaultDropdownOpen(!vaultDropdownOpen)}
+              disabled={!canMoveOnline}
             >
               <Text style={[styles.dropdownButtonText, { color: theme.text }]}>
                 {moveVaultId ? ownerVaults.find((v) => v.id === moveVaultId)?.name || 'Select vault...' : 'Select vault...'}
@@ -678,6 +700,7 @@ export default function Asset({ route, navigation }) {
                         setMoveCollectionId(null);
                         setVaultDropdownOpen(false);
                       }}
+                      disabled={!canMoveOnline}
                     >
                       <Text style={[styles.dropdownItemText, { color: theme.text }]}>{v.name || v.id}</Text>
                       {moveVaultId === v.id && <Text style={styles.checkmark}>✓</Text>}
@@ -692,10 +715,10 @@ export default function Asset({ route, navigation }) {
               style={[
                 styles.dropdownButton,
                 { backgroundColor: theme.inputBg, borderColor: theme.border },
-                !moveVaultId && styles.buttonDisabled,
+                (!moveVaultId || !canMoveOnline) && styles.buttonDisabled,
               ]}
               onPress={() => moveVaultId && setCollectionDropdownOpen(!collectionDropdownOpen)}
-              disabled={!moveVaultId}
+              disabled={!moveVaultId || !canMoveOnline}
             >
               <Text style={[styles.dropdownButtonText, { color: theme.text }]}>
                 {moveCollectionId
@@ -722,6 +745,7 @@ export default function Asset({ route, navigation }) {
                         setMoveCollectionId(c.id);
                         setCollectionDropdownOpen(false);
                       }}
+                      disabled={!canMoveOnline}
                     >
                       <Text style={[styles.dropdownItemText, { color: theme.text }]}>{c.name || c.id}</Text>
                       {moveCollectionId === c.id && <Text style={styles.checkmark}>✓</Text>}
@@ -732,9 +756,9 @@ export default function Asset({ route, navigation }) {
             )}
 
             <TouchableOpacity
-              style={[styles.button, (!moveVaultId || !moveCollectionId) && styles.buttonDisabled]}
+              style={[styles.button, (!moveVaultId || !moveCollectionId || !canMoveOnline) && styles.buttonDisabled]}
               onPress={handleMove}
-              disabled={!moveVaultId || !moveCollectionId}
+              disabled={!moveVaultId || !moveCollectionId || !canMoveOnline}
             >
               <Text style={styles.buttonText}>Move</Text>
             </TouchableOpacity>
