@@ -19,6 +19,7 @@ export default function Profile({ navigation }) {
     permissionGrants,
     validatePassword,
     resetPassword,
+    logout,
     deleteAccount,
     refreshData,
     theme,
@@ -633,6 +634,14 @@ export default function Profile({ navigation }) {
                   </View>
                 </View>
               )}
+
+              <TouchableOpacity
+                style={[styles.secondaryButton, { flex: undefined, backgroundColor: theme.surface, borderColor: theme.border }]}
+                onPress={logout}
+              >
+                <Text style={[styles.secondaryButtonText, { color: theme.textSecondary }]}>Sign out</Text>
+              </TouchableOpacity>
+
               <TouchableOpacity style={[styles.button, styles.deleteButton]} onPress={handleDeleteAccount}>
                 <Text style={[styles.buttonText, styles.deleteButtonText]}>Delete Account</Text>
               </TouchableOpacity>

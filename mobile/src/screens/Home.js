@@ -7,7 +7,7 @@ import { getInitials } from '../utils/user';
 import { runWithMinimumDuration } from '../utils/timing';
 
 export default function Home({ navigation }) {
-  const { loading, vaults, currentUser, addVault, logout, refreshData, theme, membershipAccess, vaultMemberships, acceptInvitationCode } = useData();
+  const { loading, vaults, currentUser, addVault, refreshData, theme, membershipAccess, vaultMemberships, acceptInvitationCode } = useData();
   const [newVaultName, setNewVaultName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
 
@@ -81,9 +81,6 @@ export default function Home({ navigation }) {
                     <Text style={[styles.avatarFallbackText, { color: '#fff' }]}>{getInitials(currentUser)}</Text>
                   </View>
                 )}
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface }]} onPress={logout}>
-                <Text style={[styles.secondaryText, { color: theme.textSecondary }]}>Sign out</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -224,9 +221,6 @@ export default function Home({ navigation }) {
                   <Text style={[styles.avatarFallbackText, { color: '#fff' }]}>{getInitials(currentUser)}</Text>
                 </View>
               )}
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface }]} onPress={logout}>
-              <Text style={[styles.secondaryText, { color: theme.textSecondary }]}>Sign out</Text>
             </TouchableOpacity>
           </View>
         </View>
