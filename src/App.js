@@ -725,20 +725,6 @@ export default function App() {
         );
 
         unsubs.push(
-          onSnapshot(collection(db, 'vaults', vaultId, 'assets'), (snap) => {
-            const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-            setAssets((prev) => {
-              const keep = (prev || []).filter((a) => {
-                const aVaultId = a?.vaultId ? String(a.vaultId) : null;
-                if (!aVaultId) return true;
-                return aVaultId !== String(vaultId);
-              });
-              return [...keep, ...rows];
-            });
-          })
-        );
-
-        unsubs.push(
           onSnapshot(collection(db, 'vaults', vaultId, 'memberships'), (snap) => {
             const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
             setVaultMemberships((prev) => {
@@ -789,6 +775,27 @@ export default function App() {
       vaultListenerUnsubsRef.current.clear();
     };
   }, [db, firebaseUser]);
+
+  // Subscribe to assets only for the currently selected vault.
+  // This avoids an N-vault fanout of unbounded asset listeners while keeping
+  // per-collection asset counts accurate within the active vault.
+  useEffect(() => {
+    if (!db || !firebaseUser) return;
+    if (!selectedVaultId) {
+      setAssets([]);
+      return;
+    }
+
+    const vaultId = String(selectedVaultId);
+    const unsub = onSnapshot(collection(db, 'vaults', vaultId, 'assets'), (snap) => {
+      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setAssets(rows);
+    });
+
+    return () => {
+      try { unsub(); } catch (e) {}
+    };
+  }, [db, firebaseUser, selectedVaultId]);
 
   // Tutorial / onboarding state
   const [showTutorial, setShowTutorial] = useState(false);

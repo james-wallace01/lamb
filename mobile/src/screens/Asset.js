@@ -31,7 +31,7 @@ function unformatCurrency(val) {
 }
 
 export default function Asset({ route, navigation }) {
-  const { assetId } = route.params || {};
+  const { assetId, vaultId: routeVaultId } = route.params || {};
   const {
     loading,
     assets,
@@ -47,6 +47,8 @@ export default function Asset({ route, navigation }) {
     refreshData,
     theme,
     defaultHeroImage,
+    retainVaultAssets,
+    releaseVaultAssets,
   } = useData();
 
   const asset = useMemo(() => assets.find((a) => a.id === assetId), [assetId, assets]);
@@ -93,6 +95,15 @@ export default function Asset({ route, navigation }) {
     heroImage: '',
   });
   const [previewImage, setPreviewImage] = useState(null);
+
+  useEffect(() => {
+    const vId = routeVaultId ? String(routeVaultId) : (asset?.vaultId ? String(asset.vaultId) : null);
+    if (!vId) return;
+    retainVaultAssets?.(vId);
+    return () => {
+      releaseVaultAssets?.(vId);
+    };
+  }, [routeVaultId, asset?.vaultId, retainVaultAssets, releaseVaultAssets]);
 
   const draftPreviewImages = editDraft.heroImage && (editDraft.images || []).includes(editDraft.heroImage)
     ? [editDraft.heroImage, ...(editDraft.images || []).filter((img) => img !== editDraft.heroImage)]

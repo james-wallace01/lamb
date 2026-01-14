@@ -41,6 +41,31 @@ app.use(
 
 const isProd = process.env.NODE_ENV === 'production';
 
+const generateRequestId = () => {
+  try {
+    if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  } catch {
+    // ignore
+  }
+  return crypto.randomBytes(16).toString('hex');
+};
+
+const safeLogJson = (level, message, fields) => {
+  const lvl = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log';
+  const payload = {
+    ts: new Date().toISOString(),
+    level: level || 'info',
+    message: message || '',
+    ...(fields && typeof fields === 'object' ? fields : {}),
+  };
+
+  try {
+    console[lvl](JSON.stringify(payload));
+  } catch {
+    console[lvl](String(message || 'log'));
+  }
+};
+
 const enforceTls = String(process.env.ENFORCE_TLS).toLowerCase() === 'true' || process.env.NODE_ENV === 'production';
 if (enforceTls) {
   app.use((req, res, next) => {
@@ -105,13 +130,38 @@ if (isProd && corsAllowlist.length === 0) {
         return callback(null, false);
       },
       methods: ['GET', 'POST', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
+      exposedHeaders: ['X-Request-Id'],
       credentials: false,
       maxAge: 86400,
       optionsSuccessStatus: 204,
     })
   );
 }
+
+// Correlation IDs + request logging (avoid logging bodies to reduce PII risk).
+app.use((req, res, next) => {
+  const inbound = req.headers['x-request-id'];
+  const requestId = typeof inbound === 'string' && inbound.trim() ? inbound.trim().slice(0, 128) : generateRequestId();
+  req.requestId = requestId;
+  res.setHeader('X-Request-Id', requestId);
+
+  const startNs = process.hrtime.bigint();
+  res.on('finish', () => {
+    const durationMs = Number(process.hrtime.bigint() - startNs) / 1e6;
+    const urlNoQuery = String(req.originalUrl || req.url || '').split('?')[0];
+    safeLogJson('info', 'request', {
+      requestId,
+      method: req.method,
+      path: urlNoQuery,
+      status: res.statusCode,
+      durationMs: Math.round(durationMs),
+      uid: req.firebaseUser?.uid ? String(req.firebaseUser.uid) : null,
+    });
+  });
+
+  return next();
+});
 
 // Serve branded static images (used for default hero images on mobile).
 app.use('/images', express.static(path.join(__dirname, '..', 'public', 'images')));
@@ -1050,6 +1100,8 @@ app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), as
       case 'customer.subscription.deleted': {
         const sub = event.data.object;
         console.log('[stripe webhook]', event.type, {
+          requestId: req.requestId,
+          eventId: event.id,
           id: sub?.id,
           status: sub?.status,
           customer: sub?.customer,
@@ -1076,7 +1128,12 @@ app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), as
             }
           }
         } catch (e) {
-          console.warn('[stripe webhook] billing email failed', { type: event.type, message: e?.message || String(e) });
+          console.warn('[stripe webhook] billing email failed', {
+            requestId: req.requestId,
+            eventId: event.id,
+            type: event.type,
+            message: e?.message || String(e),
+          });
         }
         break;
       }
@@ -1086,6 +1143,8 @@ app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), as
       case 'invoice.payment_failed': {
         const invoice = event.data.object;
         console.log('[stripe webhook]', event.type, {
+          requestId: req.requestId,
+          eventId: event.id,
           id: invoice?.id,
           customer: invoice?.customer,
           subscription: invoice?.subscription,
@@ -1112,11 +1171,17 @@ app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), as
                   }
                 }
               } catch (e) {
-                console.warn('[stripe webhook] payment failed email send error', { message: e?.message || String(e) });
+                console.warn('[stripe webhook] payment failed email send error', {
+                  requestId: req.requestId,
+                  eventId: event.id,
+                  message: e?.message || String(e),
+                });
               }
             }
           } catch (err) {
             console.warn('[stripe webhook] failed to retrieve subscription for invoice', {
+              requestId: req.requestId,
+              eventId: event.id,
               invoiceId: invoice?.id,
               subscription: subId,
               message: err?.message || String(err),
@@ -1133,7 +1198,11 @@ app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), as
 
     return res.json({ received: true });
   } catch (err) {
-    console.error('Error handling webhook:', err);
+    console.error('Error handling webhook:', {
+      requestId: req.requestId,
+      eventId: event?.id,
+      message: err?.message || String(err),
+    });
     return res.status(500).json({ error: 'Webhook handler failed' });
   }
 });
