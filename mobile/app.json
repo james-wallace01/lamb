@@ -2,7 +2,7 @@
   "expo": {
     "name": "LAMB",
     "slug": "lamb-mobile",
-    "version": "0.4.44",
+    "version": "0.4.45",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "buildNumber": "49",
+      "buildNumber": "50",
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false,
@@ -25,7 +25,7 @@
       }
     },
     "android": {
-      "versionCode": 49,
+      "versionCode": 50,
       "allowBackup": false,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
