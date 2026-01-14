@@ -51,25 +51,32 @@ service cloud.firestore {
     }
 
     function hasVaultPerm(vaultId, permKey) {
-      if (!myActiveMembership(vaultId)) return false;
-      if (isOwner(vaultId)) return true;
-      return get(/databases/$(database)/documents/vaults/$(vaultId)/memberships/$(uid())).data.permissions[permKey] == true;
+      return myActiveMembership(vaultId)
+        && (
+          isOwner(vaultId)
+          || get(/databases/$(database)/documents/vaults/$(vaultId)/memberships/$(uid())).data.permissions[permKey] == true
+        );
     }
 
     function hasGrantPerm(vaultId, scopeType, scopeId, permKey) {
-      if (isOwner(vaultId)) return true;
-      return exists(/databases/$(database)/documents/vaults/$(vaultId)/permissionGrants/$(scopeType + ':' + scopeId + ':' + uid()))
-        && get(/databases/$(database)/documents/vaults/$(vaultId)/permissionGrants/$(scopeType + ':' + scopeId + ':' + uid())).data.permissions[permKey] == true;
+      return isOwner(vaultId)
+        || (
+          exists(/databases/$(database)/documents/vaults/$(vaultId)/permissionGrants/$(scopeType + ':' + scopeId + ':' + uid()))
+          && get(/databases/$(database)/documents/vaults/$(vaultId)/permissionGrants/$(scopeType + ':' + scopeId + ':' + uid())).data.permissions[permKey] == true
+        );
     }
 
     function hasPerm(vaultId, scopeType, scopeId, permKey) {
-      if (!myActiveMembership(vaultId)) return false;
-      if (isOwner(vaultId)) return true;
       // Most-specific grant wins; if a grant exists but does not allow the permission, deny.
-      if (exists(/databases/$(database)/documents/vaults/$(vaultId)/permissionGrants/$(scopeType + ':' + scopeId + ':' + uid()))) {
-        return hasGrantPerm(vaultId, scopeType, scopeId, permKey);
-      }
-      return hasVaultPerm(vaultId, permKey);
+      return myActiveMembership(vaultId)
+        && (
+          isOwner(vaultId)
+          || (
+            exists(/databases/$(database)/documents/vaults/$(vaultId)/permissionGrants/$(scopeType + ':' + scopeId + ':' + uid()))
+              ? hasGrantPerm(vaultId, scopeType, scopeId, permKey)
+              : hasVaultPerm(vaultId, permKey)
+          )
+        );
     }
 
     function ownerIdAfter(vaultId) {
