@@ -1655,8 +1655,27 @@ export function DataProvider({ children }) {
         (u?.username && normalizeUsername(u.username) === un.value) ||
         (u?.email && normalizeEmail(u.email) === em.value)
     );
-    if (existingLocal && String(existingLocal.id) !== uid) {
-      return { ok: false, message: 'User already exists' };
+    if (existingLocal) {
+      const existingId =
+        existingLocal?.id != null
+          ? existingLocal.id
+          : existingLocal?.user_id != null
+            ? existingLocal.user_id
+            : existingLocal?.firebaseUid != null
+              ? existingLocal.firebaseUid
+              : existingLocal?.firebase_uid != null
+                ? existingLocal.firebase_uid
+                : null;
+
+      const existingUid = existingId != null ? String(existingId) : null;
+      const signedInEmailNow = firebaseAuth?.currentUser?.email ? normalizeEmail(String(firebaseAuth.currentUser.email)) : null;
+      const sameIdentity =
+        (existingUid && existingUid === uid) ||
+        (!existingUid && signedInEmailNow && signedInEmailNow === em.value);
+
+      if (!sameIdentity) {
+        return { ok: false, message: 'User already exists' };
+      }
     }
 
     const tier = subscriptionTier ? String(subscriptionTier).toUpperCase() : null;
