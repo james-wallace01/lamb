@@ -3,7 +3,7 @@ import React, { useEffect, useRef } from 'react';
 import { AppState, View } from 'react-native';
 import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { enableScreens } from 'react-native-screens';
 import { StatusBar } from 'expo-status-bar';
 import { DataProvider } from './src/context/DataContext';
@@ -143,9 +143,11 @@ export default function App() {
     <SafeAreaProvider>
       <DataProvider>
         <NavigationContainer ref={navigationRef}>
-          <SessionTimeoutBoundary>
-            <RootNavigator />
-          </SessionTimeoutBoundary>
+          <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+            <SessionTimeoutBoundary>
+              <RootNavigator />
+            </SessionTimeoutBoundary>
+          </SafeAreaView>
         </NavigationContainer>
         <VersionFooter navigationRef={navigationRef} />
         <ThemedStatusBar />
