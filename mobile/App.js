@@ -138,19 +138,29 @@ function SessionTimeoutBoundary({ children }) {
   );
 }
 
+function AppFrame() {
+  const { theme } = useData();
+
+  return (
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
+      <NavigationContainer ref={navigationRef}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top']}>
+          <SessionTimeoutBoundary>
+            <RootNavigator />
+          </SessionTimeoutBoundary>
+        </SafeAreaView>
+      </NavigationContainer>
+      <VersionFooter navigationRef={navigationRef} />
+      <ThemedStatusBar />
+    </View>
+  );
+}
+
 export default function App() {
   return (
     <SafeAreaProvider>
       <DataProvider>
-        <NavigationContainer ref={navigationRef}>
-          <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-            <SessionTimeoutBoundary>
-              <RootNavigator />
-            </SessionTimeoutBoundary>
-          </SafeAreaView>
-        </NavigationContainer>
-        <VersionFooter navigationRef={navigationRef} />
-        <ThemedStatusBar />
+        <AppFrame />
       </DataProvider>
     </SafeAreaProvider>
   );
