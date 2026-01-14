@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AppState, Platform, StyleSheet, Text, View } from 'react-native';
+import { AppState, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import appConfig from '../../app.json';
@@ -25,8 +25,8 @@ const build =
 
 const versionText = version ? `v${version}${build ? ` (${build})` : ''}` : 'Version unavailable';
 
-export default function VersionFooter() {
-  const { theme } = useData();
+export default function VersionFooter({ navigationRef }) {
+  const { theme, currentUser } = useData();
   const insets = useSafeAreaInsets();
   const [status, setStatus] = useState('connecting'); // connecting | connected | offline
   const checkingRef = useRef(false);
@@ -84,6 +84,19 @@ export default function VersionFooter() {
 
   const statusLabel = status === 'connected' ? 'Connected' : status === 'offline' ? 'Offline — read-only' : 'Connecting…';
 
+  const canShowNav = !!currentUser;
+
+  const safeNavigate = (routeName) => {
+    try {
+      if (!navigationRef?.isReady?.()) return;
+      navigationRef.navigate(routeName);
+    } catch {
+      // ignore
+    }
+  };
+
+  const navButtonTextColor = theme.text;
+
   return (
     <View
       style={[
@@ -94,14 +107,43 @@ export default function VersionFooter() {
           borderTopColor: theme.border,
         },
       ]}
-      pointerEvents="none"
     >
-      <View style={styles.leftGroup}>
-        <View style={[styles.dot, dotStyle]} />
-        <Text style={[styles.text, { color: theme.textMuted }]}>LAMB</Text>
-        <Text style={[styles.statusText, { color: theme.textMuted }]}>{statusLabel}</Text>
+      {canShowNav && (
+        <View style={styles.navRow}>
+          <TouchableOpacity
+            style={[styles.navButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            onPress={() => safeNavigate('Home')}
+            accessibilityRole="button"
+            accessibilityLabel="Go to Home"
+          >
+            <Text style={[styles.navButtonText, { color: navButtonTextColor }]}>Home</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.navButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            onPress={() => safeNavigate('Membership')}
+            accessibilityRole="button"
+            accessibilityLabel="Go to Membership"
+          >
+            <Text style={[styles.navButtonText, { color: navButtonTextColor }]}>Membership</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.navButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            onPress={() => safeNavigate('Profile')}
+            accessibilityRole="button"
+            accessibilityLabel="Go to Profile"
+          >
+            <Text style={[styles.navButtonText, { color: navButtonTextColor }]}>Profile</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <View style={styles.infoRow} pointerEvents="none">
+        <View style={styles.leftGroup}>
+          <View style={[styles.dot, dotStyle]} />
+          <Text style={[styles.statusText, { color: theme.textMuted }]}>{statusLabel}</Text>
+        </View>
+        <Text style={[styles.text, { color: theme.textMuted }]}>{versionText}</Text>
       </View>
-      <Text style={[styles.text, { color: theme.textMuted }]}>{versionText}</Text>
     </View>
   );
 }
@@ -115,12 +157,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: Platform.OS === 'ios' ? 8 : 10,
     paddingTop: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: 'column',
     backgroundColor: '#000000',
     borderTopWidth: 1,
     borderTopColor: '#1f2738',
+    gap: 12,
+  },
+  navRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  navButton: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navButtonText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 12,
   },
   leftGroup: {

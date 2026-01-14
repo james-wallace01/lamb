@@ -1,7 +1,7 @@
 import 'react-native-gesture-handler';
 import React, { useEffect, useRef } from 'react';
 import { AppState, View } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { enableScreens } from 'react-native-screens';
@@ -25,6 +25,8 @@ import VersionFooter from './src/components/VersionFooter';
 enableScreens();
 
 const Stack = createNativeStackNavigator();
+
+const navigationRef = createNavigationContainerRef();
 
 const AuthStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -140,12 +142,12 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <DataProvider>
-        <NavigationContainer>
+        <NavigationContainer ref={navigationRef}>
           <SessionTimeoutBoundary>
             <RootNavigator />
           </SessionTimeoutBoundary>
         </NavigationContainer>
-        <VersionFooter />
+        <VersionFooter navigationRef={navigationRef} />
         <ThemedStatusBar />
       </DataProvider>
     </SafeAreaProvider>
