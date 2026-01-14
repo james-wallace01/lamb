@@ -236,6 +236,14 @@ npm run prune-audit-events -- --vault-limit 10
 
 Env var: `PRUNE_AUDIT_VAULT_LIMIT`
 
+### Scheduling (Render)
+
+If you deploy with Render, this repo includes a sample cron job definition in [render.yaml](../render.yaml) named `lamb-backend-maintenance-staging` that runs the prune scripts daily.
+
+Notes:
+- Cron jobs need Firebase Admin credentials, so ensure `FIREBASE_SERVICE_ACCOUNT_JSON` is set for the cron service in Render.
+- If you want to run heavier jobs (like `npm run recompute-vault-usage`), consider scheduling them less frequently (e.g., weekly) to control Firestore costs.
+
 ## Paid Owner Invitations
 
 The backend exposes a minimal invitation flow that writes canonical Firestore docs:

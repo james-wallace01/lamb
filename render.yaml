@@ -25,3 +25,23 @@ services:
       # Optional: require Firebase auth for Stripe endpoints
       - key: REQUIRE_FIREBASE_AUTH
         value: "true"
+
+  # Scheduled maintenance (prune bounded collections).
+  # Render will run this command on the configured schedule and surface logs in the dashboard.
+  - type: cron
+    name: lamb-backend-maintenance-staging
+    runtime: node
+    rootDir: backend
+    schedule: "0 5 * * *" # daily at 05:00 UTC
+    buildCommand: npm ci
+    startCommand: >-
+      npm run prune-email-events
+      && npm run prune-invitations
+      && npm run prune-daily-usage
+      && npm run prune-audit-events
+    envVars:
+      - key: NODE_ENV
+        value: staging
+      # Firebase Admin credentials (required to access Firestore)
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
