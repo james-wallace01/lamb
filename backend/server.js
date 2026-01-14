@@ -518,6 +518,9 @@ const TIER_LIMITS = Object.freeze({
     maxCollections: 200,
     auditRetentionDays: 30,
     maxBulkOpsPerDay: 10,
+    maxWriteOpsPerDay: 2000,
+    maxDestructiveOpsPerDay: 500,
+    maxInviteOpsPerDay: 100,
   }),
   PREMIUM: Object.freeze({
     maxMembers: 6,
@@ -526,6 +529,9 @@ const TIER_LIMITS = Object.freeze({
     maxCollections: 1000,
     auditRetentionDays: 180,
     maxBulkOpsPerDay: 50,
+    maxWriteOpsPerDay: 10000,
+    maxDestructiveOpsPerDay: 2000,
+    maxInviteOpsPerDay: 500,
   }),
   PRO: Object.freeze({
     maxMembers: 21,
@@ -534,6 +540,9 @@ const TIER_LIMITS = Object.freeze({
     maxCollections: 5000,
     auditRetentionDays: 365,
     maxBulkOpsPerDay: 200,
+    maxWriteOpsPerDay: 50000,
+    maxDestructiveOpsPerDay: 10000,
+    maxInviteOpsPerDay: 2000,
   }),
 });
 
@@ -651,6 +660,109 @@ const ensureVaultUsage = async (db, vaultId) => {
   );
 
   return { assetsCount, collectionsCount };
+};
+
+const shouldDisableDailyQuotas = () => String(process.env.DISABLE_DAILY_QUOTAS).toLowerCase() === 'true';
+
+const getUtcDateKey = (ms) => {
+  const t = typeof ms === 'number' ? ms : Date.now();
+  return new Date(t).toISOString().slice(0, 10); // YYYY-MM-DD
+};
+
+const getVaultDailyUsageRef = (db, vaultId, dateKey) => {
+  const day = String(dateKey || getUtcDateKey());
+  return db.collection('vaults').doc(String(vaultId)).collection('stats').doc(`dailyUsage_${day}`);
+};
+
+const assertAndIncrementVaultDailyQuota = async (db, vaultId, { kind, delta = 1, actorUid } = {}) => {
+  if (!db || !vaultId) return { ok: true, skipped: true };
+  if (shouldDisableDailyQuotas()) return { ok: true, skipped: true };
+
+  const safeDelta = Number.isFinite(delta) && delta > 0 ? Math.floor(delta) : 1;
+  const dateKey = getUtcDateKey();
+
+  const tier = await getVaultTier(db, vaultId);
+  const limits = getTierLimits(tier);
+
+  const kindKey = String(kind || '').toLowerCase();
+  const field =
+    kindKey === 'invite'
+      ? 'inviteOps'
+      : kindKey === 'destructive'
+        ? 'destructiveOps'
+        : kindKey === 'bulk'
+          ? 'bulkOps'
+          : 'writeOps';
+
+  const max =
+    field === 'inviteOps'
+      ? Number.isFinite(limits.maxInviteOpsPerDay)
+        ? limits.maxInviteOpsPerDay
+        : 0
+      : field === 'destructiveOps'
+        ? Number.isFinite(limits.maxDestructiveOpsPerDay)
+          ? limits.maxDestructiveOpsPerDay
+          : 0
+        : field === 'bulkOps'
+          ? Number.isFinite(limits.maxBulkOpsPerDay)
+            ? limits.maxBulkOpsPerDay
+            : 0
+          : Number.isFinite(limits.maxWriteOpsPerDay)
+            ? limits.maxWriteOpsPerDay
+            : 0;
+
+  const ref = getVaultDailyUsageRef(db, vaultId, dateKey);
+  const now = Date.now();
+
+  try {
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const d = snap.exists ? (snap.data() || {}) : {};
+      const current = typeof d[field] === 'number' ? d[field] : 0;
+
+      if (max > 0 && current + safeDelta > max) {
+        const e = new Error('Daily quota exceeded');
+        e.status = 429;
+        e.code = 'DAILY_QUOTA_EXCEEDED';
+        e.current = current;
+        e.max = max;
+        e.field = field;
+        throw e;
+      }
+
+      tx.set(
+        ref,
+        {
+          dateKey,
+          vaultId: String(vaultId),
+          updatedAt: now,
+          createdAt: typeof d.createdAt === 'number' ? d.createdAt : now,
+          updatedBy: actorUid ? String(actorUid) : null,
+          [field]: firebaseAdmin.firestore.FieldValue.increment(safeDelta),
+        },
+        { merge: true }
+      );
+    });
+
+    return { ok: true, tier, limits, dateKey, field };
+  } catch (err) {
+    if (err && err.code === 'DAILY_QUOTA_EXCEEDED') {
+      return {
+        ok: false,
+        status: err.status || 429,
+        error: `Daily quota exceeded for ${tier} tier`,
+        tier,
+        limits,
+        dateKey,
+        kind: kindKey || 'write',
+        field: err.field || field,
+        current: typeof err.current === 'number' ? err.current : null,
+        max: typeof err.max === 'number' ? err.max : null,
+      };
+    }
+
+    return { ok: false, status: 500, error: err?.message || 'Daily quota check failed' };
+  }
 };
 
 const getGrantDoc = async (db, vaultId, { scopeType, scopeId, userId }) => {
@@ -1965,6 +2077,9 @@ app.post('/vaults/:vaultId/invitations', requireFirebaseAuth, inviteRateLimiter,
     const paid = await assertVaultPaid(db, vaultId);
     if (!paid.ok) return res.status(paid.status).json({ error: paid.error });
 
+    const quota = await assertAndIncrementVaultDailyQuota(db, vaultId, { kind: 'invite', actorUid: String(req.firebaseUser.uid) });
+    if (!quota.ok) return res.status(quota.status).json({ error: quota.error, tier: quota.tier, limits: quota.limits, dateKey: quota.dateKey });
+
     const withinLimit = await assertUnderDelegateLimit(db, vaultId);
     if (!withinLimit.ok) return res.status(withinLimit.status).json({ error: withinLimit.error });
 
@@ -2041,6 +2156,9 @@ app.post('/vaults/:vaultId/users/resolve', requireFirebaseAuth, inviteRateLimite
     const paid = await assertVaultPaid(db, vaultId);
     if (!paid.ok) return res.status(paid.status).json({ error: paid.error });
 
+    const quota = await assertAndIncrementVaultDailyQuota(db, vaultId, { kind: 'invite', actorUid: String(req.firebaseUser.uid) });
+    if (!quota.ok) return res.status(quota.status).json({ error: quota.error, tier: quota.tier, limits: quota.limits, dateKey: quota.dateKey });
+
     let uid = null;
     const q = raw;
     const asEmail = normalizeEmail(q);
@@ -2098,6 +2216,9 @@ app.post('/vaults/:vaultId/collections', requireFirebaseAuth, writeRateLimiter, 
 
     const can = await assertCanCreateCollection(db, vaultId, uid);
     if (!can.ok) return res.status(can.status).json({ error: can.error });
+
+    const quota = await assertAndIncrementVaultDailyQuota(db, vaultId, { kind: 'write', actorUid: uid });
+    if (!quota.ok) return res.status(quota.status).json({ error: quota.error, tier: quota.tier, limits: quota.limits, dateKey: quota.dateKey });
 
     const within = await assertUnderCollectionLimit(db, vaultId);
     if (!within.ok) return res.status(within.status).json({ error: within.error });
@@ -2173,6 +2294,9 @@ app.post('/vaults/:vaultId/assets', requireFirebaseAuth, writeRateLimiter, async
 
     const can = await assertCanCreateAsset(db, vaultId, uid, collectionId);
     if (!can.ok) return res.status(can.status).json({ error: can.error });
+
+    const quota = await assertAndIncrementVaultDailyQuota(db, vaultId, { kind: 'write', actorUid: uid });
+    if (!quota.ok) return res.status(quota.status).json({ error: quota.error, tier: quota.tier, limits: quota.limits, dateKey: quota.dateKey });
 
     const within = await assertUnderAssetLimit(db, vaultId);
     if (!within.ok) return res.status(within.status).json({ error: within.error });
@@ -2264,6 +2388,9 @@ app.post('/vaults/:vaultId/assets/:assetId/delete', requireFirebaseAuth, destruc
 
     if (!allowed) return res.status(403).json({ error: 'Delete permission required' });
 
+    const quota = await assertAndIncrementVaultDailyQuota(db, vaultId, { kind: 'destructive', actorUid: uid });
+    if (!quota.ok) return res.status(quota.status).json({ error: quota.error, tier: quota.tier, limits: quota.limits, dateKey: quota.dateKey });
+
     await ensureVaultUsage(db, vaultId);
     const usageRef = getVaultUsageRef(db, vaultId);
     const assetRef = db.collection('vaults').doc(vaultId).collection('assets').doc(assetId);
@@ -2320,6 +2447,9 @@ app.post('/vaults/:vaultId/collections/:collectionId/delete', requireFirebaseAut
     }
 
     if (!allowed) return res.status(403).json({ error: 'Delete permission required' });
+
+    const quota = await assertAndIncrementVaultDailyQuota(db, vaultId, { kind: 'destructive', actorUid: uid });
+    if (!quota.ok) return res.status(quota.status).json({ error: quota.error, tier: quota.tier, limits: quota.limits, dateKey: quota.dateKey });
 
     const vaultRef = db.collection('vaults').doc(vaultId);
     const colRef = vaultRef.collection('collections').doc(collectionId);
@@ -2472,6 +2602,9 @@ app.post('/vaults/:vaultId/invitations/:code/revoke', requireFirebaseAuth, invit
     const paid = await assertVaultPaid(db, vaultId);
     if (!paid.ok) return res.status(paid.status).json({ error: paid.error });
 
+    const quota = await assertAndIncrementVaultDailyQuota(db, vaultId, { kind: 'invite', actorUid: String(req.firebaseUser.uid) });
+    if (!quota.ok) return res.status(quota.status).json({ error: quota.error, tier: quota.tier, limits: quota.limits, dateKey: quota.dateKey });
+
     const invRef = db.collection('vaults').doc(vaultId).collection('invitations').doc(code);
     const snap = await invRef.get();
     if (!snap.exists) return res.status(404).json({ error: 'Invitation not found' });
@@ -2505,6 +2638,9 @@ app.post('/invitations/accept', requireFirebaseAuth, inviteRateLimiter, async (r
 
     const vaultId = code.split('_')[0];
     if (!vaultId) return res.status(400).json({ error: 'Invalid code' });
+
+    const quota = await assertAndIncrementVaultDailyQuota(db, vaultId, { kind: 'invite', actorUid: String(req.firebaseUser.uid) });
+    if (!quota.ok) return res.status(quota.status).json({ error: quota.error, tier: quota.tier, limits: quota.limits, dateKey: quota.dateKey });
 
     const invRef = db.collection('vaults').doc(String(vaultId)).collection('invitations').doc(code);
     const invSnap = await invRef.get();
@@ -2657,6 +2793,22 @@ app.post('/vaults/:vaultId/assets/:assetId/move', requireFirebaseAuth, destructi
     const ownerTarget = await assertOwnerForVaultUid(db, targetVaultId, String(req.firebaseUser.uid));
     if (!ownerTarget.ok) return res.status(ownerTarget.status).json({ error: ownerTarget.error });
 
+    const quotaSource = await assertAndIncrementVaultDailyQuota(db, sourceVaultId, { kind: 'destructive', actorUid: String(req.firebaseUser.uid) });
+    if (!quotaSource.ok) {
+      return res
+        .status(quotaSource.status)
+        .json({ error: quotaSource.error, tier: quotaSource.tier, limits: quotaSource.limits, dateKey: quotaSource.dateKey });
+    }
+
+    if (String(targetVaultId) !== String(sourceVaultId)) {
+      const quotaTarget = await assertAndIncrementVaultDailyQuota(db, targetVaultId, { kind: 'destructive', actorUid: String(req.firebaseUser.uid) });
+      if (!quotaTarget.ok) {
+        return res
+          .status(quotaTarget.status)
+          .json({ error: quotaTarget.error, tier: quotaTarget.tier, limits: quotaTarget.limits, dateKey: quotaTarget.dateKey });
+      }
+    }
+
     const moved = await moveAssetAcrossVaults(db, {
       sourceVaultId,
       assetId,
@@ -2689,6 +2841,22 @@ app.post('/vaults/:vaultId/collections/:collectionId/move', requireFirebaseAuth,
 
     const ownerTarget = await assertOwnerForVaultUid(db, targetVaultId, String(req.firebaseUser.uid));
     if (!ownerTarget.ok) return res.status(ownerTarget.status).json({ error: ownerTarget.error });
+
+    const quotaSource = await assertAndIncrementVaultDailyQuota(db, sourceVaultId, { kind: 'destructive', actorUid: String(req.firebaseUser.uid) });
+    if (!quotaSource.ok) {
+      return res
+        .status(quotaSource.status)
+        .json({ error: quotaSource.error, tier: quotaSource.tier, limits: quotaSource.limits, dateKey: quotaSource.dateKey });
+    }
+
+    if (String(targetVaultId) !== String(sourceVaultId)) {
+      const quotaTarget = await assertAndIncrementVaultDailyQuota(db, targetVaultId, { kind: 'destructive', actorUid: String(req.firebaseUser.uid) });
+      if (!quotaTarget.ok) {
+        return res
+          .status(quotaTarget.status)
+          .json({ error: quotaTarget.error, tier: quotaTarget.tier, limits: quotaTarget.limits, dateKey: quotaTarget.dateKey });
+      }
+    }
 
     const moved = await moveCollectionAcrossVaults(db, {
       sourceVaultId,
