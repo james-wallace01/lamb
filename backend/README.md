@@ -242,7 +242,7 @@ If you deploy with Render, this repo includes a sample cron job definition in [r
 
 Notes:
 - Cron jobs need Firebase Admin credentials, so ensure `FIREBASE_SERVICE_ACCOUNT_JSON` is set for the cron service in Render.
-- If you want to run heavier jobs (like `npm run recompute-vault-usage`), consider scheduling them less frequently (e.g., weekly) to control Firestore costs.
+- This repo also includes a separate weekly cron definition for `npm run recompute-vault-usage` to keep usage counters self-healing without running it daily.
 
 ## Paid Owner Invitations
 

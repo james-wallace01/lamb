@@ -45,3 +45,18 @@ services:
       # Firebase Admin credentials (required to access Firestore)
       - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false
+
+  # Scheduled reconciliation (usage counters).
+  # This is heavier than pruning; run weekly to keep counters self-healing.
+  - type: cron
+    name: lamb-backend-recompute-usage-staging
+    runtime: node
+    rootDir: backend
+    schedule: "0 6 * * 0" # weekly Sunday at 06:00 UTC
+    buildCommand: npm ci
+    startCommand: npm run recompute-vault-usage
+    envVars:
+      - key: NODE_ENV
+        value: staging
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
