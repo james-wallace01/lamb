@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView } from 'react-native';
+import { Alert, Modal, View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView, Platform } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { useData } from '../context/DataContext';
 import { firestore } from '../firebase';
 import { collection, onSnapshot, orderBy, query as fsQuery } from 'firebase/firestore';
@@ -292,8 +293,24 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.backdrop}>
-        <View style={[styles.modal, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <Text style={[styles.title, { color: theme.text }]}>Share {targetType}</Text>
+        <View
+          style={[
+            styles.modal,
+            { borderColor: theme.border },
+            Platform.OS === 'ios' ? { backgroundColor: 'transparent' } : { backgroundColor: theme.surface },
+          ]}
+        >
+          {Platform.OS === 'ios' ? (
+            <BlurView
+              style={StyleSheet.absoluteFill}
+              intensity={22}
+              tint={theme.isDark ? 'dark' : 'light'}
+              pointerEvents="none"
+            />
+          ) : null}
+
+          <View style={styles.modalContent}>
+            <Text style={[styles.title, { color: theme.text }]}>Share {targetType}</Text>
 
           {targetType === 'vault' && (
             <>
@@ -547,10 +564,11 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                 </ScrollView>
               </View>
             )}
-          <View style={styles.actions}>
-            <TouchableOpacity style={styles.secondary} onPress={onClose}>
-              <Text style={[styles.secondaryText, { color: theme.text }]}>Close</Text>
-            </TouchableOpacity>
+            <View style={styles.actions}>
+              <TouchableOpacity style={styles.secondary} onPress={onClose}>
+                <Text style={[styles.secondaryText, { color: theme.text }]}>Close</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </View>
@@ -560,7 +578,8 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 16 },
-  modal: { backgroundColor: '#0f111a', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#1f2738', maxHeight: '80%' },
+  modal: { backgroundColor: '#0f111a', borderRadius: 14, borderWidth: 1, borderColor: '#1f2738', maxHeight: '80%', overflow: 'hidden' },
+  modalContent: { padding: 16 },
   title: { color: '#fff', fontSize: 18, fontWeight: '800', marginBottom: 12 },
   label: { color: '#9aa1b5', fontWeight: '800', marginTop: 8, marginBottom: 4 },
   input: { backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, borderRadius: 10, padding: 12, color: '#fff' },
