@@ -1,8 +1,9 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useData } from '../context/DataContext';
+import { BlurView } from 'expo-blur';
 
 export default function LambHeader({ style }) {
   const navigation = useNavigation();
@@ -33,8 +34,23 @@ export default function LambHeader({ style }) {
         activeOpacity={0.8}
         style={styles.container}
       >
-        <View style={styles.titleWrap}>
-          <Text style={[styles.title, { color: theme.text }]}>LAMB</Text>
+        <View style={[styles.glass, { borderColor: theme.border }]}>
+          {Platform.OS === 'ios' ? (
+            <BlurView
+              style={StyleSheet.absoluteFill}
+              intensity={18}
+              tint={theme.isDark ? 'dark' : 'light'}
+              pointerEvents="none"
+            />
+          ) : (
+            <View
+              style={[StyleSheet.absoluteFill, { backgroundColor: theme.surface }]}
+              pointerEvents="none"
+            />
+          )}
+          <View style={styles.titleWrap}>
+            <Text style={[styles.title, { color: theme.text }]}>LAMB</Text>
+          </View>
         </View>
       </TouchableOpacity>
 
@@ -50,6 +66,7 @@ export default function LambHeader({ style }) {
 const styles = StyleSheet.create({
   wrapper: { width: '100%', alignSelf: 'center', marginBottom: 16 },
   container: { width: '100%', height: 44, justifyContent: 'center', alignItems: 'center' },
+  glass: { width: '100%', height: 44, borderRadius: 12, borderWidth: 1, overflow: 'hidden', justifyContent: 'center', alignItems: 'center' },
   titleWrap: { paddingVertical: 0, paddingHorizontal: 0 },
   title: { fontSize: 22, fontWeight: '700', letterSpacing: 0.5 },
   offlineBanner: { alignSelf: 'center', marginTop: 6, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999, borderWidth: 1 },
