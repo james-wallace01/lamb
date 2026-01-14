@@ -5,7 +5,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  Alert,
   ScrollView,
   Image,
   Modal,
@@ -53,7 +52,9 @@ export default function Asset({ route, navigation }) {
     retainVaultCollections,
     releaseVaultCollections,
     backendReachable,
+    showAlert,
   } = useData();
+  const Alert = { alert: showAlert };
 
   const isOffline = backendReachable === false;
 
@@ -67,6 +68,7 @@ export default function Asset({ route, navigation }) {
   const [vaultDropdownOpen, setVaultDropdownOpen] = useState(false);
   const [collectionDropdownOpen, setCollectionDropdownOpen] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
+  const [pendingReloadEditedAt, setPendingReloadEditedAt] = useState(null);
   const [infoVisible, setInfoVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -256,8 +258,21 @@ export default function Asset({ route, navigation }) {
     setEditVisible(true);
   };
 
+  useEffect(() => {
+    if (pendingReloadEditedAt == null) return;
+    if (editVisible) return;
+    const current = asset?.editedAt ?? null;
+    if (current == null) return;
+    if (current === pendingReloadEditedAt) return;
+    setPendingReloadEditedAt(null);
+    setTimeout(() => {
+      openEditModal();
+    }, 0);
+  }, [pendingReloadEditedAt, asset?.editedAt, editVisible]);
+
   const handleSaveDraft = () => {
     if (!canEdit || !asset) return;
+    const expectedEditedAt = asset?.editedAt ?? null;
     const images = trimToFour(editDraft.images || []);
     const hero = ensureHero(images, editDraft.heroImage);
     const title = limit35(editDraft.title || 'Untitled');
@@ -276,9 +291,16 @@ export default function Asset({ route, navigation }) {
         description: editDraft.description,
         images,
         heroImage: hero,
-      });
+      }, { expectedEditedAt });
 
       if (!res || res.ok === false) {
+        if (res?.code === 'conflict') {
+          Alert.alert('Updated elsewhere', 'This asset changed on another device. Reload and try again.', [
+            { text: 'Reload', onPress: () => { setPendingReloadEditedAt(expectedEditedAt); setEditVisible(false); } },
+            { text: 'Cancel', style: 'cancel' },
+          ]);
+          return;
+        }
         Alert.alert('Save failed', res?.message || 'Unable to update asset');
         return;
       }

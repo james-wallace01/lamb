@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import LambHeader from '../components/LambHeader';
 import { useData } from '../context/DataContext';
@@ -8,7 +8,8 @@ import { firebaseAuth, isFirebaseConfigured } from '../firebase';
 const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
 
 export default function ForgotPassword({ navigation, route }) {
-  const { theme } = useData();
+  const { theme, showAlert } = useData();
+  const Alert = { alert: showAlert };
   const initial = normalizeEmail(route?.params?.prefillEmail);
   const [email, setEmail] = useState(initial);
   const [submitting, setSubmitting] = useState(false);

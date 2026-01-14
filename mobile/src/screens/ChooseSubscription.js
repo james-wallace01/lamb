@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Linking, Platform, NativeModules } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Linking, Platform, NativeModules } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
@@ -11,7 +11,8 @@ import * as RNIap from 'react-native-iap';
 import { IAP_PRODUCTS } from '../config/iap';
 
 export default function ChooseSubscription({ navigation, route }) {
-  const { subscriptionTiers, convertPrice, theme, register, loading, ensureFirebaseSignupAuth, refreshData } = useData();
+  const { subscriptionTiers, convertPrice, theme, register, loading, ensureFirebaseSignupAuth, refreshData, showAlert } = useData();
+  const Alert = { alert: showAlert };
   const insets = useSafeAreaInsets();
   const { firstName, lastName, email, username, password } = route.params || {};
   const isUpgrade = String(route?.params?.mode || '') === 'upgrade';

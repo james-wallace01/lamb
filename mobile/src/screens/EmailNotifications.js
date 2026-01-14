@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import LambHeader from '../components/LambHeader';
 import { useData } from '../context/DataContext';
 import { apiFetch } from '../utils/apiFetch';
@@ -43,7 +43,8 @@ const ToggleRow = ({ label, helper, value, disabled, onPress, theme }) => {
 };
 
 export default function EmailNotifications() {
-  const { theme, vaults, currentUser } = useData();
+  const { theme, vaults, currentUser, showAlert } = useData();
+  const Alert = { alert: showAlert };
 
   const ownsAnyVault = useMemo(() => {
     if (!currentUser?.id) return false;

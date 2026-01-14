@@ -1,11 +1,12 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import LambHeader from '../components/LambHeader';
 import { useData } from '../context/DataContext';
 import { runWithMinimumDuration } from '../utils/timing';
 
 export default function SharedVaults({ navigation }) {
-  const { loading, vaults, currentUser, refreshData, theme, vaultMemberships, acceptInvitationCode, backendReachable } = useData();
+  const { loading, vaults, currentUser, refreshData, theme, vaultMemberships, acceptInvitationCode, backendReachable, showAlert } = useData();
+  const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
   const [inviteCode, setInviteCode] = useState('');
   const [refreshing, setRefreshing] = useState(false);

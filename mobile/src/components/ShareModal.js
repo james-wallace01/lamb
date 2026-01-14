@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView, Platform } from 'react-native';
+import { Modal, View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useData } from '../context/DataContext';
 import { firestore } from '../firebase';
@@ -31,7 +31,9 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
     vaultMemberships,
     permissionGrants,
     acceptInvitationCode,
+    showAlert,
   } = useData();
+  const Alert = { alert: showAlert };
   const [query, setQuery] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteCode, setInviteCode] = useState('');

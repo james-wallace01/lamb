@@ -1,12 +1,13 @@
 import React, { useRef, useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, TextInput, Alert, Image, RefreshControl, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TextInput, Image, RefreshControl, TouchableOpacity } from 'react-native';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
 import { getInitials } from '../utils/user';
 import { runWithMinimumDuration } from '../utils/timing';
 
 export default function Home({ navigation }) {
-  const { currentUser, refreshData, theme, membershipAccess, acceptInvitationCode, backendReachable } = useData();
+  const { currentUser, refreshData, theme, membershipAccess, acceptInvitationCode, backendReachable, showAlert } = useData();
+  const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
   const [inviteCode, setInviteCode] = useState('');
 

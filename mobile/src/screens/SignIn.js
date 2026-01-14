@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, Image, Platform } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, Image, Platform } from 'react-native';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
 
 export default function SignIn({ navigation }) {
-  const { login, loading, biometricUserId, biometricLogin, users, theme, backendReachable } = useData();
+  const { login, loading, biometricUserId, biometricLogin, users, theme, backendReachable, showAlert } = useData();
+  const Alert = { alert: showAlert };
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);

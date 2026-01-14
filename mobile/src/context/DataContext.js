@@ -4,6 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 import { DEFAULT_DARK_MODE_ENABLED, getTheme } from '../theme';
 import { getAssetCapabilities, getCollectionCapabilities, getVaultCapabilities } from '../policies/capabilities';
 import { firebaseAuth, firestore, isFirebaseConfigured } from '../firebase';
+import ThemedAlertModal from '../components/ThemedAlertModal';
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -14,7 +15,7 @@ import {
   updateEmail as firebaseUpdateEmail,
   updatePassword as firebaseUpdatePassword,
 } from 'firebase/auth';
-import { collection, collectionGroup, deleteDoc, doc, documentId, getDoc, onSnapshot, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { collection, collectionGroup, deleteDoc, doc, documentId, getDoc, onSnapshot, query, runTransaction, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { API_URL } from '../config/api';
 import NetInfo from '@react-native-community/netinfo';
 import { apiFetch } from '../utils/apiFetch';
@@ -538,6 +539,7 @@ export function DataProvider({ children }) {
   const [vaultMemberships, setVaultMemberships] = useState([]);
   const [permissionGrants, setPermissionGrants] = useState([]);
   const [auditEvents, setAuditEvents] = useState([]);
+  const [alertState, setAlertState] = useState({ visible: false, title: '', message: '', buttons: null });
   const [lastActivityAt, setLastActivityAt] = useState(Date.now());
   const lastActivityWriteAtRef = useRef(0);
   const lastSubscriptionSyncAtRef = useRef(0);
@@ -568,6 +570,22 @@ export function DataProvider({ children }) {
     lastActivityWriteAtRef.current = now;
     setItem(LAST_ACTIVITY_KEY, now);
   };
+
+  const showAlert = useCallback((title, message, buttons) => {
+    const titleText = title != null ? String(title) : '';
+    const messageText = message != null ? String(message) : '';
+    const btns = Array.isArray(buttons) ? buttons : null;
+
+    // Support Alert.alert('Message') signature.
+    const effectiveTitle = message === undefined ? titleText : titleText;
+    const effectiveMessage = message === undefined ? '' : messageText;
+
+    setAlertState({ visible: true, title: effectiveTitle, message: effectiveMessage, buttons: btns });
+  }, []);
+
+  const dismissAlert = useCallback(() => {
+    setAlertState((prev) => ({ ...prev, visible: false }));
+  }, []);
 
   const offlineResult = useMemo(
     () => ({ ok: false, message: 'Internet connection required. Please reconnect and try again.' }),
@@ -2355,37 +2373,106 @@ export function DataProvider({ children }) {
     };
 
   const updateVault = async (vaultId, patch) => {
+    const args = Array.from(arguments);
+    const options = args.length >= 3 && args[2] && typeof args[2] === 'object' ? args[2] : null;
+    const expectedEditedAt = options && options.expectedEditedAt != null ? Number(options.expectedEditedAt) : null;
+
     const editedAt = Date.now();
     const nextPatch = { ...(patch || {}) };
+    delete nextPatch.editedAt;
     if (Object.prototype.hasOwnProperty.call(nextPatch, 'name')) {
       nextPatch.name = clampItemTitle(String(nextPatch.name || '').trim());
     }
-    await updateDoc(doc(firestore, 'vaults', String(vaultId)), { ...nextPatch, editedAt });
-    return { ok: true };
+
+    const vaultRef = doc(firestore, 'vaults', String(vaultId));
+    try {
+      await runTransaction(firestore, async (tx) => {
+        if (expectedEditedAt != null) {
+          const snap = await tx.get(vaultRef);
+          if (!snap.exists()) throw { code: 'not-found' };
+          const currentEditedAt = snap.data()?.editedAt ?? null;
+          if (currentEditedAt !== expectedEditedAt) {
+            throw { code: 'conflict', currentEditedAt };
+          }
+        }
+        tx.update(vaultRef, { ...nextPatch, editedAt });
+      });
+      return { ok: true };
+    } catch (e) {
+      if (e?.code === 'conflict') return { ok: false, code: 'conflict', message: 'This vault was updated by someone else. Reload and try again.' };
+      if (e?.code === 'not-found') return { ok: false, message: 'Vault not found' };
+      return { ok: false, message: mapFirestoreError(e) };
+    }
   };
 
   const updateCollection = async (collectionId, patch) => {
+    const args = Array.from(arguments);
+    const options = args.length >= 3 && args[2] && typeof args[2] === 'object' ? args[2] : null;
+    const expectedEditedAt = options && options.expectedEditedAt != null ? Number(options.expectedEditedAt) : null;
+
     const collection = collections.find((c) => c.id === collectionId);
     if (!collection) return { ok: false, message: 'Collection not found' };
     const editedAt = Date.now();
     const nextPatch = { ...(patch || {}) };
+    delete nextPatch.editedAt;
     if (Object.prototype.hasOwnProperty.call(nextPatch, 'name')) {
       nextPatch.name = clampItemTitle(String(nextPatch.name || '').trim());
     }
-    await updateDoc(doc(firestore, 'vaults', String(collection.vaultId), 'collections', String(collectionId)), { ...nextPatch, editedAt });
-    return { ok: true };
+
+    const ref = doc(firestore, 'vaults', String(collection.vaultId), 'collections', String(collectionId));
+    try {
+      await runTransaction(firestore, async (tx) => {
+        if (expectedEditedAt != null) {
+          const snap = await tx.get(ref);
+          if (!snap.exists()) throw { code: 'not-found' };
+          const currentEditedAt = snap.data()?.editedAt ?? null;
+          if (currentEditedAt !== expectedEditedAt) {
+            throw { code: 'conflict', currentEditedAt };
+          }
+        }
+        tx.update(ref, { ...nextPatch, editedAt });
+      });
+      return { ok: true };
+    } catch (e) {
+      if (e?.code === 'conflict') return { ok: false, code: 'conflict', message: 'This collection was updated by someone else. Reload and try again.' };
+      if (e?.code === 'not-found') return { ok: false, message: 'Collection not found' };
+      return { ok: false, message: mapFirestoreError(e) };
+    }
   };
 
   const updateAsset = async (assetId, patch) => {
+    const args = Array.from(arguments);
+    const options = args.length >= 3 && args[2] && typeof args[2] === 'object' ? args[2] : null;
+    const expectedEditedAt = options && options.expectedEditedAt != null ? Number(options.expectedEditedAt) : null;
+
     const asset = assets.find((a) => a.id === assetId);
     if (!asset) return { ok: false, message: 'Asset not found' };
     const editedAt = Date.now();
     const nextPatch = { ...(patch || {}) };
+    delete nextPatch.editedAt;
     if (Object.prototype.hasOwnProperty.call(nextPatch, 'title')) {
       nextPatch.title = clampItemTitle(String(nextPatch.title || '').trim());
     }
-    await updateDoc(doc(firestore, 'vaults', String(asset.vaultId), 'assets', String(assetId)), { ...nextPatch, editedAt });
-    return { ok: true };
+
+    const ref = doc(firestore, 'vaults', String(asset.vaultId), 'assets', String(assetId));
+    try {
+      await runTransaction(firestore, async (tx) => {
+        if (expectedEditedAt != null) {
+          const snap = await tx.get(ref);
+          if (!snap.exists()) throw { code: 'not-found' };
+          const currentEditedAt = snap.data()?.editedAt ?? null;
+          if (currentEditedAt !== expectedEditedAt) {
+            throw { code: 'conflict', currentEditedAt };
+          }
+        }
+        tx.update(ref, { ...nextPatch, editedAt });
+      });
+      return { ok: true };
+    } catch (e) {
+      if (e?.code === 'conflict') return { ok: false, code: 'conflict', message: 'This asset was updated by someone else. Reload and try again.' };
+      if (e?.code === 'not-found') return { ok: false, message: 'Asset not found' };
+      return { ok: false, message: mapFirestoreError(e) };
+    }
   };
 
   const moveCollection = async ({ collectionId, targetVaultId }) => {
@@ -2762,6 +2849,7 @@ export function DataProvider({ children }) {
     releaseVaultAssets,
     retainVaultCollections,
     releaseVaultCollections,
+    showAlert,
   }), [
     loading,
     backendReachable,
@@ -2782,11 +2870,20 @@ export function DataProvider({ children }) {
     releaseVaultAssets,
     retainVaultCollections,
     releaseVaultCollections,
+    showAlert,
   ]);
 
   return (
     <DataContext.Provider value={value}>
       {children}
+      <ThemedAlertModal
+        visible={!!alertState.visible}
+        theme={value.theme}
+        title={alertState.title}
+        message={alertState.message}
+        buttons={alertState.buttons}
+        onDismiss={dismissAlert}
+      />
     </DataContext.Provider>
   );
 }

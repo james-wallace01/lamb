@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import LambHeader from '../components/LambHeader';
 import { useData } from '../context/DataContext';
@@ -7,7 +7,8 @@ import { firestore } from '../firebase';
 import { runWithMinimumDuration } from '../utils/timing';
 
 export default function PrivateVaults({ navigation }) {
-  const { loading, vaults, currentUser, addVault, refreshData, theme, vaultMemberships, backendReachable } = useData();
+  const { loading, vaults, currentUser, addVault, refreshData, theme, vaultMemberships, backendReachable, showAlert } = useData();
+  const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
   const [newVaultName, setNewVaultName] = useState('');
   const [refreshing, setRefreshing] = useState(false);

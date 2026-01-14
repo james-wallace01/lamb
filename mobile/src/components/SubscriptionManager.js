@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Alert, Platform, Linking, NativeModules } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Platform, Linking, NativeModules } from 'react-native';
 import { useData } from '../context/DataContext';
 import { API_URL } from '../config/api';
 import { apiFetch } from '../utils/apiFetch';
@@ -7,7 +7,8 @@ import { safeIapCall } from '../utils/iap';
 import * as RNIap from 'react-native-iap';
 
 export default function SubscriptionManager({ showTitle = true, showChooseMembership = false, onChooseMembership }) {
-  const { currentUser, subscriptionTiers, convertPrice, theme } = useData();
+  const { currentUser, subscriptionTiers, convertPrice, theme, showAlert } = useData();
+  const Alert = { alert: showAlert };
   const [submitting, setSubmitting] = useState(false);
 
   const iapNativeAvailable =

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, TextInput, Alert, ScrollView, Image, Modal, RefreshControl } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, TextInput, ScrollView, Image, Modal, RefreshControl } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useData } from '../context/DataContext';
 import ShareModal from '../components/ShareModal';
@@ -10,7 +10,8 @@ import { runWithMinimumDuration } from '../utils/timing';
 
 export default function Collection({ navigation, route }) {
   const { collectionId } = route.params || {};
-  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultAssets, releaseVaultAssets, retainVaultCollections, releaseVaultCollections, backendReachable } = useData();
+  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultAssets, releaseVaultAssets, retainVaultCollections, releaseVaultCollections, backendReachable, showAlert } = useData();
+  const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
   const [newTitle, setNewTitle] = useState('');
   const [shareVisible, setShareVisible] = useState(false);
@@ -20,6 +21,7 @@ export default function Collection({ navigation, route }) {
   const [showMoveBox, setShowMoveBox] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
+  const [pendingReloadEditedAt, setPendingReloadEditedAt] = useState(null);
   const [infoVisible, setInfoVisible] = useState(false);
   const [editDraft, setEditDraft] = useState({ name: '', description: '', manager: '', images: [], heroImage: '' });
   const [previewImage, setPreviewImage] = useState(null);
@@ -145,8 +147,15 @@ export default function Collection({ navigation, route }) {
     const merged = trimToFour([...collectionImages, ...newImages]);
     const nextHero = ensureHero(merged, heroImage);
     (async () => {
-      const res = await updateCollection(collectionId, { images: merged, heroImage: nextHero });
+      const res = await updateCollection(collectionId, { images: merged, heroImage: nextHero }, { expectedEditedAt: collection?.editedAt ?? null });
       if (!res || res.ok === false) {
+        if (res?.code === 'conflict') {
+          Alert.alert('Updated elsewhere', 'This collection changed on another device. Reload and try again.', [
+            { text: 'Reload', onPress: () => setEditVisible(false) },
+            { text: 'Cancel', style: 'cancel' },
+          ]);
+          return;
+        }
         Alert.alert('Update failed', res?.message || 'Unable to update collection images');
       }
     })();
@@ -160,8 +169,15 @@ export default function Collection({ navigation, route }) {
     if (!collection) return;
     const reordered = trimToFour([img, ...collectionImages.filter((i) => i !== img)]);
     (async () => {
-      const res = await updateCollection(collectionId, { images: reordered, heroImage: img });
+      const res = await updateCollection(collectionId, { images: reordered, heroImage: img }, { expectedEditedAt: collection?.editedAt ?? null });
       if (!res || res.ok === false) {
+        if (res?.code === 'conflict') {
+          Alert.alert('Updated elsewhere', 'This collection changed on another device. Reload and try again.', [
+            { text: 'Reload', onPress: () => setEditVisible(false) },
+            { text: 'Cancel', style: 'cancel' },
+          ]);
+          return;
+        }
         Alert.alert('Update failed', res?.message || 'Unable to update collection hero image');
       }
     })();
@@ -172,8 +188,15 @@ export default function Collection({ navigation, route }) {
     const remaining = collectionImages.filter((i) => i !== img);
     const nextHero = ensureHero(remaining, heroImage === img ? remaining[0] : heroImage);
     (async () => {
-      const res = await updateCollection(collectionId, { images: remaining, heroImage: nextHero });
+      const res = await updateCollection(collectionId, { images: remaining, heroImage: nextHero }, { expectedEditedAt: collection?.editedAt ?? null });
       if (!res || res.ok === false) {
+        if (res?.code === 'conflict') {
+          Alert.alert('Updated elsewhere', 'This collection changed on another device. Reload and try again.', [
+            { text: 'Reload', onPress: () => setEditVisible(false) },
+            { text: 'Cancel', style: 'cancel' },
+          ]);
+          return;
+        }
         Alert.alert('Update failed', res?.message || 'Unable to remove collection image');
       }
     })();
@@ -262,9 +285,22 @@ export default function Collection({ navigation, route }) {
     setEditVisible(true);
   };
 
+  useEffect(() => {
+    if (pendingReloadEditedAt == null) return;
+    if (editVisible) return;
+    const current = collection?.editedAt ?? null;
+    if (current == null) return;
+    if (current === pendingReloadEditedAt) return;
+    setPendingReloadEditedAt(null);
+    setTimeout(() => {
+      openEditModal();
+    }, 0);
+  }, [pendingReloadEditedAt, collection?.editedAt, editVisible]);
+
   const handleSaveDraft = () => {
     if (!canEdit) return;
     if (!collection) return;
+    const expectedEditedAt = collection?.editedAt ?? null;
     const images = trimToFour(editDraft.images || []);
     const hero = ensureHero(images, editDraft.heroImage);
     (async () => {
@@ -274,8 +310,15 @@ export default function Collection({ navigation, route }) {
         manager: (editDraft.manager || '').trim(),
         images,
         heroImage: hero,
-      });
+      }, { expectedEditedAt });
       if (!res || res.ok === false) {
+        if (res?.code === 'conflict') {
+          Alert.alert('Updated elsewhere', 'This collection changed on another device. Reload and try again.', [
+            { text: 'Reload', onPress: () => { setPendingReloadEditedAt(expectedEditedAt); setEditVisible(false); } },
+            { text: 'Cancel', style: 'cancel' },
+          ]);
+          return;
+        }
         Alert.alert('Save failed', res?.message || 'Unable to update collection');
         return;
       }

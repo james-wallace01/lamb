@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FlatList, StyleSheet, View, Text, TouchableOpacity, TextInput, Alert, Image, ScrollView, Modal, RefreshControl } from 'react-native';
+import { FlatList, StyleSheet, View, Text, TouchableOpacity, TextInput, Image, ScrollView, Modal, RefreshControl } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useData } from '../context/DataContext';
 import ShareModal from '../components/ShareModal';
@@ -10,13 +10,15 @@ import { runWithMinimumDuration } from '../utils/timing';
 
 export default function Vault({ navigation, route }) {
   const { vaultId } = route.params || {};
-  const { loading, vaults, collections, addCollection, currentUser, getRoleForVault, canCreateCollectionsInVault, users, deleteVault, updateVault, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultCollections, releaseVaultCollections, backendReachable } = useData();
+  const { loading, vaults, collections, addCollection, currentUser, getRoleForVault, canCreateCollectionsInVault, users, deleteVault, updateVault, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultCollections, releaseVaultCollections, backendReachable, showAlert } = useData();
+  const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
   const [newName, setNewName] = useState('');
   const [shareVisible, setShareVisible] = useState(false);
   const [shareTargetType, setShareTargetType] = useState(null);
   const [shareTargetId, setShareTargetId] = useState(null);
   const [editVisible, setEditVisible] = useState(false);
+  const [pendingReloadEditedAt, setPendingReloadEditedAt] = useState(null);
   const [infoVisible, setInfoVisible] = useState(false);
   const [editDraft, setEditDraft] = useState({ name: '', description: '', manager: '', images: [], heroImage: '' });
   const [previewImage, setPreviewImage] = useState(null);
@@ -127,8 +129,15 @@ export default function Vault({ navigation, route }) {
     const merged = trimToFour([...vaultImages, ...newImages]);
     const nextHero = ensureHero(merged, heroImage);
     (async () => {
-      const res = await updateVault(vaultId, { images: merged, heroImage: nextHero });
+      const res = await updateVault(vaultId, { images: merged, heroImage: nextHero }, { expectedEditedAt: vault?.editedAt ?? null });
       if (!res || res.ok === false) {
+        if (res?.code === 'conflict') {
+          Alert.alert('Updated elsewhere', 'This vault changed on another device. Reload and try again.', [
+            { text: 'Reload', onPress: () => setEditVisible(false) },
+            { text: 'Cancel', style: 'cancel' },
+          ]);
+          return;
+        }
         Alert.alert('Update failed', res?.message || 'Unable to update vault images');
       }
     })();
@@ -142,8 +151,15 @@ export default function Vault({ navigation, route }) {
     if (!vault) return;
     const reordered = trimToFour([img, ...vaultImages.filter((i) => i !== img)]);
     (async () => {
-      const res = await updateVault(vaultId, { images: reordered, heroImage: img });
+      const res = await updateVault(vaultId, { images: reordered, heroImage: img }, { expectedEditedAt: vault?.editedAt ?? null });
       if (!res || res.ok === false) {
+        if (res?.code === 'conflict') {
+          Alert.alert('Updated elsewhere', 'This vault changed on another device. Reload and try again.', [
+            { text: 'Reload', onPress: () => setEditVisible(false) },
+            { text: 'Cancel', style: 'cancel' },
+          ]);
+          return;
+        }
         Alert.alert('Update failed', res?.message || 'Unable to update vault hero image');
       }
     })();
@@ -154,8 +170,15 @@ export default function Vault({ navigation, route }) {
     const remaining = vaultImages.filter((i) => i !== img);
     const nextHero = ensureHero(remaining, heroImage === img ? remaining[0] : heroImage);
     (async () => {
-      const res = await updateVault(vaultId, { images: remaining, heroImage: nextHero });
+      const res = await updateVault(vaultId, { images: remaining, heroImage: nextHero }, { expectedEditedAt: vault?.editedAt ?? null });
       if (!res || res.ok === false) {
+        if (res?.code === 'conflict') {
+          Alert.alert('Updated elsewhere', 'This vault changed on another device. Reload and try again.', [
+            { text: 'Reload', onPress: () => setEditVisible(false) },
+            { text: 'Cancel', style: 'cancel' },
+          ]);
+          return;
+        }
         Alert.alert('Update failed', res?.message || 'Unable to remove vault image');
       }
     })();
@@ -230,9 +253,22 @@ export default function Vault({ navigation, route }) {
     setEditVisible(true);
   };
 
+  useEffect(() => {
+    if (pendingReloadEditedAt == null) return;
+    if (editVisible) return;
+    const current = vault?.editedAt ?? null;
+    if (current == null) return;
+    if (current === pendingReloadEditedAt) return;
+    setPendingReloadEditedAt(null);
+    setTimeout(() => {
+      openEditModal();
+    }, 0);
+  }, [pendingReloadEditedAt, vault?.editedAt, editVisible]);
+
   const handleSaveDraft = () => {
     if (!canEdit) return;
     if (!vault) return;
+    const expectedEditedAt = vault?.editedAt ?? null;
     const images = trimToFour(editDraft.images || []);
     const hero = ensureHero(images, editDraft.heroImage);
     (async () => {
@@ -242,8 +278,15 @@ export default function Vault({ navigation, route }) {
         manager: (editDraft.manager || '').trim(),
         images,
         heroImage: hero,
-      });
+      }, { expectedEditedAt });
       if (!res || res.ok === false) {
+        if (res?.code === 'conflict') {
+          Alert.alert('Updated elsewhere', 'This vault changed on another device. Reload and try again.', [
+            { text: 'Reload', onPress: () => { setPendingReloadEditedAt(expectedEditedAt); setEditVisible(false); } },
+            { text: 'Cancel', style: 'cancel' },
+          ]);
+          return;
+        }
         Alert.alert('Save failed', res?.message || 'Unable to update vault');
         return;
       }

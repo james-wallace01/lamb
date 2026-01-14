@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, Image, ScrollView, RefreshControl, Platform, Switch, Linking } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, Image, ScrollView, RefreshControl, Platform, Switch, Linking } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useData } from '../context/DataContext';
@@ -30,7 +30,9 @@ export default function Profile({ navigation }) {
     biometricEnabledForCurrentUser,
     enableBiometricSignInForCurrentUser,
     disableBiometricSignIn,
+    showAlert,
   } = useData();
+  const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
   const [draft, setDraft] = useState(currentUser || {});
   const [isEditing, setIsEditing] = useState(false);

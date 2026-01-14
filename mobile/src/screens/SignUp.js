@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Image, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fetchSignInMethodsForEmail } from 'firebase/auth';
 import { useData } from '../context/DataContext';
@@ -10,7 +10,8 @@ import { API_URL } from '../config/api';
 import { apiFetch } from '../utils/apiFetch';
 
 export default function SignUp({ navigation }) {
-  const { register, loading, theme, ensureFirebaseSignupAuth, backendReachable } = useData();
+  const { register, loading, theme, ensureFirebaseSignupAuth, backendReachable, showAlert } = useData();
+  const Alert = { alert: showAlert };
   const insets = useSafeAreaInsets();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
