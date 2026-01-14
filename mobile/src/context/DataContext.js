@@ -1656,6 +1656,11 @@ export function DataProvider({ children }) {
         (u?.email && normalizeEmail(u.email) === em.value)
     );
     if (existingLocal) {
+      const existingEmailNorm = existingLocal?.email ? normalizeEmail(existingLocal.email) : null;
+      const existingUsernameNorm = existingLocal?.username ? normalizeUsername(existingLocal.username) : null;
+      const matchesEmail = !!existingEmailNorm && existingEmailNorm === em.value;
+      const matchesUsername = !!existingUsernameNorm && existingUsernameNorm === un.value;
+
       const existingId =
         existingLocal?.id != null
           ? existingLocal.id
@@ -1668,12 +1673,17 @@ export function DataProvider({ children }) {
                 : null;
 
       const existingUid = existingId != null ? String(existingId) : null;
-      const signedInEmailNow = firebaseAuth?.currentUser?.email ? normalizeEmail(String(firebaseAuth.currentUser.email)) : null;
-      const sameIdentity =
-        (existingUid && existingUid === uid) ||
-        (!existingUid && signedInEmailNow && signedInEmailNow === em.value);
 
-      if (!sameIdentity) {
+      // Allow if this is clearly the same authenticated user.
+      if (existingUid && existingUid === uid) {
+        // ok
+      } else if (matchesEmail) {
+        // Email is authoritative for Firebase Auth uniqueness; local cache may have a stale/missing uid.
+        // Treat as idempotent and continue.
+      } else if (matchesUsername && !matchesEmail) {
+        // Username collision with a different email.
+        return { ok: false, message: 'User already exists' };
+      } else {
         return { ok: false, message: 'User already exists' };
       }
     }
@@ -1770,7 +1780,58 @@ export function DataProvider({ children }) {
     await batch.commit();
 
     // Local cache (will reconcile from listeners).
-    setUsers(prev => [...prev, newUser]);
+    setUsers((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const next = [];
+      let inserted = false;
+
+      const userKeyParts = (u) => {
+        const rawId =
+          u?.id != null
+            ? u.id
+            : u?.user_id != null
+              ? u.user_id
+              : u?.firebaseUid != null
+                ? u.firebaseUid
+                : u?.firebase_uid != null
+                  ? u.firebase_uid
+                  : null;
+        const uUid = rawId != null ? String(rawId) : null;
+        const uEmail = u?.email ? normalizeEmail(u.email) : null;
+        return { uUid, uEmail };
+      };
+
+      for (const u of list) {
+        const { uUid, uEmail } = userKeyParts(u);
+        const same = (uUid && uUid === uid) || (uEmail && uEmail === em.value);
+        if (same) {
+          if (!inserted) {
+            next.push({ ...u, ...newUser, id: uid, firebaseUid: uid, email: em.value, username: un.value });
+            inserted = true;
+          }
+          continue;
+        }
+        next.push(u);
+      }
+
+      if (!inserted) next.push(newUser);
+
+      // Deduplicate (prefer uid when present, otherwise email).
+      const seen = new Set();
+      const deduped = [];
+      for (const u of next) {
+        const { uUid, uEmail } = userKeyParts(u);
+        const key = uUid ? `uid:${uUid}` : uEmail ? `email:${uEmail}` : null;
+        if (!key) {
+          deduped.push(u);
+          continue;
+        }
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(u);
+      }
+      return deduped;
+    });
     setCurrentUser(withoutPasswordSecrets(newUser));
     return { ok: true, vaultId: vaultId || null };
   };
