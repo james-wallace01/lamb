@@ -238,11 +238,12 @@ Env var: `PRUNE_AUDIT_VAULT_LIMIT`
 
 ### Scheduling (Render)
 
-If you deploy with Render, this repo includes a sample cron job definition in [render.yaml](../render.yaml) named `lamb-backend-maintenance-staging` that runs the prune scripts daily.
+If you deploy with Render, this repo includes sample cron job definitions in [render.yaml](../render.yaml) that run the prune scripts daily and usage reconciliation weekly.
 
 Notes:
 - Cron jobs need Firebase Admin credentials, so ensure `FIREBASE_SERVICE_ACCOUNT_JSON` is set for the cron service in Render.
-- This repo also includes a separate weekly cron definition for `npm run recompute-vault-usage` to keep usage counters self-healing without running it daily.
+- The blueprint defines both **staging** and **production** services with the same setup.
+- Use **Stripe test keys** for staging and **Stripe live keys** for production (set per-service in the Render dashboard).
 
 ## Paid Owner Invitations
 

@@ -26,6 +26,33 @@ services:
       - key: REQUIRE_FIREBASE_AUTH
         value: "true"
 
+  - type: web
+    name: lamb-backend-prod
+    runtime: node
+    rootDir: backend
+    plan: starter
+    buildCommand: npm ci
+    startCommand: node server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      # Set these in Render Dashboard (do not commit real values)
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      # Firebase Admin credentials (recommended for Render): base64(JSON) or raw JSON
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+      # Optional: require Firebase auth for Stripe endpoints
+      - key: REQUIRE_FIREBASE_AUTH
+        value: "true"
+
   # Scheduled maintenance (prune bounded collections).
   # Render will run this command on the configured schedule and surface logs in the dashboard.
   - type: cron
@@ -46,6 +73,23 @@ services:
       - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false
 
+  - type: cron
+    name: lamb-backend-maintenance-prod
+    runtime: node
+    rootDir: backend
+    schedule: "0 5 * * *" # daily at 05:00 UTC
+    buildCommand: npm ci
+    startCommand: >-
+      npm run prune-email-events
+      && npm run prune-invitations
+      && npm run prune-daily-usage
+      && npm run prune-audit-events
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+
   # Scheduled reconciliation (usage counters).
   # This is heavier than pruning; run weekly to keep counters self-healing.
   - type: cron
@@ -58,5 +102,18 @@ services:
     envVars:
       - key: NODE_ENV
         value: staging
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+
+  - type: cron
+    name: lamb-backend-recompute-usage-prod
+    runtime: node
+    rootDir: backend
+    schedule: "0 6 * * 0" # weekly Sunday at 06:00 UTC
+    buildCommand: npm ci
+    startCommand: npm run recompute-vault-usage
+    envVars:
+      - key: NODE_ENV
+        value: production
       - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false
