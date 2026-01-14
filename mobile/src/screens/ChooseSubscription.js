@@ -342,6 +342,21 @@ export default function ChooseSubscription({ navigation, route }) {
       <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Subscriptions are billed by Apple and can be managed in App Store Subscriptions.</Text>
       <Text style={[styles.subtitle, { color: theme.textMuted }]}>Auto-renews until canceled. Cancel anytime in App Store Subscriptions.</Text>
 
+      {!isUpgrade ? (
+        <View style={[styles.infoCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Text style={[styles.infoTitle, { color: theme.text }]}>Free trial</Text>
+          <Text style={[styles.infoBody, { color: theme.textSecondary }]}>
+            Start with a 14-day free trial.
+          </Text>
+          <Text style={[styles.infoBody, { color: theme.textSecondary }]}>
+            You must add valid payment information to start your free trial.
+          </Text>
+          <Text style={[styles.infoBody, { color: theme.textSecondary }]}>
+            You won’t be charged until the 14-day trial ends. After that, you’ll be billed monthly on the membership you selected unless you cancel before the trial ends.
+          </Text>
+        </View>
+      ) : null}
+
       <View style={styles.plansContainer}>
         {tiers.map((tier) => {
           const localPrice = convertPrice(tier.price);
@@ -432,6 +447,19 @@ const styles = StyleSheet.create({
   },
   plansContainer: {
     gap: 12,
+  },
+  infoCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    gap: 10,
+  },
+  infoTitle: {
+    fontWeight: '800',
+    fontSize: 14,
+  },
+  infoBody: {
+    lineHeight: 20,
   },
   planCard: {
     backgroundColor: '#11121a',

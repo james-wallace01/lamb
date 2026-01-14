@@ -6,7 +6,7 @@ import { apiFetch } from '../utils/apiFetch';
 import { safeIapCall } from '../utils/iap';
 import * as RNIap from 'react-native-iap';
 
-export default function SubscriptionManager() {
+export default function SubscriptionManager({ showTitle = true, showChooseMembership = false, onChooseMembership }) {
   const { currentUser, subscriptionTiers, convertPrice, theme } = useData();
   const [submitting, setSubmitting] = useState(false);
 
@@ -104,7 +104,7 @@ export default function SubscriptionManager() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <Text style={[styles.title, { color: theme.text }]}>Membership</Text>
+      {showTitle ? <Text style={[styles.title, { color: theme.text }]}>Membership</Text> : null}
       {!tier ? (
         <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No active membership</Text>
       ) : (
@@ -119,11 +119,26 @@ export default function SubscriptionManager() {
         </View>
       )}
 
-          <TouchableOpacity
-            style={[styles.primaryButton, { borderColor: theme.primary, backgroundColor: theme.primary }, submitting && styles.primaryButtonDisabled]}
-            onPress={openAppleSubscriptionSettings}
-            disabled={submitting}
-          >
+      {showChooseMembership ? (
+        <TouchableOpacity
+          style={[styles.primaryButton, { borderColor: theme.primary, backgroundColor: theme.primary }, submitting && styles.primaryButtonDisabled]}
+          onPress={() => {
+            if (submitting) return;
+            onChooseMembership?.();
+          }}
+          disabled={submitting}
+          accessibilityRole="button"
+          accessibilityLabel="Choose membership"
+        >
+          <Text style={styles.primaryButtonText}>Choose Membership</Text>
+        </TouchableOpacity>
+      ) : null}
+
+      <TouchableOpacity
+        style={[styles.primaryButton, { borderColor: theme.primary, backgroundColor: theme.primary }, submitting && styles.primaryButtonDisabled]}
+        onPress={openAppleSubscriptionSettings}
+        disabled={submitting}
+      >
         <Text style={styles.primaryButtonText}>Manage in App Store Subscriptions</Text>
       </TouchableOpacity>
 

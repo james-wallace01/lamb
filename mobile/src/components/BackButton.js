@@ -1,12 +1,10 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useData } from '../context/DataContext';
 
 export default function BackButton({ style }) {
   const navigation = useNavigation();
-  const insets = useSafeAreaInsets();
   const { theme } = useData();
   
   const handlePress = () => {
@@ -27,7 +25,10 @@ export default function BackButton({ style }) {
     <TouchableOpacity
       onPress={handlePress}
       activeOpacity={0.7}
-      style={[styles.container, { top: Math.max(insets.top, 8) }, style]}
+      style={[styles.container, style]}
+      accessibilityRole="button"
+      accessibilityLabel="Back"
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
     >
       <View
         style={[
@@ -46,12 +47,11 @@ export default function BackButton({ style }) {
 
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute',
-    left: 16,
-    zIndex: 10,
+    alignSelf: 'flex-start',
     height: 44,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 10,
   },
   buttonInner: {
     borderRadius: 12,

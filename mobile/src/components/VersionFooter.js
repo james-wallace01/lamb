@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AppState, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StackActions } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 
 import appConfig from '../../app.json';
 import versionInfo from '../../../public/version.json';
@@ -25,7 +27,7 @@ const build =
 
 const versionText = version ? `v${version}${build ? ` (${build})` : ''}` : 'Version unavailable';
 
-export default function VersionFooter({ navigationRef }) {
+export default function VersionFooter({ navigationRef, currentRouteName }) {
   const { theme, currentUser } = useData();
   const insets = useSafeAreaInsets();
   const [status, setStatus] = useState('connecting'); // connecting | connected | offline
@@ -86,16 +88,28 @@ export default function VersionFooter({ navigationRef }) {
 
   const canShowNav = !!currentUser;
 
-  const safeNavigate = (routeName) => {
+  const activeTab = (() => {
+    const r = currentRouteName;
+    if (!r) return null;
+    if (r === 'Membership' || r === 'ChooseSubscription') return 'Membership';
+    if (r === 'Profile' || r === 'EmailNotifications') return 'Profile';
+    // Default: Home + detail routes
+    return 'Home';
+  })();
+
+  const safePush = (routeName) => {
     try {
       if (!navigationRef?.isReady?.()) return;
-      navigationRef.navigate(routeName);
+      const current = navigationRef.getCurrentRoute?.()?.name;
+      if (current === routeName) return;
+      navigationRef.dispatch(StackActions.push(routeName));
     } catch {
       // ignore
     }
   };
 
-  const navButtonTextColor = theme.text;
+  const inactiveColor = theme.textMuted;
+  const activeColor = theme.primary;
 
   return (
     <View
@@ -111,28 +125,40 @@ export default function VersionFooter({ navigationRef }) {
       {canShowNav && (
         <View style={styles.navRow}>
           <TouchableOpacity
-            style={[styles.navButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
-            onPress={() => safeNavigate('Home')}
+            style={styles.navButton}
+            onPress={() => safePush('Home')}
             accessibilityRole="button"
             accessibilityLabel="Go to Home"
           >
-            <Text style={[styles.navButtonText, { color: navButtonTextColor }]}>Home</Text>
+            <Ionicons
+              name={activeTab === 'Home' ? 'home' : 'home-outline'}
+              size={22}
+              color={activeTab === 'Home' ? activeColor : inactiveColor}
+            />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.navButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
-            onPress={() => safeNavigate('Membership')}
+            style={styles.navButton}
+            onPress={() => safePush('Membership')}
             accessibilityRole="button"
             accessibilityLabel="Go to Membership"
           >
-            <Text style={[styles.navButtonText, { color: navButtonTextColor }]}>Membership</Text>
+            <Ionicons
+              name={activeTab === 'Membership' ? 'card' : 'card-outline'}
+              size={22}
+              color={activeTab === 'Membership' ? activeColor : inactiveColor}
+            />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.navButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
-            onPress={() => safeNavigate('Profile')}
+            style={styles.navButton}
+            onPress={() => safePush('Profile')}
             accessibilityRole="button"
             accessibilityLabel="Go to Profile"
           >
-            <Text style={[styles.navButtonText, { color: navButtonTextColor }]}>Profile</Text>
+            <Ionicons
+              name={activeTab === 'Profile' ? 'person' : 'person-outline'}
+              size={22}
+              color={activeTab === 'Profile' ? activeColor : inactiveColor}
+            />
           </TouchableOpacity>
         </View>
       )}
@@ -171,13 +197,8 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 44,
     borderRadius: 12,
-    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  navButtonText: {
-    fontSize: 13,
-    fontWeight: '800',
   },
   infoRow: {
     flexDirection: 'row',

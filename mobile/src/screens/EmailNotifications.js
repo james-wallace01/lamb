@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import BackButton from '../components/BackButton';
 import LambHeader from '../components/LambHeader';
 import { useData } from '../context/DataContext';
 import { apiFetch } from '../utils/apiFetch';
@@ -151,7 +150,6 @@ export default function EmailNotifications() {
     <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
       <ScrollView contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}>
         <View style={styles.headerRow}>
-          <BackButton />
           <LambHeader />
         </View>
 

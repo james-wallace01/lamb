@@ -238,8 +238,8 @@ export default function SignUp({ navigation }) {
       }
     }
 
-    // Show free trial info before plan selection
-    navigation.navigate('FreeTrial', {
+    // Go directly to plan selection (free trial info is shown on the membership screen).
+    navigation.navigate('ChooseSubscription', {
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       email: normalizeEmail(email),

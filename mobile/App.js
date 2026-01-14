@@ -1,6 +1,6 @@
 import 'react-native-gesture-handler';
-import React, { useEffect, useRef } from 'react';
-import { AppState, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { AppState, Platform, View } from 'react-native';
 import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -18,7 +18,6 @@ import EmailNotificationsScreen from './src/screens/EmailNotifications';
 import SignInScreen from './src/screens/SignIn';
 import SignUpScreen from './src/screens/SignUp';
 import ForgotPasswordScreen from './src/screens/ForgotPassword';
-import FreeTrialScreen from './src/screens/FreeTrial';
 import ChooseSubscriptionScreen from './src/screens/ChooseSubscription';
 import VersionFooter from './src/components/VersionFooter';
 
@@ -29,11 +28,16 @@ const Stack = createNativeStackNavigator();
 const navigationRef = createNavigationContainerRef();
 
 const AuthStack = () => (
-  <Stack.Navigator screenOptions={{ headerShown: false }}>
+  <Stack.Navigator
+    screenOptions={{
+      headerShown: false,
+      animation: Platform.OS === 'ios' ? 'slide_from_right' : 'default',
+      gestureEnabled: true,
+    }}
+  >
     <Stack.Screen name="SignIn" component={SignInScreen} />
     <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
     <Stack.Screen name="SignUp" component={SignUpScreen} />
-    <Stack.Screen name="FreeTrial" component={FreeTrialScreen} />
     <Stack.Screen name="ChooseSubscription" component={ChooseSubscriptionScreen} />
   </Stack.Navigator>
 );
@@ -46,6 +50,9 @@ const MainStack = () => {
         headerStyle: { backgroundColor: theme.background },
         headerTintColor: theme.text,
         headerTitleStyle: { fontWeight: '700' },
+        contentStyle: { backgroundColor: theme.background },
+        animation: Platform.OS === 'ios' ? 'slide_from_right' : 'default',
+        gestureEnabled: true,
       }}
     >
     <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
@@ -69,6 +76,9 @@ const LimitedStack = () => {
         headerStyle: { backgroundColor: theme.background },
         headerTintColor: theme.text,
         headerTitleStyle: { fontWeight: '700' },
+        contentStyle: { backgroundColor: theme.background },
+        animation: Platform.OS === 'ios' ? 'slide_from_right' : 'default',
+        gestureEnabled: true,
       }}
     >
       <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
@@ -84,9 +94,12 @@ function RootNavigator() {
   const { currentUser, loading, membershipAccess } = useData();
   if (loading) return null;
 
-  if (!currentUser) return <AuthStack />;
-  if (!membershipAccess) return <LimitedStack />;
-  return <MainStack />;
+  // Keyed navigators ensure we don't preserve route state across auth transitions.
+  // This fixes cases where a screen name exists in both stacks (e.g. ChooseSubscription)
+  // and the user remains on that screen after signup.
+  if (!currentUser) return <AuthStack key="auth" />;
+  if (!membershipAccess) return <LimitedStack key="limited" />;
+  return <MainStack key="main" />;
 }
 
 function ThemedStatusBar() {
@@ -139,18 +152,34 @@ function SessionTimeoutBoundary({ children }) {
 }
 
 function AppFrame() {
-  const { theme } = useData();
+  const { theme, currentUser, membershipAccess } = useData();
+  const [routeName, setRouteName] = useState(null);
+
+  const updateRouteName = () => {
+    try {
+      if (!navigationRef?.isReady?.()) return;
+      const name = navigationRef.getCurrentRoute?.()?.name || null;
+      setRouteName(name);
+    } catch {
+      // ignore
+    }
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
-      <NavigationContainer ref={navigationRef}>
+      <NavigationContainer
+        key={`${currentUser?.id ? String(currentUser.id) : 'anon'}-${membershipAccess ? 'full' : 'limited'}`}
+        ref={navigationRef}
+        onReady={updateRouteName}
+        onStateChange={updateRouteName}
+      >
         <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top']}>
           <SessionTimeoutBoundary>
             <RootNavigator />
           </SessionTimeoutBoundary>
         </SafeAreaView>
       </NavigationContainer>
-      <VersionFooter navigationRef={navigationRef} />
+      <VersionFooter navigationRef={navigationRef} currentRouteName={routeName} />
       <ThemedStatusBar />
     </View>
   );

@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, Image, ScrollView, RefreshControl, Platform, Switch, Linking } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
-import BackButton from '../components/BackButton';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 import ShareModal from '../components/ShareModal';
 import { getInitials } from '../utils/user';
@@ -33,6 +33,7 @@ export default function Profile({ navigation }) {
   } = useData();
   const isOffline = backendReachable === false;
   const [draft, setDraft] = useState(currentUser || {});
+  const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [updatingBiometric, setUpdatingBiometric] = useState(false);
@@ -62,6 +63,7 @@ export default function Profile({ navigation }) {
 
   useEffect(() => {
     setDraft(currentUser || {});
+    setIsEditing(false);
   }, [currentUser]);
 
   useEffect(() => {
@@ -78,14 +80,44 @@ export default function Profile({ navigation }) {
     setShowConfirmNewPassword(false);
   }, [currentUser?.id]);
 
-  const handleSave = () => {
+  const handleSave = ({ exitEditMode } = {}) => {
     if (!currentUser) return;
+
+    const normalize = (v) => String(v ?? '').trim();
+    const normalizeEmail = (v) => normalize(v).toLowerCase();
+
+    const nextFirstName = normalize(draft.firstName);
+    const nextLastName = normalize(draft.lastName);
+    const nextUsername = normalize(draft.username);
+    const nextEmail = normalizeEmail(draft.email);
+
+    const prevFirstName = normalize(currentUser.firstName);
+    const prevLastName = normalize(currentUser.lastName);
+    const prevUsername = normalize(currentUser.username);
+    const prevEmail = normalizeEmail(currentUser.email);
+
+    const profileImageChanged = !!draft.profileImage && draft.profileImage !== currentUser.profileImage;
+    const anyTextChanged =
+      nextFirstName !== prevFirstName ||
+      nextLastName !== prevLastName ||
+      nextUsername !== prevUsername ||
+      nextEmail !== prevEmail;
+    const hasChanges = anyTextChanged || profileImageChanged;
+
+    if (!hasChanges) {
+      if (exitEditMode) {
+        setDraft(currentUser || {});
+        setIsEditing(false);
+      }
+      return;
+    }
+
     setLoading(true);
     const patch = {
-      firstName: draft.firstName || '',
-      lastName: draft.lastName || '',
-      email: draft.email || '',
-      username: draft.username || '',
+      firstName: nextFirstName,
+      lastName: nextLastName,
+      email: nextEmail,
+      username: nextUsername,
     };
     // Only set profileImage when the user explicitly selected one.
     if (draft.profileImage) patch.profileImage = draft.profileImage;
@@ -95,6 +127,7 @@ export default function Profile({ navigation }) {
       Alert.alert(result.message || 'Could not save');
       return;
     }
+    if (exitEditMode) setIsEditing(false);
     Alert.alert('Profile updated');
   };
 
@@ -389,14 +422,44 @@ export default function Profile({ navigation }) {
         }
       >
         <View style={styles.headerRow}>
-          <BackButton />
           <LambHeader />
         </View>
-        <Text style={[styles.title, { color: theme.text }]}>Profile</Text>
+        <View style={styles.titleRow}>
+          <Text style={[styles.title, { color: theme.text, marginBottom: 0 }]}>Profile</Text>
+          <TouchableOpacity
+            onPress={() => {
+              if (isEditing) {
+                handleSave({ exitEditMode: true });
+                return;
+              }
+              setDraft(currentUser || {});
+              setIsEditing(true);
+            }}
+            disabled={loading || isOffline || !currentUser}
+            accessibilityRole="button"
+            accessibilityLabel={isEditing ? 'Done editing profile' : 'Edit profile'}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text
+              style={[
+                styles.editButtonText,
+                { color: theme.link, opacity: loading || isOffline || !currentUser ? 0.5 : 1 },
+              ]}
+            >
+              {isEditing ? 'Done' : 'Edit'}
+            </Text>
+          </TouchableOpacity>
+        </View>
         {currentUser ? (
           <>
             <View style={styles.avatarContainer}>
-              <TouchableOpacity onPress={handleProfilePictureChange} activeOpacity={0.8}>
+              <TouchableOpacity
+                onPress={isEditing ? handleProfilePictureChange : undefined}
+                disabled={!isEditing}
+                activeOpacity={0.8}
+                accessibilityRole={isEditing ? 'button' : undefined}
+                accessibilityLabel={isEditing ? 'Change profile photo' : undefined}
+              >
                 {!avatarFailed && (draft.profileImage || currentUser.profileImage) ? (
                   <Image
                     source={{ uri: draft.profileImage || currentUser.profileImage }}
@@ -418,9 +481,11 @@ export default function Profile({ navigation }) {
                     <Text style={{ color: '#fff', fontSize: 34, fontWeight: '800' }}>{getInitials(draft)}</Text>
                   </View>
                 )}
-                <View style={styles.cameraBadge}>
-                  <Text style={styles.cameraText}>📷</Text>
-                </View>
+                {isEditing && (
+                  <View style={[styles.cameraBadge, { backgroundColor: theme.primary, borderColor: theme.primary }]}>
+                    <Ionicons name="camera" size={14} color="#fff" />
+                  </View>
+                )}
               </TouchableOpacity>
             </View>
 
@@ -434,53 +499,75 @@ export default function Profile({ navigation }) {
             <View style={styles.fieldGroup}>
               <Text style={[styles.label, { color: theme.textMuted }]}>First Name</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
+                style={[
+                  styles.input,
+                  { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text },
+                  !isEditing && styles.inputReadOnly,
+                ]}
                 placeholder="First name"
                 placeholderTextColor={theme.placeholder}
                 value={draft.firstName || ''}
                 onChangeText={(v) => setDraft({ ...draft, firstName: v })}
+                editable={isEditing}
               />
             </View>
             <View style={styles.fieldGroup}>
               <Text style={[styles.label, { color: theme.textMuted }]}>Last Name</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
+                style={[
+                  styles.input,
+                  { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text },
+                  !isEditing && styles.inputReadOnly,
+                ]}
                 placeholder="Last name"
                 placeholderTextColor={theme.placeholder}
                 value={draft.lastName || ''}
                 onChangeText={(v) => setDraft({ ...draft, lastName: v })}
+                editable={isEditing}
               />
             </View>
             <View style={styles.fieldGroup}>
               <Text style={[styles.label, { color: theme.textMuted }]}>Username</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
+                style={[
+                  styles.input,
+                  { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text },
+                  !isEditing && styles.inputReadOnly,
+                ]}
                 placeholder="Username"
                 placeholderTextColor={theme.placeholder}
                 autoCapitalize="none"
                 value={draft.username || ''}
                 onChangeText={(v) => setDraft({ ...draft, username: v })}
+                editable={isEditing}
               />
             </View>
             <View style={styles.fieldGroup}>
               <Text style={[styles.label, { color: theme.textMuted }]}>Email</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
+                style={[
+                  styles.input,
+                  { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text },
+                  !isEditing && styles.inputReadOnly,
+                ]}
                 placeholder="Email"
                 placeholderTextColor={theme.placeholder}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 value={draft.email || ''}
                 onChangeText={(v) => setDraft({ ...draft, email: v })}
+                editable={isEditing}
               />
             </View>
-            <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
-              onPress={handleSave}
-              disabled={loading || isOffline}
-            >
-              <Text style={styles.buttonText}>{loading ? 'Saving...' : 'Save'}</Text>
-            </TouchableOpacity>
+            {isEditing && (
+              <TouchableOpacity
+                style={[styles.button, loading && styles.buttonDisabled]}
+                onPress={() => handleSave({ exitEditMode: true })}
+                disabled={loading || isOffline}
+              >
+                <Text style={styles.buttonText}>{loading ? 'Saving...' : 'Done'}</Text>
+              </TouchableOpacity>
+            )}
 
             <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Account</Text>
@@ -744,18 +831,30 @@ const styles = StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: '#0b0b0f' },
   container: { padding: 20, backgroundColor: '#0b0b0f', gap: 12, paddingBottom: 100 },
   headerRow: { position: 'relative', width: '100%' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   title: { fontSize: 24, fontWeight: '700', color: '#fff', marginBottom: 16 },
+  editButtonText: { fontSize: 16, fontWeight: '700' },
   subtitle: { color: '#c5c5d0' },
   avatarContainer: { alignItems: 'center', marginBottom: 24 },
   avatar: { width: 112, height: 112, borderRadius: 56, borderWidth: 1, borderColor: '#1f2738' },
-  cameraBadge: { position: 'absolute', bottom: 6, right: 6, backgroundColor: '#2563eb', borderRadius: 14, paddingHorizontal: 8, paddingVertical: 4 },
-  cameraText: { fontSize: 16 },
+  cameraBadge: {
+    position: 'absolute',
+    bottom: 6,
+    right: 6,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   netWorthCard: { marginBottom: 16, padding: 12, borderRadius: 12, backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1 },
   netWorthLabel: { color: '#9aa1b5', fontSize: 12, marginBottom: 4, fontWeight: '600' },
   netWorthValue: { color: '#fff', fontSize: 18, fontWeight: '700' },
   fieldGroup: { marginBottom: 12 },
   label: { color: '#9aa1b5', marginBottom: 4, fontWeight: '600', fontSize: 13 },
   input: { backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, borderRadius: 10, padding: 12, color: '#fff' },
+  inputReadOnly: { opacity: 0.8 },
   helperError: { marginTop: 6, color: '#fecaca', fontSize: 12, lineHeight: 16 },
   passwordRow: { flexDirection: 'row', alignItems: 'center' },
   passwordInput: { flex: 1 },
