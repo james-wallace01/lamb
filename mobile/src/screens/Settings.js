@@ -6,7 +6,7 @@ import SubscriptionManager from '../components/SubscriptionManager';
 import { useData } from '../context/DataContext';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 
-export default function Membership() {
+export default function Membership({ navigation }) {
   const { refreshData, theme, vaults, currentUser } = useData();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -46,14 +46,25 @@ export default function Membership() {
         </View>
         <Text style={[styles.title, { color: theme.text }]}>Membership</Text>
 
-        {ownsAnyVault ? (
-          <SubscriptionManager />
-        ) : (
+        {!currentUser?.subscription?.tier ? (
+          <TouchableOpacity
+            style={[styles.primaryButton, { backgroundColor: theme.primary, borderColor: theme.primary }]}
+            onPress={() => {
+              navigation.navigate('ChooseSubscription', { mode: 'upgrade' });
+            }}
+          >
+            <Text style={styles.primaryButtonText}>Choose Membership</Text>
+          </TouchableOpacity>
+        ) : null}
+
+        <SubscriptionManager />
+
+        {!ownsAnyVault ? (
           <View style={[styles.legalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Billing</Text>
             <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Your access is managed by the vault owner. Delegates never need to pay.</Text>
           </View>
-        )}
+        ) : null}
 
         <View style={[styles.legalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Legal</Text>
@@ -81,6 +92,18 @@ const styles = StyleSheet.create({
   headerRow: { position: 'relative', width: '100%' },
   title: { fontSize: 24, fontWeight: '700', color: '#fff' },
   subtitle: { color: '#c5c5d0' },
+  primaryButton: {
+    marginTop: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  primaryButtonText: {
+    color: '#ffffff',
+    fontWeight: '800',
+  },
   legalCard: { borderWidth: 1, borderColor: '#1f2738', borderRadius: 12, padding: 16, gap: 8, marginTop: 8 },
   sectionTitle: { color: '#e5e7f0', fontWeight: '700', fontSize: 16, marginBottom: 4 },
   legalRow: { paddingVertical: 6 },

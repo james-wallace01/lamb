@@ -1425,10 +1425,6 @@ export function DataProvider({ children }) {
         }
       }
 
-      if (!found.subscription || !found.subscription.tier) {
-        return { ok: false, message: 'No active membership. Please purchase a membership to continue.' };
-      }
-
       const ensured = withProfileImage(found);
       setCurrentUser(withoutPasswordSecrets(ensured));
       const now = Date.now();
@@ -1580,7 +1576,7 @@ export function DataProvider({ children }) {
     const pw = validatePasswordStrength(password, { username: un.value, email: em.value });
     if (!pw.ok) return { ok: false, message: pw.message };
 
-    if (!subscriptionTier) return { ok: false, message: 'You must select a membership' };
+    // Delegates may need to create an account without purchasing a membership.
 
     if (!isFirebaseAuthEnabled()) {
       return { ok: false, message: 'Authentication is unavailable' };
@@ -1600,9 +1596,11 @@ export function DataProvider({ children }) {
     }
 
     const now = Date.now();
-    const trialEndsAt = now + (TRIAL_DAYS * 24 * 60 * 60 * 1000);
     const uid = firebaseAuth?.currentUser?.uid ? String(firebaseAuth.currentUser.uid) : null;
     if (!uid) return { ok: false, message: 'Authentication failed' };
+
+    const tier = subscriptionTier ? String(subscriptionTier).toUpperCase() : null;
+    const trialEndsAt = tier ? (now + (TRIAL_DAYS * 24 * 60 * 60 * 1000)) : null;
 
     const newUser = {
       id: uid,
@@ -1613,21 +1611,26 @@ export function DataProvider({ children }) {
       prefersDarkMode: DEFAULT_DARK_MODE_ENABLED,
       profileImage: null,
       firebaseUid: uid,
-      subscription: {
-        tier: subscriptionTier,
-        startDate: now,
-        trialEndsAt,
-        renewalDate: trialEndsAt,
-        cancelAtPeriodEnd: false,
-      },
+      subscription: tier
+        ? {
+            tier,
+            startDate: now,
+            trialEndsAt,
+            renewalDate: trialEndsAt,
+            cancelAtPeriodEnd: false,
+          }
+        : null,
     };
 
     // Firestore is canonical: write user + initial vault/collection/asset to Firestore.
     if (!firestore) return { ok: false, message: 'Firestore is not configured' };
 
-    const vaultId = initialVaultId ? String(initialVaultId) : `v${Date.now()}`;
-    const collectionId = `c${Date.now() + 1}`;
-    const assetId = `a${Date.now() + 2}`;
+    const shouldCreateExampleContent = !!tier;
+    const vaultId = shouldCreateExampleContent
+      ? (initialVaultId ? String(initialVaultId) : `v${Date.now()}`)
+      : null;
+    const collectionId = shouldCreateExampleContent ? `c${Date.now() + 1}` : null;
+    const assetId = shouldCreateExampleContent ? `a${Date.now() + 2}` : null;
 
     const batch = writeBatch(firestore);
     batch.set(doc(firestore, 'users', uid), {
@@ -1640,55 +1643,57 @@ export function DataProvider({ children }) {
       createdAt: now,
     }, { merge: true });
 
-    batch.set(doc(firestore, 'vaults', vaultId), {
-      id: vaultId,
-      name: 'Example Vault',
-      activeOwnerId: uid,
-      ownerId: uid,
-      createdBy: uid,
-      createdAt: now,
-      editedAt: now,
-      viewedAt: now,
-    }, { merge: true });
-    batch.set(doc(firestore, 'vaults', vaultId, 'memberships', uid), {
-      user_id: uid,
-      vault_id: vaultId,
-      role: 'OWNER',
-      permissions: null,
-      status: 'ACTIVE',
-      assigned_at: now,
-      revoked_at: null,
-    }, { merge: true });
+    if (shouldCreateExampleContent) {
+      batch.set(doc(firestore, 'vaults', vaultId), {
+        id: vaultId,
+        name: 'Example Vault',
+        activeOwnerId: uid,
+        ownerId: uid,
+        createdBy: uid,
+        createdAt: now,
+        editedAt: now,
+        viewedAt: now,
+      }, { merge: true });
+      batch.set(doc(firestore, 'vaults', vaultId, 'memberships', uid), {
+        user_id: uid,
+        vault_id: vaultId,
+        role: 'OWNER',
+        permissions: null,
+        status: 'ACTIVE',
+        assigned_at: now,
+        revoked_at: null,
+      }, { merge: true });
 
-    batch.set(doc(firestore, 'vaults', vaultId, 'collections', collectionId), {
-      id: collectionId,
-      vaultId,
-      name: 'Example Collection',
-      createdAt: now,
-      editedAt: now,
-      viewedAt: now,
-    }, { merge: true });
+      batch.set(doc(firestore, 'vaults', vaultId, 'collections', collectionId), {
+        id: collectionId,
+        vaultId,
+        name: 'Example Collection',
+        createdAt: now,
+        editedAt: now,
+        viewedAt: now,
+      }, { merge: true });
 
-    batch.set(doc(firestore, 'vaults', vaultId, 'assets', assetId), {
-      id: assetId,
-      vaultId,
-      collectionId,
-      title: 'Example Asset',
-      type: 'Asset',
-      category: 'Example',
-      manager: newUser.username,
-      quantity: 1,
-      createdAt: now,
-      editedAt: now,
-      viewedAt: now,
-    }, { merge: true });
+      batch.set(doc(firestore, 'vaults', vaultId, 'assets', assetId), {
+        id: assetId,
+        vaultId,
+        collectionId,
+        title: 'Example Asset',
+        type: 'Asset',
+        category: 'Example',
+        manager: newUser.username,
+        quantity: 1,
+        createdAt: now,
+        editedAt: now,
+        viewedAt: now,
+      }, { merge: true });
+    }
 
     await batch.commit();
 
     // Local cache (will reconcile from listeners).
     setUsers(prev => [...prev, newUser]);
     setCurrentUser(withoutPasswordSecrets(newUser));
-    return { ok: true, vaultId };
+    return { ok: true, vaultId: vaultId || null };
   };
 
     const updateCurrentUser = (patch) => {

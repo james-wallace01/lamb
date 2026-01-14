@@ -18,18 +18,27 @@ export default function SubscriptionManager() {
       NativeModules?.RNIapIosStorekit2
     );
 
+  const safeIapCall = async (fn) => {
+    try {
+      return await Promise.resolve(fn());
+    } catch {
+      return null;
+    }
+  };
+
   useEffect(() => {
     if (Platform.OS !== 'ios') return;
     (async () => {
       try {
         if (!iapNativeAvailable) return;
-        await RNIap.initConnection();
+        await safeIapCall(() => RNIap.initConnection());
       } catch {
         // ignore
       }
     })();
     return () => {
-      RNIap.endConnection().catch(() => {});
+      if (!iapNativeAvailable) return;
+      safeIapCall(() => RNIap.endConnection());
     };
   }, []);
 
@@ -57,7 +66,15 @@ export default function SubscriptionManager() {
 
     setSubmitting(true);
     try {
-      const purchases = await RNIap.getAvailablePurchases();
+      const purchases = await safeIapCall(() => RNIap.getAvailablePurchases());
+      if (!purchases) {
+        Alert.alert(
+          'In-app purchases unavailable',
+          'This build cannot access Apple In-App Purchases. Use TestFlight (recommended) or an EAS development build with react-native-iap included.'
+        );
+        setSubmitting(false);
+        return;
+      }
       const best = Array.isArray(purchases) ? purchases.find((p) => p?.transactionReceipt) : null;
       const receiptData = best?.transactionReceipt || null;
       const productId = best?.productId || null;

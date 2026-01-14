@@ -124,6 +124,23 @@ export default function Home({ navigation }) {
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}> 
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Membership required</Text>
             <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Your membership isn’t active. You can manage your membership, update your profile, and revoke sharing.</Text>
+
+            {!currentUser?.subscription?.tier ? (
+              <TouchableOpacity
+                style={[
+                  styles.secondaryButton,
+                  {
+                    borderColor: theme.primary,
+                    backgroundColor: theme.primary,
+                    alignSelf: 'flex-start',
+                    marginTop: 10,
+                  },
+                ]}
+                onPress={() => navigation.navigate('ChooseSubscription', { mode: 'upgrade' })}
+              >
+                <Text style={[styles.secondaryText, { color: '#fff' }]}>Choose membership</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
 
           <View style={styles.quickRow}>

@@ -68,6 +68,9 @@ const safeLogJson = (level, message, fields) => {
 const enforceTls = String(process.env.ENFORCE_TLS).toLowerCase() === 'true' || process.env.NODE_ENV === 'production';
 if (enforceTls) {
   app.use((req, res, next) => {
+    // Render (and some other platforms) may perform internal health checks over plain HTTP.
+    // Keep /health reachable so deployments can become healthy.
+    if (req.path === '/health') return next();
     const forwardedProto = String(req.headers['x-forwarded-proto'] || '').toLowerCase();
     const isSecure = req.secure || forwardedProto === 'https';
     if (isSecure) return next();

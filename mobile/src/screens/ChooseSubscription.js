@@ -13,11 +13,12 @@ export default function ChooseSubscription({ navigation, route }) {
   const { subscriptionTiers, convertPrice, theme } = useData();
   const insets = useSafeAreaInsets();
   const { firstName, lastName, email, username, password } = route.params || {};
+  const isUpgrade = String(route?.params?.mode || '') === 'upgrade';
   const [selectedTier, setSelectedTier] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [iapReady, setIapReady] = useState(false);
   const [iapInitError, setIapInitError] = useState(null);
-  const { register, loading, ensureFirebaseSignupAuth } = useData();
+  const { register, loading, ensureFirebaseSignupAuth, refreshData } = useData();
 
   const iapNativeAvailable =
     Platform.OS === 'ios' &&
@@ -28,6 +29,14 @@ export default function ChooseSubscription({ navigation, route }) {
       NativeModules?.RNIapIosStorekit2
     );
 
+  const safeIapCall = async (fn) => {
+    try {
+      return await Promise.resolve(fn());
+    } catch {
+      return null;
+    }
+  };
+
   useEffect(() => {
     if (Platform.OS !== 'ios') return;
     let mounted = true;
@@ -36,7 +45,7 @@ export default function ChooseSubscription({ navigation, route }) {
         if (!iapNativeAvailable) {
           throw new Error('In-app purchases unavailable in this build');
         }
-        await RNIap.initConnection();
+        await safeIapCall(() => RNIap.initConnection());
         if (mounted) {
           setIapReady(true);
           setIapInitError(null);
@@ -50,7 +59,8 @@ export default function ChooseSubscription({ navigation, route }) {
     })();
     return () => {
       mounted = false;
-      RNIap.endConnection().catch(() => {});
+      if (!iapNativeAvailable) return;
+      safeIapCall(() => RNIap.endConnection());
     };
   }, []);
 
@@ -89,13 +99,15 @@ export default function ChooseSubscription({ navigation, route }) {
 
     setSubmitting(true);
 
-    // In production, backend membership endpoints require Firebase auth.
-    // Ensure we have a Firebase session so apiFetch can attach an ID token.
-    const authRes = await ensureFirebaseSignupAuth?.({ email, password, username });
-    if (authRes && authRes.ok === false) {
-      Alert.alert('Sign up failed', authRes.message || 'Unable to create account. Please try again.');
-      setSubmitting(false);
-      return;
+    if (!isUpgrade) {
+      // In production, backend membership endpoints require Firebase auth.
+      // Ensure we have a Firebase session so apiFetch can attach an ID token.
+      const authRes = await ensureFirebaseSignupAuth?.({ email, password, username });
+      if (authRes && authRes.ok === false) {
+        Alert.alert('Sign up failed', authRes.message || 'Unable to create account. Please try again.');
+        setSubmitting(false);
+        return;
+      }
     }
 
     const tier = subscriptionTiers[selectedTier];
@@ -109,13 +121,22 @@ export default function ChooseSubscription({ navigation, route }) {
 
     let purchase = null;
     try {
-      purchase = await RNIap.requestSubscription({ sku: productId });
+      purchase = await safeIapCall(() => RNIap.requestSubscription({ sku: productId }));
     } catch (e) {
       const raw = e?.message ? String(e.message) : String(e || 'Purchase cancelled');
       const msg = /buyProduct|of null|native module/i.test(raw)
         ? 'In-app purchases are unavailable in this build. Use TestFlight (recommended) or create an EAS development build with react-native-iap included.'
         : raw;
       Alert.alert('Purchase', msg);
+      setSubmitting(false);
+      return;
+    }
+
+    if (!purchase) {
+      Alert.alert(
+        'In-app purchases unavailable',
+        'This build cannot access Apple In-App Purchases. Use TestFlight (recommended) or an EAS development build with react-native-iap included.'
+      );
       setSubmitting(false);
       return;
     }
@@ -142,9 +163,20 @@ export default function ChooseSubscription({ navigation, route }) {
     }
 
     try {
-      await RNIap.finishTransaction({ purchase, isConsumable: false });
+      await safeIapCall(() => RNIap.finishTransaction({ purchase, isConsumable: false }));
     } catch {
       // ignore
+    }
+
+    if (isUpgrade) {
+      try {
+        await refreshData?.();
+      } catch {
+        // ignore
+      }
+      setSubmitting(false);
+      Alert.alert('Success!', 'Your membership is active.', [{ text: 'OK', onPress: () => navigation.goBack() }]);
+      return;
     }
 
     if (typeof __DEV__ !== 'undefined' && __DEV__) {
@@ -169,6 +201,51 @@ export default function ChooseSubscription({ navigation, route }) {
     Alert.alert(
       'Success!',
       `Your membership is active. You will be charged ${localPrice.symbol}${localPrice.amount}/${tier.period} by Apple unless you cancel in iOS Subscriptions.`
+    );
+  };
+
+  const handleSkip = async () => {
+    if (isUpgrade) return;
+    if (submitting || loading) return;
+
+    Alert.alert(
+      'Continue without membership?',
+      'You can still access the app and join a vault as a delegate using an invite code. A paid membership is only required for full access as an owner.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Skip',
+          style: 'default',
+          onPress: async () => {
+            setSubmitting(true);
+
+            const authRes = await ensureFirebaseSignupAuth?.({ email, password, username });
+            if (authRes && authRes.ok === false) {
+              Alert.alert('Sign up failed', authRes.message || 'Unable to create account. Please try again.');
+              setSubmitting(false);
+              return;
+            }
+
+            const res = await register({
+              firstName,
+              lastName,
+              email,
+              username,
+              password,
+              subscriptionTier: null,
+            });
+
+            setSubmitting(false);
+
+            if (!res.ok) {
+              Alert.alert('Sign up failed', res.message || 'Try again');
+              return;
+            }
+
+            Alert.alert('Account created', 'You can join a vault from Home using an invite code.');
+          },
+        },
+      ]
     );
   };
 
@@ -218,9 +295,15 @@ export default function ChooseSubscription({ navigation, route }) {
         disabled={submitting || loading || !selectedTier}
       >
         <Text style={styles.buttonText}>
-          {submitting ? 'Creating account…' : 'Continue'}
+          {submitting ? (isUpgrade ? 'Processing…' : 'Creating account…') : 'Continue'}
         </Text>
       </TouchableOpacity>
+
+      {!isUpgrade ? (
+        <TouchableOpacity onPress={handleSkip} disabled={submitting || loading}>
+          <Text style={[styles.link, { color: theme.link, marginTop: 10, marginBottom: 0, opacity: (submitting || loading) ? 0.7 : 1 }]}>Skip for now</Text>
+        </TouchableOpacity>
+      ) : null}
 
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={[styles.link, { color: theme.link }]}>Back</Text>

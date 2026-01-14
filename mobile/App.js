@@ -49,6 +49,7 @@ const MainStack = () => {
     <Stack.Screen name="Collection" component={CollectionScreen} options={{ headerShown: false }} />
     <Stack.Screen name="Asset" component={AssetScreen} options={{ headerShown: false }} />
     <Stack.Screen name="Membership" component={MembershipScreen} options={{ headerShown: false }} />
+    <Stack.Screen name="ChooseSubscription" component={ChooseSubscriptionScreen} options={{ headerShown: false }} />
     <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
     <Stack.Screen name="EmailNotifications" component={EmailNotificationsScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
@@ -69,6 +70,7 @@ const LimitedStack = () => {
       <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Membership" component={MembershipScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="ChooseSubscription" component={ChooseSubscriptionScreen} options={{ headerShown: false }} />
       <Stack.Screen name="EmailNotifications" component={EmailNotificationsScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
