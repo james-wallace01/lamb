@@ -348,6 +348,41 @@ const normalizeUsername = (value) => (typeof value === 'string' ? value.trim().t
 
 const getPublicAppName = () => String(process.env.PUBLIC_APP_NAME || 'LAMB').trim() || 'LAMB';
 
+const getAdminAlertEmail = () => {
+  const email = normalizeEmail(process.env.ADMIN_ALERT_EMAIL);
+  return email && email.includes('@') ? email : null;
+};
+
+const sendAdminAlertEmailBestEffort = async ({ db, dedupeKey, subject, text, requestId } = {}) => {
+  try {
+    if (!db) return { ok: false, skipped: true };
+    const to = getAdminAlertEmail();
+    if (!to) return { ok: false, skipped: true };
+
+    const appName = getPublicAppName();
+    const safeSubject = String(subject || `${appName} alert`).slice(0, 200);
+    const safeText = String(text || '').slice(0, 4000);
+
+    return await sendNotificationEmailIdempotent({
+      db,
+      dedupeKey: String(dedupeKey || `admin-alert:${Date.now()}`),
+      category: NOTIFICATION_CATEGORIES.security,
+      to,
+      recipientUid: null,
+      recipientRole: ROLE_OWNER,
+      vaultId: null,
+      auditEventId: null,
+      subject: safeSubject,
+      text: safeText || `RequestId: ${requestId || 'unknown'}`,
+      html: null,
+      // Security category is mandatory, but keep this explicit.
+      defaultOptInIfNoSettings: true,
+    });
+  } catch {
+    return { ok: false, skipped: true };
+  }
+};
+
 const buildInviteEmail = ({ code } = {}) => {
   const appName = getPublicAppName();
   const safeCode = String(code || '').trim();
@@ -1337,6 +1372,27 @@ app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), as
             type: event.type,
             message: e?.message || String(e),
           });
+
+          // Best-effort alert for operators (idempotent per stripe event).
+          try {
+            const db = getFirestoreDb();
+            if (db) {
+              await sendAdminAlertEmailBestEffort({
+                db,
+                requestId: req.requestId,
+                dedupeKey: `admin:stripe:webhook:${String(event.id)}:billing-email-failed`,
+                subject: `${getPublicAppName()} alert: Stripe billing email failed`,
+                text: [
+                  `requestId: ${req.requestId || 'unknown'}`,
+                  `eventId: ${event.id}`,
+                  `type: ${event.type}`,
+                  `error: ${e?.message || String(e)}`,
+                ].join('\n'),
+              });
+            }
+          } catch {
+            // ignore
+          }
         }
         break;
       }
@@ -1379,6 +1435,27 @@ app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), as
                   eventId: event.id,
                   message: e?.message || String(e),
                 });
+
+                // Best-effort alert for operators (idempotent per stripe event).
+                try {
+                  const db = getFirestoreDb();
+                  if (db) {
+                    await sendAdminAlertEmailBestEffort({
+                      db,
+                      requestId: req.requestId,
+                      dedupeKey: `admin:stripe:webhook:${String(event.id)}:payment-failed-email-error`,
+                      subject: `${getPublicAppName()} alert: Stripe payment_failed email error`,
+                      text: [
+                        `requestId: ${req.requestId || 'unknown'}`,
+                        `eventId: ${event.id}`,
+                        `type: ${event.type}`,
+                        `error: ${e?.message || String(e)}`,
+                      ].join('\n'),
+                    });
+                  }
+                } catch {
+                  // ignore
+                }
               }
             }
           } catch (err) {
@@ -1406,6 +1483,27 @@ app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), as
       eventId: event?.id,
       message: err?.message || String(err),
     });
+
+    // Best-effort alert for operators (idempotent per stripe event).
+    try {
+      const db = getFirestoreDb();
+      if (db) {
+        await sendAdminAlertEmailBestEffort({
+          db,
+          requestId: req.requestId,
+          dedupeKey: `admin:stripe:webhook:${String(event?.id || 'unknown')}:handler-failed`,
+          subject: `${getPublicAppName()} alert: Stripe webhook handler failed`,
+          text: [
+            `requestId: ${req.requestId || 'unknown'}`,
+            `eventId: ${event?.id || 'unknown'}`,
+            `type: ${event?.type || 'unknown'}`,
+            `error: ${err?.message || String(err)}`,
+          ].join('\n'),
+        });
+      }
+    } catch {
+      // ignore
+    }
     return res.status(500).json({ error: 'Webhook handler failed' });
   }
 });

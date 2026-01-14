@@ -273,6 +273,7 @@ Supported providers:
 Configure via environment variables in [backend/.env.example](backend/.env.example):
 - `EMAIL_PROVIDER=sendgrid|smtp|none`
 - `EMAIL_FROM="LAMB <no-reply@yourdomain.com>"`
+- `ADMIN_ALERT_EMAIL=ops@yourdomain.com` (optional; receives webhook/email failure alerts)
 
 ### Notification categories + preferences
 
