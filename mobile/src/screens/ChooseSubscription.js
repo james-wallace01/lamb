@@ -196,6 +196,95 @@ export default function ChooseSubscription({ navigation, route }) {
     );
   };
 
+  const handleRestorePurchases = async () => {
+    if (Platform.OS !== 'ios') {
+      Alert.alert('Unavailable', 'Restore is available on iOS only.');
+      return;
+    }
+
+    if (!iapNativeAvailable || !iapReady) {
+      Alert.alert(
+        'In-app purchases unavailable',
+        `${iapInitError || 'This build cannot access Apple In-App Purchases.'}\n\nTo test purchases you need a native build (TestFlight or an EAS development build). Expo Go does not support react-native-iap.`
+      );
+      return;
+    }
+
+    if (submitting || loading) return;
+    setSubmitting(true);
+
+    try {
+      if (!isUpgrade) {
+        const authRes = await ensureFirebaseSignupAuth?.({ email, password, username });
+        if (authRes && authRes.ok === false) {
+          Alert.alert('Sign up failed', authRes.message || 'Unable to create account. Please try again.');
+          return;
+        }
+      }
+
+      const purchases = await safeIapCall(() => RNIap.getAvailablePurchases());
+      if (!purchases) {
+        Alert.alert(
+          'In-app purchases unavailable',
+          'This build cannot access Apple In-App Purchases. Use TestFlight (recommended) or an EAS development build with react-native-iap included.'
+        );
+        return;
+      }
+
+      const best = Array.isArray(purchases) ? purchases.find((p) => p?.transactionReceipt) : null;
+      const receiptData = best?.transactionReceipt || null;
+      const productId = best?.productId || null;
+      if (!receiptData) {
+        Alert.alert('Nothing to restore', 'No active purchases were found on this Apple ID.');
+        return;
+      }
+
+      const verifyResp = await apiFetch(`${API_URL}/iap/verify`, {
+        requireAuth: true,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform: 'ios', productId, receiptData }),
+      });
+
+      const verifyJson = await verifyResp.json().catch(() => null);
+      if (!verifyResp.ok || !verifyJson?.ok) {
+        Alert.alert('Restore failed', verifyJson?.error || 'Unable to verify receipt');
+        return;
+      }
+
+      if (isUpgrade) {
+        try {
+          await refreshData?.();
+        } catch {
+          // ignore
+        }
+        Alert.alert('Restored', 'Your membership has been restored.', [{ text: 'OK', onPress: () => navigation.goBack() }]);
+        return;
+      }
+
+      const tier = verifyJson?.tier ? String(verifyJson.tier).toUpperCase() : null;
+      const res = await register({
+        firstName,
+        lastName,
+        email,
+        username,
+        password,
+        subscriptionTier: tier,
+      });
+
+      if (!res.ok) {
+        Alert.alert('Sign up failed', res.message || 'Try again');
+        return;
+      }
+
+      Alert.alert('Restored', 'Your membership has been restored.');
+    } catch (e) {
+      Alert.alert('Restore failed', e?.message || 'Unable to restore purchases');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleSkip = async () => {
     if (isUpgrade) return;
     if (submitting || loading) return;
@@ -296,6 +385,10 @@ export default function ChooseSubscription({ navigation, route }) {
           <Text style={[styles.link, { color: theme.link, marginTop: 10, marginBottom: 0, opacity: (submitting || loading) ? 0.7 : 1 }]}>Skip for now</Text>
         </TouchableOpacity>
       ) : null}
+
+      <TouchableOpacity onPress={handleRestorePurchases} disabled={submitting || loading}>
+        <Text style={[styles.link, { color: theme.link, marginTop: 10, marginBottom: 0, opacity: (submitting || loading) ? 0.7 : 1 }]}>Restore Purchases</Text>
+      </TouchableOpacity>
 
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={[styles.link, { color: theme.link }]}>Back</Text>

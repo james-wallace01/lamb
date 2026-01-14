@@ -493,6 +493,7 @@ export default function Asset({ route, navigation }) {
                             style={styles.removeImageBtn}
                             onPress={() => removeDraftImage(img)}
                             disabled={!canEditOnline}
+                            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                           >
                             <Text style={styles.removeImageBtnText}>✕</Text>
                           </TouchableOpacity>
@@ -501,6 +502,7 @@ export default function Asset({ route, navigation }) {
                               style={styles.makeHeroBtn}
                               onPress={() => setDraftHero(img)}
                               disabled={!canEditOnline}
+                              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                             >
                               <Text style={styles.makeHeroBtnText}>☆</Text>
                             </TouchableOpacity>

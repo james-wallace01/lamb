@@ -294,6 +294,7 @@ export default function Vault({ navigation, route }) {
                 openShare('collection', item.id);
               }}
               disabled={!canShareOnline}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Text style={styles.sharePillText}>Share</Text>
             </TouchableOpacity>
@@ -363,11 +364,21 @@ export default function Vault({ navigation, route }) {
                                   </View>
                                 )}
                                 <Image source={toImageSource(img)} style={styles.thumb} />
-                                <TouchableOpacity style={styles.removeImageBtn} onPress={() => removeDraftImage(img)} disabled={!canEditOnline}>
+                                <TouchableOpacity
+                                  style={styles.removeImageBtn}
+                                  onPress={() => removeDraftImage(img)}
+                                  disabled={!canEditOnline}
+                                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                                >
                                   <Text style={styles.removeImageBtnText}>✕</Text>
                                 </TouchableOpacity>
                                 {!isHeroImg && (
-                                  <TouchableOpacity style={styles.makeHeroBtn} onPress={() => setDraftHero(img)} disabled={!canEditOnline}>
+                                  <TouchableOpacity
+                                    style={styles.makeHeroBtn}
+                                    onPress={() => setDraftHero(img)}
+                                    disabled={!canEditOnline}
+                                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                                  >
                                     <Text style={styles.makeHeroBtnText}>☆</Text>
                                   </TouchableOpacity>
                                 )}

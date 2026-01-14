@@ -319,6 +319,7 @@ export default function Collection({ navigation, route }) {
                 openShare('asset', item.id);
               }}
               disabled={!canShareOnline}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Text style={styles.sharePillText}>Share</Text>
             </TouchableOpacity>
@@ -570,11 +571,21 @@ export default function Collection({ navigation, route }) {
                               </View>
                             )}
                             <Image source={toImageSource(img)} style={styles.thumb} />
-                            <TouchableOpacity style={styles.removeImageBtn} disabled={!canEditOnline} onPress={() => removeDraftImage(img)}>
+                            <TouchableOpacity
+                              style={styles.removeImageBtn}
+                              disabled={!canEditOnline}
+                              onPress={() => removeDraftImage(img)}
+                              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                            >
                               <Text style={styles.removeImageBtnText}>✕</Text>
                             </TouchableOpacity>
                             {!isHeroImg && (
-                              <TouchableOpacity style={styles.makeHeroBtn} disabled={!canEditOnline} onPress={() => setDraftHero(img)}>
+                              <TouchableOpacity
+                                style={styles.makeHeroBtn}
+                                disabled={!canEditOnline}
+                                onPress={() => setDraftHero(img)}
+                                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                              >
                                 <Text style={styles.makeHeroBtnText}>☆</Text>
                               </TouchableOpacity>
                             )}

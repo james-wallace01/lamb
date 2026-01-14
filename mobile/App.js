@@ -1,6 +1,6 @@
 import 'react-native-gesture-handler';
 import React, { useEffect, useRef } from 'react';
-import { AppState, View, Text, TouchableOpacity, Linking } from 'react-native';
+import { AppState, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -79,25 +79,8 @@ const LimitedStack = () => {
 };
 
 function RootNavigator() {
-  const { currentUser, loading, backendReachable, membershipAccess } = useData();
+  const { currentUser, loading, membershipAccess } = useData();
   if (loading) return null;
-
-  if (backendReachable === false) {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <Text style={{ fontSize: 18, fontWeight: '800', marginBottom: 8 }}>Internet required</Text>
-        <Text style={{ textAlign: 'center', opacity: 0.8, marginBottom: 16 }}>
-          LAMB is running in staging-only mode and needs an active internet connection.
-        </Text>
-        <TouchableOpacity
-          onPress={() => Linking.openURL('https://lamb-backend-staging.onrender.com/health').catch(() => {})}
-          style={{ paddingVertical: 10, paddingHorizontal: 14 }}
-        >
-          <Text style={{ fontWeight: '700' }}>Check server status</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
 
   if (!currentUser) return <AuthStack />;
   if (!membershipAccess) return <LimitedStack />;
