@@ -1182,7 +1182,7 @@ export function DataProvider({ children }) {
             );
           });
 
-          // Hydrate vault docs for any vault where I'm an active member.
+          // Hydrate vault docs for any vault where I'm an active delegate.
           const vaultIds = Array.from(new Set(myMemberships.map((m) => String(m.vault_id)).filter(Boolean)));
           cleanupVaultDocListeners();
           vaultDocUnsubsRef.current = chunk(vaultIds, 10).map((ids) => {

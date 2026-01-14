@@ -2268,7 +2268,7 @@ export default function App() {
     return sortByDefaultThenDate(a, b);
   });
 
-  // In the canonical model, active members can read all collections in the vault.
+  // In the canonical model, active delegates can read all collections in the vault.
   const sharedCollectionsList = currentUser ? collections.filter((c) => {
     const vault = vaults.find((v) => v.id === c.vaultId) || null;
     if (!vault) return false;
@@ -2290,7 +2290,7 @@ export default function App() {
   const selectedSharedVault = sharedVaultsList.find((v) => v.id === selectedVaultId) || null;
   const selectedSharedCollection = sharedCollectionsList.find((c) => c.id === selectedCollectionId) || null;
 
-  // In the canonical model, active members can read all assets in the vault.
+  // In the canonical model, active delegates can read all assets in the vault.
   const sharedAssetsList = currentUser && selectedSharedCollection ? assets.filter((a) => {
     if (a.collectionId !== selectedSharedCollection.id) return false;
     const collection = collections.find((c) => c.id === a.collectionId) || null;
@@ -3824,12 +3824,12 @@ export default function App() {
               if (shareDialog.type === 'asset') return `Share ${assets.find(a => a.id === shareDialog.targetId)?.title || 'Asset'}`;
               return `Share ${vaults.find(v => v.id === shareDialog.targetId)?.name || 'Vault'}`;
             })()}</h3>
-            <p className="text-sm text-neutral-400 mb-4">{shareDialog.type === 'vault' ? 'Invite by email (paid feature; owners can revoke pending invites).' : 'Grant access to an existing vault member by uid/email/username.'}</p>
+            <p className="text-sm text-neutral-400 mb-4">{shareDialog.type === 'vault' ? 'Invite by email (paid feature; owners can revoke pending invites).' : 'Grant access to an existing vault delegate by email or username.'}</p>
             <div className="space-y-3">
               <div>
                 <label className="text-sm text-neutral-400">User</label>
                 <div className="relative">
-                  <input autoComplete="off" className="w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800" placeholder={shareDialog.type === 'vault' ? 'email address' : 'member uid / email / username'} value={shareDialog.username} onChange={(e) => { setShareDialog((d) => ({ ...d, username: e.target.value })); setShowShareSuggestions(false); }} onFocus={() => setShowShareSuggestions(false)} />
+                  <input autoComplete="off" className="w-full mt-1 p-2 rounded bg-neutral-950 border border-neutral-800" placeholder={shareDialog.type === 'vault' ? 'email address' : 'delegate email or username'} value={shareDialog.username} onChange={(e) => { setShareDialog((d) => ({ ...d, username: e.target.value })); setShowShareSuggestions(false); }} onFocus={() => setShowShareSuggestions(false)} />
                 </div>
               </div>
               <div>
