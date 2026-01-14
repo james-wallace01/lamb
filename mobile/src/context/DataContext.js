@@ -1622,12 +1622,6 @@ export function DataProvider({ children }) {
     const un = validateUsername(username);
     if (!un.ok) return { ok: false, message: un.message };
 
-    const exists = users.find(u =>
-      (u?.username && normalizeUsername(u.username) === un.value) ||
-      (u?.email && normalizeEmail(u.email) === em.value)
-    );
-    if (exists) return { ok: false, message: 'User already exists' };
-
     const pw = validatePasswordStrength(password, { username: un.value, email: em.value });
     if (!pw.ok) return { ok: false, message: pw.message };
 
@@ -1653,6 +1647,17 @@ export function DataProvider({ children }) {
     const now = Date.now();
     const uid = firebaseAuth?.currentUser?.uid ? String(firebaseAuth.currentUser.uid) : null;
     if (!uid) return { ok: false, message: 'Authentication failed' };
+
+    // Idempotency: allow register() to be called multiple times for the same authenticated uid.
+    // Only block if a *different* known local user already claims the same email/username.
+    const existingLocal = (users || []).find(
+      (u) =>
+        (u?.username && normalizeUsername(u.username) === un.value) ||
+        (u?.email && normalizeEmail(u.email) === em.value)
+    );
+    if (existingLocal && String(existingLocal.id) !== uid) {
+      return { ok: false, message: 'User already exists' };
+    }
 
     const tier = subscriptionTier ? String(subscriptionTier).toUpperCase() : null;
     const trialEndsAt = tier ? (now + (TRIAL_DAYS * 24 * 60 * 60 * 1000)) : null;

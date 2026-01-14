@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Linking, Platform, NativeModules } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useData } from '../context/DataContext';
@@ -17,6 +17,7 @@ export default function ChooseSubscription({ navigation, route }) {
   const isUpgrade = String(route?.params?.mode || '') === 'upgrade';
   const [selectedTier, setSelectedTier] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const skipInFlightRef = useRef(false);
   const [iapReady, setIapReady] = useState(false);
   const [iapInitError, setIapInitError] = useState(null);
 
@@ -288,6 +289,7 @@ export default function ChooseSubscription({ navigation, route }) {
   const handleSkip = async () => {
     if (isUpgrade) return;
     if (submitting || loading) return;
+    if (skipInFlightRef.current) return;
 
     Alert.alert(
       'Continue without membership?',
@@ -298,32 +300,36 @@ export default function ChooseSubscription({ navigation, route }) {
           text: 'Skip',
           style: 'default',
           onPress: async () => {
+            if (skipInFlightRef.current) return;
+            skipInFlightRef.current = true;
             setSubmitting(true);
 
-            const authRes = await ensureFirebaseSignupAuth?.({ email, password, username });
-            if (authRes && authRes.ok === false) {
-              Alert.alert('Sign up failed', authRes.message || 'Unable to create account. Please try again.');
+            try {
+              const authRes = await ensureFirebaseSignupAuth?.({ email, password, username });
+              if (authRes && authRes.ok === false) {
+                Alert.alert('Sign up failed', authRes.message || 'Unable to create account. Please try again.');
+                return;
+              }
+
+              const res = await register({
+                firstName,
+                lastName,
+                email,
+                username,
+                password,
+                subscriptionTier: null,
+              });
+
+              if (!res.ok) {
+                Alert.alert('Sign up failed', res.message || 'Try again');
+                return;
+              }
+
+              Alert.alert('Account created', 'You can join a vault from Home using an invite code.');
+            } finally {
               setSubmitting(false);
-              return;
+              skipInFlightRef.current = false;
             }
-
-            const res = await register({
-              firstName,
-              lastName,
-              email,
-              username,
-              password,
-              subscriptionTier: null,
-            });
-
-            setSubmitting(false);
-
-            if (!res.ok) {
-              Alert.alert('Sign up failed', res.message || 'Try again');
-              return;
-            }
-
-            Alert.alert('Account created', 'You can join a vault from Home using an invite code.');
           },
         },
       ]
