@@ -1490,30 +1490,20 @@ export default function App() {
 
     const ownerId = getVaultOwnerId(vault);
     try {
-      const now = Date.now();
-      const uid = String(firebaseUser.uid);
-      const collectionId = `c${Date.now()}`;
-      await setDoc(
-        doc(db, 'vaults', String(selectedVaultId), 'collections', collectionId),
-        {
-          id: collectionId,
-          vaultId: String(selectedVaultId),
-          ownerId: ownerId ? String(ownerId) : uid,
-          createdBy: uid,
+      const out = await apiFetch(`/vaults/${encodeURIComponent(String(selectedVaultId))}/collections`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           name: newCollection.name.trim(),
           description: newCollection.description.trim(),
           manager: (newCollection.manager || '').trim(),
-          isDefault: false,
-          createdAt: now,
-          viewedAt: now,
-          editedAt: now,
           images,
           heroImage,
-        },
-        { merge: true }
-      );
+          ownerId: ownerId ? String(ownerId) : String(firebaseUser.uid),
+        }),
+      });
       setNewCollection(initialCollectionState);
-      setSelectedCollectionId(collectionId);
+      setSelectedCollectionId(out.collectionId);
       return true;
     } catch (err) {
       showAlert(err?.message ? String(err.message) : 'Failed to create collection.');
@@ -1556,19 +1546,15 @@ export default function App() {
     const ownerId = getVaultOwnerId(vault);
 
     try {
-      const now = Date.now();
-      const uid = String(firebaseUser.uid);
       const vaultId = String(collection.vaultId);
-      const assetId = `a${Date.now()}`;
 
-      await setDoc(
-        doc(db, 'vaults', vaultId, 'assets', assetId),
-        {
-          id: assetId,
+      await apiFetch(`/vaults/${encodeURIComponent(String(vaultId))}/assets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           vaultId,
-          ownerId: ownerId ? String(ownerId) : uid,
-          createdBy: uid,
           collectionId: String(selectedCollectionId),
+          ownerId: ownerId ? String(ownerId) : String(firebaseUser.uid),
           title: newAsset.title.trim(),
           type: newAsset.type.trim(),
           category: newAsset.category.trim(),
@@ -1581,12 +1567,8 @@ export default function App() {
           quantity: parseInt(newAsset.quantity) || 1,
           images,
           heroImage,
-          createdAt: now,
-          viewedAt: now,
-          editedAt: now,
-        },
-        { merge: true }
-      );
+        }),
+      });
 
       setNewAsset(initialAssetState);
       return true;
@@ -1630,7 +1612,11 @@ export default function App() {
         try {
           const vaultId = asset.vaultId || getVaultForAsset(asset)?.id || null;
           if (!vaultId) throw new Error('Missing vaultId');
-          await deleteDoc(doc(db, 'vaults', String(vaultId), 'assets', String(id)));
+          await apiFetch(`/vaults/${encodeURIComponent(String(vaultId))}/assets/${encodeURIComponent(String(id))}/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+          });
         } catch (err) {
           showAlert(err?.message ? String(err.message) : 'Failed to delete asset.');
         } finally {
@@ -1691,17 +1677,11 @@ export default function App() {
           const vaultId = collection.vaultId;
           if (!vaultId) throw new Error('Missing vaultId');
 
-          // Delete assets within collection (paged; avoid 500 doc batch limit).
-          while (true) {
-            const snap = await getDocs(query(collection(db, 'vaults', String(vaultId), 'assets'), where('collectionId', '==', String(collection.id)), limit(400)));
-            if (snap.empty) break;
-            const batch = writeBatch(db);
-            snap.docs.forEach((d) => batch.delete(d.ref));
-            await batch.commit();
-            if (snap.size < 400) break;
-          }
-
-          await deleteDoc(doc(db, 'vaults', String(vaultId), 'collections', String(collection.id)));
+          await apiFetch(`/vaults/${encodeURIComponent(String(vaultId))}/collections/${encodeURIComponent(String(collection.id))}/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+          });
           if (selectedCollectionId === collection.id) setSelectedCollectionId(null);
         } catch (err) {
           showAlert(err?.message ? String(err.message) : 'Failed to delete collection.');

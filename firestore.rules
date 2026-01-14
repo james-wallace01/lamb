@@ -175,17 +175,21 @@ service cloud.firestore {
       // Collections
       match /collections/{collectionId} {
         allow read: if myActiveMembership(vaultId);
-        allow create: if hasVaultPerm(vaultId, 'Create');
+        // Server-only: enforce tier caps via backend endpoints.
+        allow create: if false;
         allow update: if hasPerm(vaultId, 'COLLECTION', collectionId, 'Edit');
-        allow delete: if hasPerm(vaultId, 'COLLECTION', collectionId, 'Delete');
+        // Server-only: enforce tier caps via backend endpoints.
+        allow delete: if false;
       }
 
       // Assets
       match /assets/{assetId} {
         allow read: if myActiveMembership(vaultId);
-        allow create: if hasPerm(vaultId, 'COLLECTION', request.resource.data.collectionId, 'Create') || hasVaultPerm(vaultId, 'Create');
+        // Server-only: enforce tier caps via backend endpoints.
+        allow create: if false;
         allow update: if hasPerm(vaultId, 'ASSET', assetId, 'Edit');
-        allow delete: if hasPerm(vaultId, 'ASSET', assetId, 'Delete');
+        // Server-only: enforce tier caps via backend endpoints.
+        allow delete: if false;
       }
 
       // Audit events are immutable.

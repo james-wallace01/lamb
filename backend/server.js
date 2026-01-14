@@ -420,6 +420,228 @@ const isPaidStatus = (status) => {
   return s === 'active' || s === 'trialing' || s === 'past_due';
 };
 
+const normalizeTier = (tier) => {
+  const t = typeof tier === 'string' ? tier.trim().toUpperCase() : '';
+  if (t === 'BASIC' || t === 'PREMIUM' || t === 'PRO') return t;
+  return 'BASIC';
+};
+
+const TIER_LIMITS = Object.freeze({
+  BASIC: Object.freeze({
+    maxMembers: 2, // owner + 1 delegate
+    maxDelegates: 1,
+    maxAssets: 1000,
+    maxCollections: 200,
+    auditRetentionDays: 30,
+    maxBulkOpsPerDay: 10,
+  }),
+  PREMIUM: Object.freeze({
+    maxMembers: 6,
+    maxDelegates: 5,
+    maxAssets: 10000,
+    maxCollections: 1000,
+    auditRetentionDays: 180,
+    maxBulkOpsPerDay: 50,
+  }),
+  PRO: Object.freeze({
+    maxMembers: 21,
+    maxDelegates: 20,
+    maxAssets: 50000,
+    maxCollections: 5000,
+    auditRetentionDays: 365,
+    maxBulkOpsPerDay: 200,
+  }),
+});
+
+const getTierLimits = (tier) => {
+  const t = normalizeTier(tier);
+  return TIER_LIMITS[t] || TIER_LIMITS.BASIC;
+};
+
+const getVaultTier = async (db, vaultId) => {
+  if (!db || !vaultId) return 'BASIC';
+  try {
+    const snap = await db.collection('vaultSubscriptions').doc(String(vaultId)).get();
+    const data = snap.exists ? (snap.data() || {}) : {};
+    return normalizeTier(data.tier);
+  } catch {
+    return 'BASIC';
+  }
+};
+
+const assertUnderDelegateLimit = async (db, vaultId) => {
+  const tier = await getVaultTier(db, vaultId);
+  const limits = getTierLimits(tier);
+  const maxDelegates = Number.isFinite(limits.maxDelegates) ? limits.maxDelegates : 0;
+
+  // Paid feature implies at least 1 delegate allowed, but be defensive.
+  if (maxDelegates <= 0) {
+    return { ok: false, status: 403, error: 'Delegate limit reached' };
+  }
+
+  const snap = await db
+    .collection('vaults')
+    .doc(String(vaultId))
+    .collection('memberships')
+    .where('role', '==', 'DELEGATE')
+    .where('status', '==', 'ACTIVE')
+    .limit(maxDelegates + 1)
+    .get();
+
+  if (snap.size > maxDelegates) {
+    return {
+      ok: false,
+      status: 403,
+      error: `Delegate limit reached for ${tier} tier (max ${maxDelegates})`,
+      tier,
+      limits,
+    };
+  }
+
+  return { ok: true, tier, limits, activeDelegates: snap.size };
+};
+
+const makeRandomId = (prefix) => {
+  const p = typeof prefix === 'string' ? prefix : '';
+  const ts = Date.now();
+  const rand = Math.floor(Math.random() * 1e9);
+  return `${p}${ts}_${rand}`;
+};
+
+const getVaultUsageRef = (db, vaultId) => {
+  return db.collection('vaults').doc(String(vaultId)).collection('stats').doc('usage');
+};
+
+const computeCollectionCount = async (colRef) => {
+  if (!colRef) return 0;
+  try {
+    if (typeof colRef.count === 'function') {
+      const agg = await colRef.count().get();
+      const data = agg && typeof agg.data === 'function' ? agg.data() : {};
+      const n = typeof data?.count === 'number' ? data.count : 0;
+      return n;
+    }
+  } catch {
+    // fall through
+  }
+
+  // Fallback: page through document ids.
+  let total = 0;
+  let last = null;
+  while (true) {
+    let q = colRef.orderBy(firebaseAdmin.firestore.FieldPath.documentId()).limit(1000);
+    if (last) q = q.startAfter(last);
+    const snap = await q.get();
+    total += snap.size;
+    if (snap.empty || snap.size < 1000) break;
+    last = snap.docs[snap.docs.length - 1];
+  }
+  return total;
+};
+
+const ensureVaultUsage = async (db, vaultId) => {
+  const ref = getVaultUsageRef(db, vaultId);
+  const snap = await ref.get();
+  if (snap.exists) {
+    const d = snap.data() || {};
+    return {
+      assetsCount: typeof d.assetsCount === 'number' ? d.assetsCount : 0,
+      collectionsCount: typeof d.collectionsCount === 'number' ? d.collectionsCount : 0,
+    };
+  }
+
+  const vaultRef = db.collection('vaults').doc(String(vaultId));
+  const [assetsCount, collectionsCount] = await Promise.all([
+    computeCollectionCount(vaultRef.collection('assets')),
+    computeCollectionCount(vaultRef.collection('collections')),
+  ]);
+
+  await ref.set(
+    {
+      assetsCount,
+      collectionsCount,
+      computedAt: Date.now(),
+      updatedAt: Date.now(),
+    },
+    { merge: false }
+  );
+
+  return { assetsCount, collectionsCount };
+};
+
+const getGrantDoc = async (db, vaultId, { scopeType, scopeId, userId }) => {
+  if (!db || !vaultId || !scopeType || !scopeId || !userId) return null;
+  const id = `${String(scopeType)}:${String(scopeId)}:${String(userId)}`;
+  const snap = await db.collection('vaults').doc(String(vaultId)).collection('permissionGrants').doc(id).get();
+  if (!snap.exists) return null;
+  return { id: snap.id, data: snap.data() || {} };
+};
+
+const canVaultCreate = (membershipData) => {
+  if (!membershipData) return false;
+  if (membershipData.role === 'OWNER') return true;
+  const perms = membershipData.permissions && typeof membershipData.permissions === 'object' ? membershipData.permissions : null;
+  return !!(perms && perms.Create === true);
+};
+
+const assertCanCreateCollection = async (db, vaultId, uid) => {
+  const m = await getMembershipDoc(db, vaultId, uid);
+  if (!m) return { ok: false, status: 403, error: 'Not a vault member' };
+  if ((m.data || {}).status !== 'ACTIVE') return { ok: false, status: 403, error: 'Membership inactive' };
+  if (canVaultCreate(m.data)) return { ok: true };
+  return { ok: false, status: 403, error: 'Create permission required' };
+};
+
+const assertCanCreateAsset = async (db, vaultId, uid, collectionId) => {
+  const m = await getMembershipDoc(db, vaultId, uid);
+  if (!m) return { ok: false, status: 403, error: 'Not a vault member' };
+  if ((m.data || {}).status !== 'ACTIVE') return { ok: false, status: 403, error: 'Membership inactive' };
+  if (m.data.role === 'OWNER') return { ok: true };
+  if (canVaultCreate(m.data)) return { ok: true };
+
+  if (collectionId) {
+    const grant = await getGrantDoc(db, vaultId, { scopeType: 'COLLECTION', scopeId: collectionId, userId: uid });
+    const perms = grant && grant.data && typeof grant.data.permissions === 'object' ? grant.data.permissions : null;
+    if (perms && perms.Create === true) return { ok: true };
+  }
+
+  return { ok: false, status: 403, error: 'Create permission required' };
+};
+
+const assertUnderCollectionLimit = async (db, vaultId) => {
+  const tier = await getVaultTier(db, vaultId);
+  const limits = getTierLimits(tier);
+  const max = Number.isFinite(limits.maxCollections) ? limits.maxCollections : 0;
+  if (max <= 0) return { ok: false, status: 403, error: 'Collection limit reached' };
+  await ensureVaultUsage(db, vaultId);
+
+  const ref = getVaultUsageRef(db, vaultId);
+  const snap = await ref.get();
+  const d = snap.exists ? (snap.data() || {}) : {};
+  const collectionsCount = typeof d.collectionsCount === 'number' ? d.collectionsCount : 0;
+  if (collectionsCount >= max) {
+    return { ok: false, status: 403, error: `Collection limit reached for ${tier} tier (max ${max})`, tier, limits };
+  }
+  return { ok: true, tier, limits, collectionsCount };
+};
+
+const assertUnderAssetLimit = async (db, vaultId) => {
+  const tier = await getVaultTier(db, vaultId);
+  const limits = getTierLimits(tier);
+  const max = Number.isFinite(limits.maxAssets) ? limits.maxAssets : 0;
+  if (max <= 0) return { ok: false, status: 403, error: 'Asset limit reached' };
+  await ensureVaultUsage(db, vaultId);
+
+  const ref = getVaultUsageRef(db, vaultId);
+  const snap = await ref.get();
+  const d = snap.exists ? (snap.data() || {}) : {};
+  const assetsCount = typeof d.assetsCount === 'number' ? d.assetsCount : 0;
+  if (assetsCount >= max) {
+    return { ok: false, status: 403, error: `Asset limit reached for ${tier} tier (max ${max})`, tier, limits };
+  }
+  return { ok: true, tier, limits, assetsCount };
+};
+
 const getMembershipDoc = async (db, vaultId, userId) => {
   const snap = await db.collection('vaults').doc(String(vaultId)).collection('memberships').doc(String(userId)).get();
   return snap.exists ? { id: snap.id, data: snap.data() || {} } : null;
@@ -1640,6 +1862,9 @@ app.post('/vaults/:vaultId/invitations', requireFirebaseAuth, sensitiveRateLimit
     const paid = await assertVaultPaid(db, vaultId);
     if (!paid.ok) return res.status(paid.status).json({ error: paid.error });
 
+    const withinLimit = await assertUnderDelegateLimit(db, vaultId);
+    if (!withinLimit.ok) return res.status(withinLimit.status).json({ error: withinLimit.error });
+
     const code = generateInviteCode(vaultId);
     const now = Date.now();
     const expiresAt = now + 14 * 24 * 60 * 60 * 1000;
@@ -1749,6 +1974,299 @@ app.post('/vaults/:vaultId/users/resolve', requireFirebaseAuth, sensitiveRateLim
   } catch (err) {
     console.error('Error resolving user:', err);
     return res.status(500).json({ error: err?.message || 'Failed to resolve user' });
+  }
+});
+
+// Server-side create/delete for collections/assets.
+// These exist to enforce tier caps (max collections/assets) and prevent client-side bypass.
+app.post('/vaults/:vaultId/collections', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const vaultId = String(req.params.vaultId || '');
+    if (!vaultId) return res.status(400).json({ error: 'Missing vaultId' });
+
+    const uid = String(req.firebaseUser?.uid || '');
+    if (!uid) return res.status(401).json({ error: 'Missing authenticated user' });
+
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    if (!name) return res.status(400).json({ error: 'Missing name' });
+
+    const can = await assertCanCreateCollection(db, vaultId, uid);
+    if (!can.ok) return res.status(can.status).json({ error: can.error });
+
+    const within = await assertUnderCollectionLimit(db, vaultId);
+    if (!within.ok) return res.status(within.status).json({ error: within.error });
+
+    const vaultSnap = await db.collection('vaults').doc(vaultId).get();
+    const vault = vaultSnap.exists ? (vaultSnap.data() || {}) : {};
+    const activeOwnerId = typeof vault.activeOwnerId === 'string' ? vault.activeOwnerId : uid;
+    const ownerId = typeof req.body?.ownerId === 'string' && req.body.ownerId.trim() ? req.body.ownerId.trim() : activeOwnerId;
+
+    const now = Date.now();
+    const id = makeRandomId('c');
+    const usageRef = getVaultUsageRef(db, vaultId);
+    const ref = db.collection('vaults').doc(vaultId).collection('collections').doc(id);
+
+    await db.runTransaction(async (tx) => {
+      const usageSnap = await tx.get(usageRef);
+      const usage = usageSnap.exists ? (usageSnap.data() || {}) : {};
+      const collectionsCount = typeof usage.collectionsCount === 'number' ? usage.collectionsCount : 0;
+      const maxCollections = Number.isFinite(within?.limits?.maxCollections) ? within.limits.maxCollections : 0;
+      if (maxCollections > 0 && collectionsCount >= maxCollections) {
+        throw new Error(`Collection limit reached for ${within.tier} tier (max ${maxCollections})`);
+      }
+
+      tx.set(ref, {
+        id,
+        vaultId,
+        ownerId,
+        name: String(name).slice(0, 120),
+        description: typeof req.body?.description === 'string' ? req.body.description.slice(0, 500) : '',
+        manager: typeof req.body?.manager === 'string' ? req.body.manager.slice(0, 120) : '',
+        createdBy: uid,
+        createdAt: now,
+        editedAt: now,
+        viewedAt: now,
+        images: Array.isArray(req.body?.images) ? req.body.images.filter(Boolean).slice(0, 4) : [],
+        heroImage: typeof req.body?.heroImage === 'string' ? req.body.heroImage : null,
+        isDefault: false,
+      });
+
+      tx.set(
+        usageRef,
+        {
+          collectionsCount: collectionsCount + 1,
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+    });
+
+    return res.json({ ok: true, collectionId: id });
+  } catch (err) {
+    const msg = err?.message || 'Failed to create collection';
+    return res.status(400).json({ error: msg });
+  }
+});
+
+app.post('/vaults/:vaultId/assets', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const vaultId = String(req.params.vaultId || '');
+    if (!vaultId) return res.status(400).json({ error: 'Missing vaultId' });
+
+    const uid = String(req.firebaseUser?.uid || '');
+    if (!uid) return res.status(401).json({ error: 'Missing authenticated user' });
+
+    const collectionId = typeof req.body?.collectionId === 'string' ? req.body.collectionId.trim() : '';
+    if (!collectionId) return res.status(400).json({ error: 'Missing collectionId' });
+
+    const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
+    if (!title) return res.status(400).json({ error: 'Missing title' });
+
+    const can = await assertCanCreateAsset(db, vaultId, uid, collectionId);
+    if (!can.ok) return res.status(can.status).json({ error: can.error });
+
+    const within = await assertUnderAssetLimit(db, vaultId);
+    if (!within.ok) return res.status(within.status).json({ error: within.error });
+
+    const vaultSnap = await db.collection('vaults').doc(vaultId).get();
+    const vault = vaultSnap.exists ? (vaultSnap.data() || {}) : {};
+    const activeOwnerId = typeof vault.activeOwnerId === 'string' ? vault.activeOwnerId : uid;
+    const ownerId = typeof req.body?.ownerId === 'string' && req.body.ownerId.trim() ? req.body.ownerId.trim() : activeOwnerId;
+
+    const now = Date.now();
+    const id = makeRandomId('a');
+    const usageRef = getVaultUsageRef(db, vaultId);
+    const ref = db.collection('vaults').doc(vaultId).collection('assets').doc(id);
+
+    await db.runTransaction(async (tx) => {
+      const usageSnap = await tx.get(usageRef);
+      const usage = usageSnap.exists ? (usageSnap.data() || {}) : {};
+      const assetsCount = typeof usage.assetsCount === 'number' ? usage.assetsCount : 0;
+      const maxAssets = Number.isFinite(within?.limits?.maxAssets) ? within.limits.maxAssets : 0;
+      if (maxAssets > 0 && assetsCount >= maxAssets) {
+        throw new Error(`Asset limit reached for ${within.tier} tier (max ${maxAssets})`);
+      }
+
+      tx.set(ref, {
+        id,
+        vaultId,
+        ownerId,
+        collectionId,
+        title: String(title).slice(0, 120),
+        type: typeof req.body?.type === 'string' ? req.body.type.slice(0, 120) : '',
+        category: typeof req.body?.category === 'string' ? req.body.category.slice(0, 120) : '',
+        description: typeof req.body?.description === 'string' ? req.body.description.slice(0, 2000) : '',
+        manager: typeof req.body?.manager === 'string' ? req.body.manager.slice(0, 120) : '',
+        value: typeof req.body?.value === 'number' ? req.body.value : 0,
+        estimatedValue: typeof req.body?.estimatedValue === 'number' ? req.body.estimatedValue : 0,
+        rrp: typeof req.body?.rrp === 'number' ? req.body.rrp : 0,
+        purchasePrice: typeof req.body?.purchasePrice === 'number' ? req.body.purchasePrice : 0,
+        quantity: typeof req.body?.quantity === 'number' ? req.body.quantity : 1,
+        createdBy: uid,
+        createdAt: now,
+        editedAt: now,
+        viewedAt: now,
+        images: Array.isArray(req.body?.images) ? req.body.images.filter(Boolean).slice(0, 4) : [],
+        heroImage: typeof req.body?.heroImage === 'string' ? req.body.heroImage : null,
+      });
+
+      tx.set(
+        usageRef,
+        {
+          assetsCount: assetsCount + 1,
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+    });
+
+    return res.json({ ok: true, assetId: id });
+  } catch (err) {
+    const msg = err?.message || 'Failed to create asset';
+    return res.status(400).json({ error: msg });
+  }
+});
+
+app.post('/vaults/:vaultId/assets/:assetId/delete', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const vaultId = String(req.params.vaultId || '');
+    const assetId = String(req.params.assetId || '');
+    if (!vaultId || !assetId) return res.status(400).json({ error: 'Missing vaultId or assetId' });
+
+    const uid = String(req.firebaseUser?.uid || '');
+    if (!uid) return res.status(401).json({ error: 'Missing authenticated user' });
+
+    const m = await getMembershipDoc(db, vaultId, uid);
+    if (!m || (m.data || {}).status !== 'ACTIVE') return res.status(403).json({ error: 'Membership required' });
+
+    // Permission: owners always; delegates require Delete (vault or asset-scope grant).
+    let allowed = (m.data || {}).role === 'OWNER';
+    const vaultPerms = m.data && typeof m.data.permissions === 'object' ? m.data.permissions : null;
+    if (!allowed && vaultPerms && vaultPerms.Delete === true) allowed = true;
+
+    if (!allowed) {
+      const grant = await getGrantDoc(db, vaultId, { scopeType: 'ASSET', scopeId: assetId, userId: uid });
+      const perms = grant && grant.data && typeof grant.data.permissions === 'object' ? grant.data.permissions : null;
+      if (perms && perms.Delete === true) allowed = true;
+    }
+
+    if (!allowed) return res.status(403).json({ error: 'Delete permission required' });
+
+    await ensureVaultUsage(db, vaultId);
+    const usageRef = getVaultUsageRef(db, vaultId);
+    const assetRef = db.collection('vaults').doc(vaultId).collection('assets').doc(assetId);
+    const now = Date.now();
+
+    await db.runTransaction(async (tx) => {
+      const a = await tx.get(assetRef);
+      if (!a.exists) return;
+      tx.delete(assetRef);
+
+      const usageSnap = await tx.get(usageRef);
+      const usage = usageSnap.exists ? (usageSnap.data() || {}) : {};
+      const assetsCount = typeof usage.assetsCount === 'number' ? usage.assetsCount : 0;
+      tx.set(
+        usageRef,
+        {
+          assetsCount: Math.max(0, assetsCount - 1),
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+    });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || 'Failed to delete asset' });
+  }
+});
+
+app.post('/vaults/:vaultId/collections/:collectionId/delete', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const vaultId = String(req.params.vaultId || '');
+    const collectionId = String(req.params.collectionId || '');
+    if (!vaultId || !collectionId) return res.status(400).json({ error: 'Missing vaultId or collectionId' });
+
+    const uid = String(req.firebaseUser?.uid || '');
+    if (!uid) return res.status(401).json({ error: 'Missing authenticated user' });
+
+    const m = await getMembershipDoc(db, vaultId, uid);
+    if (!m || (m.data || {}).status !== 'ACTIVE') return res.status(403).json({ error: 'Membership required' });
+
+    // Permission: owners always; delegates require Delete (vault or collection-scope grant).
+    let allowed = (m.data || {}).role === 'OWNER';
+    const vaultPerms = m.data && typeof m.data.permissions === 'object' ? m.data.permissions : null;
+    if (!allowed && vaultPerms && vaultPerms.Delete === true) allowed = true;
+
+    if (!allowed) {
+      const grant = await getGrantDoc(db, vaultId, { scopeType: 'COLLECTION', scopeId: collectionId, userId: uid });
+      const perms = grant && grant.data && typeof grant.data.permissions === 'object' ? grant.data.permissions : null;
+      if (perms && perms.Delete === true) allowed = true;
+    }
+
+    if (!allowed) return res.status(403).json({ error: 'Delete permission required' });
+
+    const vaultRef = db.collection('vaults').doc(vaultId);
+    const colRef = vaultRef.collection('collections').doc(collectionId);
+    const assetsRef = vaultRef.collection('assets');
+
+    // Delete assets in pages to avoid batch limits.
+    let deletedAssets = 0;
+    let last = null;
+    while (true) {
+      let q = assetsRef
+        .where('collectionId', '==', String(collectionId))
+        .orderBy(firebaseAdmin.firestore.FieldPath.documentId())
+        .limit(400);
+      if (last) q = q.startAfter(last);
+      const snap = await q.get();
+      if (snap.empty) break;
+
+      const batch = db.batch();
+      snap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+
+      deletedAssets += snap.size;
+      if (snap.size < 400) break;
+      last = snap.docs[snap.docs.length - 1];
+    }
+
+    await colRef.delete();
+
+    // Best-effort usage counter updates.
+    await ensureVaultUsage(db, vaultId);
+    const usageRef = getVaultUsageRef(db, vaultId);
+    await db.runTransaction(async (tx) => {
+      const usageSnap = await tx.get(usageRef);
+      const usage = usageSnap.exists ? (usageSnap.data() || {}) : {};
+      const assetsCount = typeof usage.assetsCount === 'number' ? usage.assetsCount : 0;
+      const collectionsCount = typeof usage.collectionsCount === 'number' ? usage.collectionsCount : 0;
+      tx.set(
+        usageRef,
+        {
+          assetsCount: Math.max(0, assetsCount - deletedAssets),
+          collectionsCount: Math.max(0, collectionsCount - 1),
+          updatedAt: Date.now(),
+        },
+        { merge: true }
+      );
+    });
+
+    return res.json({ ok: true, deletedAssets });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || 'Failed to delete collection' });
   }
 });
 
@@ -1909,6 +2427,9 @@ app.post('/invitations/accept', requireFirebaseAuth, sensitiveRateLimiter, async
       // If already a member, treat as idempotent accept.
       await invRef.set({ status: 'ACCEPTED', acceptedAt: Date.now(), acceptedByUid: uid, invitee_uid: uid }, { merge: true });
     } else {
+      const withinLimit = await assertUnderDelegateLimit(db, vaultId);
+      if (!withinLimit.ok) return res.status(withinLimit.status).json({ error: withinLimit.error });
+
       await membershipRef.set(
         {
           user_id: uid,

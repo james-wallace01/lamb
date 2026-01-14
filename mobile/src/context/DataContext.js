@@ -1829,21 +1829,21 @@ export function DataProvider({ children }) {
     };
 
     const addCollection = async ({ vaultId, name, images = [], heroImage }) => {
-      const createdAt = Date.now();
       const normalizedImages = Array.isArray(images) ? images.filter(Boolean).slice(0, 4) : [];
-      const id = `c${Date.now()}`;
-      const payload = withMedia({
-        id,
-        vaultId: String(vaultId),
-        name: clampItemTitle((name || 'Untitled').trim()),
-        createdAt,
-        viewedAt: createdAt,
-        editedAt: createdAt,
-        images: normalizedImages,
-        heroImage: heroImage || normalizedImages[0] || null,
+      const vId = String(vaultId);
+      const resp = await apiFetch(`${API_URL}/vaults/${encodeURIComponent(vId)}/collections`, {
+        requireAuth: true,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: clampItemTitle((name || 'Untitled').trim()),
+          images: normalizedImages,
+          heroImage: heroImage || normalizedImages[0] || null,
+        }),
       });
-      await setDoc(doc(firestore, 'vaults', String(vaultId), 'collections', id), payload, { merge: true });
-      return { ok: true, collectionId: id };
+      const json = await resp.json().catch(() => null);
+      if (!resp.ok) return { ok: false, message: json?.error || 'Unable to create collection' };
+      return { ok: true, collectionId: json?.collectionId || null };
     };
 
     const canCreateAssetsInCollection = (collectionId, userId) => {
@@ -1853,26 +1853,25 @@ export function DataProvider({ children }) {
     };
 
     const addAsset = async ({ vaultId, collectionId, title, type, category, images = [], heroImage }) => {
-      const createdAt = Date.now();
       const normalizedImages = Array.isArray(images) ? images.filter(Boolean).slice(0, 4) : [];
-      const id = `a${Date.now()}`;
-      const payload = withMedia({
-        id,
-        vaultId: String(vaultId),
-        collectionId: String(collectionId),
-        title: clampItemTitle((title || 'Untitled').trim()),
-        type: type || '',
-        category: category || '',
-        manager: currentUser?.username || '',
-        createdAt,
-        viewedAt: createdAt,
-        editedAt: createdAt,
-        quantity: 1,
-        images: normalizedImages,
-        heroImage: heroImage || normalizedImages[0] || null,
+      const vId = String(vaultId);
+      const resp = await apiFetch(`${API_URL}/vaults/${encodeURIComponent(vId)}/assets`, {
+        requireAuth: true,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vaultId: vId,
+          collectionId: String(collectionId),
+          title: clampItemTitle((title || 'Untitled').trim()),
+          type: type || '',
+          category: category || '',
+          images: normalizedImages,
+          heroImage: heroImage || normalizedImages[0] || null,
+        }),
       });
-      await setDoc(doc(firestore, 'vaults', String(vaultId), 'assets', id), payload, { merge: true });
-      return { ok: true, assetId: id };
+      const json = await resp.json().catch(() => null);
+      if (!resp.ok) return { ok: false, message: json?.error || 'Unable to create asset' };
+      return { ok: true, assetId: json?.assetId || null };
     };
 
     const shareVault = async ({ vaultId, userId, role = 'reviewer', canCreateCollections = false }) => {
@@ -2152,14 +2151,30 @@ export function DataProvider({ children }) {
   const deleteCollection = async (collectionId) => {
     const collection = collections.find((c) => c.id === collectionId);
     if (!collection) return { ok: false, message: 'Collection not found' };
-    await deleteDoc(doc(firestore, 'vaults', String(collection.vaultId), 'collections', String(collectionId)));
-    return { ok: true };
+    const vId = String(collection.vaultId);
+    const resp = await apiFetch(`${API_URL}/vaults/${encodeURIComponent(vId)}/collections/${encodeURIComponent(String(collectionId))}/delete`, {
+      requireAuth: true,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const json = await resp.json().catch(() => null);
+    if (!resp.ok) return { ok: false, message: json?.error || 'Unable to delete collection' };
+    return { ok: true, deletedAssets: json?.deletedAssets || 0 };
   };
 
   const deleteAsset = async (assetId) => {
     const asset = assets.find((a) => a.id === assetId);
     if (!asset) return { ok: false, message: 'Asset not found' };
-    await deleteDoc(doc(firestore, 'vaults', String(asset.vaultId), 'assets', String(assetId)));
+    const vId = String(asset.vaultId);
+    const resp = await apiFetch(`${API_URL}/vaults/${encodeURIComponent(vId)}/assets/${encodeURIComponent(String(assetId))}/delete`, {
+      requireAuth: true,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const json = await resp.json().catch(() => null);
+    if (!resp.ok) return { ok: false, message: json?.error || 'Unable to delete asset' };
     return { ok: true };
   };
 
