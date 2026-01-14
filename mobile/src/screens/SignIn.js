@@ -4,34 +4,10 @@ import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
 
 export default function SignIn({ navigation }) {
-  const { login, loading, biometricUserId, biometricLogin, users, resetAllData, theme } = useData();
+  const { login, loading, biometricUserId, biometricLogin, users, theme } = useData();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
-
-  const handleClearLocalData = () => {
-    Alert.alert(
-      'Clear Local Data',
-      'This removes all locally stored accounts and content on this device. Remote accounts are not affected.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await resetAllData?.();
-              setIdentifier('');
-              setPassword('');
-              Alert.alert('Cleared', 'Local data has been cleared.');
-            } catch {
-              Alert.alert('Error', 'Could not clear local data.');
-            }
-          },
-        },
-      ]
-    );
-  };
 
   const biometricUserLabel = (() => {
     if (!biometricUserId) return null;
@@ -128,10 +104,6 @@ export default function SignIn({ navigation }) {
 
       <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
         <Text style={[styles.link, { color: theme.link }]}>Need an account? Sign up</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity onPress={handleClearLocalData} disabled={submitting || loading}>
-        <Text style={[styles.link, { color: theme.textSecondary, marginTop: 8 }]}>Clear local data</Text>
       </TouchableOpacity>
     </View>
   );

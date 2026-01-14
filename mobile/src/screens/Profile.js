@@ -12,7 +12,6 @@ export default function Profile({ navigation }) {
   const {
     currentUser,
     updateCurrentUser,
-    resetAllData,
     vaults,
     collections,
     assets,
@@ -355,28 +354,6 @@ export default function Profile({ navigation }) {
     );
   };
 
-  const handleResetTestData = () => {
-    Alert.alert(
-      'Clear all local data',
-      'This removes all local users, profiles, subscriptions, vaults, and assets from this device. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: async () => {
-            const res = await resetAllData?.();
-            if (!res?.ok) {
-              Alert.alert('Could not clear data', res?.message || 'Please try again');
-              return;
-            }
-            Alert.alert('Cleared', 'All local test data has been removed.');
-          },
-        },
-      ]
-    );
-  };
-
   return (
     <>
     <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
@@ -658,10 +635,6 @@ export default function Profile({ navigation }) {
               )}
               <TouchableOpacity style={[styles.button, styles.deleteButton]} onPress={handleDeleteAccount}>
                 <Text style={[styles.buttonText, styles.deleteButtonText]}>Delete Account</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={[styles.button, styles.deleteButton]} onPress={handleResetTestData}>
-                <Text style={[styles.buttonText, styles.deleteButtonText]}>Clear All Local Test Data</Text>
               </TouchableOpacity>
             </View>
 

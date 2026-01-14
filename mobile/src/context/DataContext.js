@@ -1499,33 +1499,6 @@ export function DataProvider({ children }) {
     }
   };
 
-  // Reset all local data - useful for testing
-  const resetAllData = async () => {
-    try {
-      setCurrentUser(null);
-      setUsers([]);
-      setVaults([]);
-      setCollections([]);
-      setAssets([]);
-      await removeItem(LAST_ACTIVITY_KEY);
-      try {
-        await SecureStore.deleteItemAsync(BIOMETRIC_SECURE_USER_ID_KEY);
-        await SecureStore.deleteItemAsync(BIOMETRIC_ENABLED_USER_ID_KEY);
-      } catch {
-        // ignore
-      }
-      if (isFirebaseAuthEnabled()) {
-        await signOut(firebaseAuth).catch(() => {});
-      }
-      await removeItem(DATA_KEY);
-      console.log('All data cleared successfully');
-      return { ok: true, message: 'All data cleared' };
-    } catch (error) {
-      console.error('Error clearing data:', error);
-      return { ok: false, message: error.message };
-    }
-  };
-
   const ensureFirebaseSignupAuth = async ({ email: rawEmail, password: rawPassword, username: rawUsername } = {}) => {
     const em = validateEmail(rawEmail);
     if (!em.ok) return { ok: false, message: em.message };
@@ -2430,7 +2403,6 @@ export function DataProvider({ children }) {
     // Read-only / session ops
     login: wrapOnlineAsync(login),
     logout,
-    resetAllData,
     // Auth / profile
     ensureFirebaseSignupAuth: wrapOnlineAsync(ensureFirebaseSignupAuth),
     register: wrapOnlineAsync(register),

@@ -10,7 +10,7 @@ import { API_URL } from '../config/api';
 import { apiFetch } from '../utils/apiFetch';
 
 export default function SignUp({ navigation }) {
-  const { register, loading, theme, resetAllData, ensureFirebaseSignupAuth } = useData();
+  const { register, loading, theme, ensureFirebaseSignupAuth } = useData();
   const insets = useSafeAreaInsets();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -246,32 +246,6 @@ export default function SignUp({ navigation }) {
     Linking.openURL(url).catch(() => {});
   };
 
-  const handleClearLocalData = () => {
-    Alert.alert(
-      'Clear Local Data',
-      'This removes all locally stored accounts and content on this device. Remote accounts are not affected.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await resetAllData?.();
-              setFirstName('');
-              setLastName('');
-              setEmail('');
-              setUsername('');
-              setPassword('');
-              Alert.alert('Cleared', 'Local data has been cleared.');
-            } catch {
-              Alert.alert('Error', 'Could not clear local data.');
-            }
-          },
-        },
-      ]
-    );
-  };
 
   const footerSpacer = 72 + (insets?.bottom || 0);
 
@@ -362,10 +336,6 @@ export default function SignUp({ navigation }) {
       
       <TouchableOpacity onPress={() => navigation.navigate('SignIn')}>
         <Text style={[styles.link, { color: theme.link }]}>Have an account? Sign in</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity onPress={handleClearLocalData} disabled={loading}>
-        <Text style={[styles.link, { color: theme.textSecondary, marginTop: 8, marginBottom: 24 }]}>Clear local data</Text>
       </TouchableOpacity>
 
       <View style={[styles.legalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
