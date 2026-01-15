@@ -342,20 +342,24 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                     <ScrollView style={{ maxHeight: 160 }} showsVerticalScrollIndicator={false}>
                       {pendingInvites.map((inv) => (
                         <View key={inv.id} style={[styles.sharedRow, { backgroundColor: theme.inputBg }]}> 
-                          <View style={styles.sharedInfo}>
+                          <View style={styles.sharedHeaderRow}>
                             <View style={styles.sharedInfoLeft}>
-                              <Text style={[styles.sharedName, { color: theme.text }]}>{inv.invitee_email || inv.email || inv.id}</Text>
+                              <Text style={[styles.sharedName, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
+                                {inv.invitee_email || inv.email || inv.id}
+                              </Text>
                             </View>
-                            <View style={[styles.statusPill, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                              <Text style={[styles.statusText, { color: theme.textMuted }]}>Pending</Text>
+                            <View style={styles.sharedRightActions}>
+                              <View style={[styles.statusPill, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                                <Text style={[styles.statusText, { color: theme.textMuted }]}>Pending</Text>
+                              </View>
+                              <TouchableOpacity
+                                style={[styles.removeBtn, { backgroundColor: theme.surface, borderColor: '#dc2626' }]}
+                                onPress={() => handleRevokeInvite(inv.id)}
+                              >
+                                <Text style={[styles.removeText, { color: '#dc2626' }]}>Revoke</Text>
+                              </TouchableOpacity>
                             </View>
                           </View>
-                          <TouchableOpacity
-                            style={[styles.removeBtn, { backgroundColor: theme.surface, borderColor: '#dc2626' }]}
-                            onPress={() => handleRevokeInvite(inv.id)}
-                          >
-                            <Text style={[styles.removeText, { color: '#dc2626' }]}>Revoke</Text>
-                          </TouchableOpacity>
                         </View>
                       ))}
                     </ScrollView>
@@ -462,86 +466,90 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                   {existingShares.map((s, idx) => (
                     <View key={s.userId}>
                       <View style={[styles.sharedRow, { backgroundColor: theme.inputBg }]}>
-                        <View style={styles.sharedInfo}>
+                        <View style={styles.sharedHeaderRow}>
                           <View style={styles.sharedInfoLeft}>
-                            <Text style={[styles.sharedName, { color: theme.text }]}>{s.user?.username || s.userId}</Text>
+                            <Text style={[styles.sharedName, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
+                              {s.user?.username || s.userId}
+                            </Text>
                             {s.user?.email ? (
-                              <Text style={[styles.sharedMeta, { color: theme.textMuted }]}>{s.user.email}</Text>
+                              <Text style={[styles.sharedMeta, { color: theme.textMuted }]} numberOfLines={1} ellipsizeMode="tail">
+                                {s.user.email}
+                              </Text>
                             ) : null}
                           </View>
-                          <View style={[styles.statusPill, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                            <Text style={[styles.statusText, { color: theme.textMuted }]}>Active</Text>
+
+                          <View style={styles.sharedRightActions}>
+                            <View style={[styles.statusPill, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                              <Text style={[styles.statusText, { color: theme.textMuted }]}>Active</Text>
+                            </View>
+                            <TouchableOpacity
+                              style={[styles.removeBtn, { backgroundColor: theme.surface, borderColor: '#dc2626' }]}
+                              onPress={() => handleRemove(s.userId)}
+                            >
+                              <Text style={[styles.removeText, { color: '#dc2626' }]}>Remove</Text>
+                            </TouchableOpacity>
                           </View>
                         </View>
-                        <View style={styles.sharedActions}>
-                          {(targetType === 'vault' || targetType === 'collection') && (
-                            <>
-                              <Text style={[styles.label, { color: theme.textMuted }]}>Permissions</Text>
-                              <View style={styles.roleRow}>
-                                {targetType === 'vault' && (
-                                  <>
-                                    <View style={styles.createLabelWrap}>
-                                      <Text style={[styles.createLabelText, { color: theme.textMuted }]}>Create Collections</Text>
-                                    </View>
-                                    <TouchableOpacity
-                                      style={[
-                                        styles.roleChipSmall,
-                                        { borderColor: theme.border, backgroundColor: theme.inputBg },
-                                        !s.canCreateCollections && { borderColor: '#2563eb', backgroundColor: theme.surface },
-                                      ]}
-                                      onPress={() => handleUpdate(s.userId, DEFAULT_DELEGATE_ROLE, false)}
-                                    >
-                                      <Text style={[styles.roleText, { color: theme.text }]}>Disabled</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                      style={[
-                                        styles.roleChipSmall,
-                                        { borderColor: theme.border, backgroundColor: theme.inputBg },
-                                        !!s.canCreateCollections && { borderColor: '#2563eb', backgroundColor: theme.surface },
-                                      ]}
-                                      onPress={() => handleUpdate(s.userId, DEFAULT_DELEGATE_ROLE, true)}
-                                    >
-                                      <Text style={[styles.roleText, { color: theme.text }]}>Enabled</Text>
-                                    </TouchableOpacity>
-                                  </>
-                                )}
-                                {targetType === 'collection' && (
-                                  <>
-                                    <View style={styles.createLabelWrap}>
-                                      <Text style={[styles.createLabelText, { color: theme.textMuted }]}>Create Assets</Text>
-                                    </View>
-                                    <TouchableOpacity
-                                      style={[
-                                        styles.roleChipSmall,
-                                        { borderColor: theme.border, backgroundColor: theme.inputBg },
-                                        !s.canCreateAssets && { borderColor: '#2563eb', backgroundColor: theme.surface },
-                                      ]}
-                                      onPress={() => handleUpdate(s.userId, DEFAULT_DELEGATE_ROLE, false)}
-                                    >
-                                      <Text style={[styles.roleText, { color: theme.text }]}>Disabled</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                      style={[
-                                        styles.roleChipSmall,
-                                        { borderColor: theme.border, backgroundColor: theme.inputBg },
-                                        !!s.canCreateAssets && { borderColor: '#2563eb', backgroundColor: theme.surface },
-                                      ]}
-                                      onPress={() => handleUpdate(s.userId, DEFAULT_DELEGATE_ROLE, true)}
-                                    >
-                                      <Text style={[styles.roleText, { color: theme.text }]}>Enabled</Text>
-                                    </TouchableOpacity>
-                                  </>
-                                )}
-                              </View>
-                            </>
-                          )}
-                          <TouchableOpacity
-                            style={[styles.removeBtn, { backgroundColor: theme.surface, borderColor: '#dc2626' }]}
-                            onPress={() => handleRemove(s.userId)}
-                          >
-                            <Text style={[styles.removeText, { color: '#dc2626' }]}>Remove</Text>
-                          </TouchableOpacity>
-                        </View>
+
+                        {(targetType === 'vault' || targetType === 'collection') && (
+                          <View style={styles.sharedPermissionsRow}>
+                            {targetType === 'vault' && (
+                              <>
+                                <View style={styles.createLabelWrap}>
+                                  <Text style={[styles.createLabelText, { color: theme.textMuted }]}>Create Collections</Text>
+                                </View>
+                                <TouchableOpacity
+                                  style={[
+                                    styles.roleChipSmall,
+                                    { borderColor: theme.border, backgroundColor: theme.inputBg },
+                                    !s.canCreateCollections && { borderColor: '#2563eb', backgroundColor: theme.surface },
+                                  ]}
+                                  onPress={() => handleUpdate(s.userId, DEFAULT_DELEGATE_ROLE, false)}
+                                >
+                                  <Text style={[styles.roleText, { color: theme.text }]}>Disabled</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={[
+                                    styles.roleChipSmall,
+                                    { borderColor: theme.border, backgroundColor: theme.inputBg },
+                                    !!s.canCreateCollections && { borderColor: '#2563eb', backgroundColor: theme.surface },
+                                  ]}
+                                  onPress={() => handleUpdate(s.userId, DEFAULT_DELEGATE_ROLE, true)}
+                                >
+                                  <Text style={[styles.roleText, { color: theme.text }]}>Enabled</Text>
+                                </TouchableOpacity>
+                              </>
+                            )}
+
+                            {targetType === 'collection' && (
+                              <>
+                                <View style={styles.createLabelWrap}>
+                                  <Text style={[styles.createLabelText, { color: theme.textMuted }]}>Create Assets</Text>
+                                </View>
+                                <TouchableOpacity
+                                  style={[
+                                    styles.roleChipSmall,
+                                    { borderColor: theme.border, backgroundColor: theme.inputBg },
+                                    !s.canCreateAssets && { borderColor: '#2563eb', backgroundColor: theme.surface },
+                                  ]}
+                                  onPress={() => handleUpdate(s.userId, DEFAULT_DELEGATE_ROLE, false)}
+                                >
+                                  <Text style={[styles.roleText, { color: theme.text }]}>Disabled</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={[
+                                    styles.roleChipSmall,
+                                    { borderColor: theme.border, backgroundColor: theme.inputBg },
+                                    !!s.canCreateAssets && { borderColor: '#2563eb', backgroundColor: theme.surface },
+                                  ]}
+                                  onPress={() => handleUpdate(s.userId, DEFAULT_DELEGATE_ROLE, true)}
+                                >
+                                  <Text style={[styles.roleText, { color: theme.text }]}>Enabled</Text>
+                                </TouchableOpacity>
+                              </>
+                            )}
+                          </View>
+                        )}
                       </View>
                       {idx < existingShares.length - 1 && <View style={[styles.sharedDivider, { backgroundColor: theme.border }]} />}
                     </View>
@@ -593,15 +601,16 @@ const styles = StyleSheet.create({
   sharedBox: { marginTop: 12, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#1f2738', backgroundColor: '#0f111a' },
   sharedLabel: { color: '#e5e7f0', fontWeight: '800', marginBottom: 8 },
   sharedList: { maxHeight: 250 },
-  sharedRow: { flexDirection: 'column', gap: 8, paddingVertical: 10, paddingHorizontal: 10, marginHorizontal: -2, borderRadius: 8, backgroundColor: '#11121a' },
+  sharedRow: { flexDirection: 'column', gap: 10, paddingVertical: 10, paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#11121a' },
   sharedDivider: { height: 1, backgroundColor: '#1f2738', marginVertical: 8 },
-  sharedInfo: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
   sharedInfoLeft: { flex: 1, minWidth: 0 },
+  sharedHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
+  sharedRightActions: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 },
+  sharedPermissionsRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', alignItems: 'center' },
   statusPill: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999, borderWidth: 1 },
   statusText: { fontSize: 12, fontWeight: '800' },
   sharedName: { color: '#fff', fontWeight: '700' },
   sharedMeta: { color: '#9aa1b5', fontSize: 12 },
-  sharedActions: { gap: 6 },
   removeBtn: { paddingVertical: 8, paddingHorizontal: 10, borderRadius: 10, borderWidth: 1, borderColor: '#44282c', backgroundColor: '#2a171b', alignSelf: 'flex-start' },
   removeText: { color: '#fca5a5', fontWeight: '700' },
 });
