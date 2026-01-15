@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert as NativeAlert, Modal, RefreshControl, ScrollView, SectionList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import LambHeader from '../components/LambHeader';
 import ShareModal from '../components/ShareModal';
 import { useData } from '../context/DataContext';
@@ -54,6 +55,32 @@ export default function SharedVaults({ navigation, route }) {
   const listRef = useRef(null);
   const [showJumpToTop, setShowJumpToTop] = useState(false);
   const showJumpToTopRef = useRef(false);
+
+  const scrollToTop = () => {
+    const run = () => {
+      try {
+        if (listRef.current?.scrollToOffset) {
+          listRef.current.scrollToOffset({ offset: 0, animated: true });
+          return;
+        }
+
+        const responder = listRef.current?.getScrollResponder?.();
+        if (responder?.scrollTo) {
+          responder.scrollTo({ y: 0, animated: true });
+          return;
+        }
+
+        if (listRef.current?.scrollToLocation) {
+          listRef.current.scrollToLocation({ sectionIndex: 0, itemIndex: 0, animated: true, viewPosition: 0 });
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    run();
+    setTimeout(run, 50);
+  };
 
   const [searchQuery, setSearchQuery] = useState('');
   const [vaultTypeQuery, setVaultTypeQuery] = useState('');
@@ -1590,14 +1617,12 @@ export default function SharedVaults({ navigation, route }) {
           <TouchableOpacity
             style={[styles.floatingButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }]}
             onPress={() => {
-              try {
-                listRef.current?.scrollToOffset?.({ offset: 0, animated: true });
-              } catch {
-                // ignore
-              }
+              scrollToTop();
             }}
+            accessibilityRole="button"
+            accessibilityLabel="Scroll to top"
           >
-            <Text style={[styles.floatingButtonText, { color: theme.text }]}>Top</Text>
+            <Ionicons name="chevron-up" size={18} color={theme.text} />
           </TouchableOpacity>
         </View>
       ) : null}
@@ -1697,7 +1722,8 @@ const styles = StyleSheet.create({
   floatingButtonWrap: {
     position: 'absolute',
     right: 16,
-    bottom: 24,
+    // Keep above the global VersionFooter (which overlays the bottom of the screen).
+    bottom: 156,
     zIndex: 50,
     elevation: 50,
   },

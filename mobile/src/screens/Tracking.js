@@ -53,6 +53,21 @@ const isSameLocalDay = (a, b) => {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 };
 
+const formatDdMmYyyy = (date) => {
+  if (!(date instanceof Date)) return '';
+  const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const yyyy = String(date.getFullYear());
+  return `${dd}/${mm}/${yyyy}`;
+};
+
+const formatDatePillLabel = (date) => {
+  const d = date instanceof Date ? date : new Date();
+  const today = new Date();
+  if (isSameLocalDay(d, today)) return 'Date: Today';
+  return `Date: ${formatDdMmYyyy(d)}`;
+};
+
 const formatDayLabel = (date) => {
   if (!(date instanceof Date)) return 'Date';
   const today = new Date();
@@ -111,7 +126,8 @@ const getActionLabel = ({ rawType, payload }) => {
   if (t.endsWith('_CREATED') || t.includes('_CREATED')) return 'Created';
 
   // Delete intent + result
-  if (t.endsWith('_DELETE_REQUESTED') || t.includes('DELETE_REQUESTED')) return 'Delete';
+  // UX: treat "delete requested" as Deleted (the user action is deletion).
+  if (t.endsWith('_DELETE_REQUESTED') || t.includes('DELETE_REQUESTED')) return 'Deleted';
   if (t.endsWith('_DELETED') || t.includes('_DELETED') || t === 'VAULT_DELETED') return 'Deleted';
 
   // Sharing / access
@@ -457,7 +473,7 @@ export default function Tracking({ navigation }) {
               ]}
             >
               <Text style={[styles.filterText, { color: theme.onAccentText || '#fff' }]}>
-                {formatDayLabel(selectedDate)}
+                {formatDatePillLabel(selectedDate)}
               </Text>
             </Pressable>
 
@@ -587,7 +603,7 @@ export default function Tracking({ navigation }) {
 
 const styles = StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: '#0b0b0f' },
-  container: { padding: 20, backgroundColor: '#0b0b0f', gap: 12 },
+  container: { padding: 20, paddingBottom: 160, backgroundColor: '#0b0b0f', gap: 12 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { fontSize: 24, fontWeight: '700', color: '#fff' },
   subtitle: { color: '#c5c5d0' },
