@@ -241,6 +241,22 @@ export default function Tracking({ navigation }) {
   const isFocused = useIsFocused();
 
   const uid = currentUser?.id ? String(currentUser.id) : null;
+  const hasProMembership = String(currentUser?.subscription?.tier || '').toUpperCase() === 'PRO';
+  const didRedirectRef = useRef(false);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    if (hasProMembership) return;
+    if (didRedirectRef.current) return;
+    didRedirectRef.current = true;
+
+    // Pro-only feature: redirect to upgrade flow.
+    try {
+      navigation?.navigate?.('ChooseSubscription', { mode: 'upgrade' });
+    } catch {
+      // ignore
+    }
+  }, [currentUser, hasProMembership, navigation]);
 
   const vaultBuckets = useMemo(() => {
     if (!uid) return [];

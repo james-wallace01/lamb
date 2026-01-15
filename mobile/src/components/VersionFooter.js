@@ -120,16 +120,18 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
     return 'Home';
   })();
 
-  const safePush = (routeName) => {
+  const safePush = (routeName, params) => {
     try {
       if (!navigationRef?.isReady?.()) return;
       const current = navigationRef.getCurrentRoute?.()?.name;
       if (current === routeName) return;
-      navigationRef.dispatch(StackActions.push(routeName));
+      navigationRef.dispatch(StackActions.push(routeName, params));
     } catch {
       // ignore
     }
   };
+
+  const hasProMembership = String(currentUser?.subscription?.tier || '').toUpperCase() === 'PRO';
 
   const inactiveColor = theme.textMuted;
   const activeColor = theme.primary;
@@ -187,7 +189,13 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
 
           <TouchableOpacity
             style={styles.navButton}
-            onPress={() => safePush('Tracking')}
+            onPress={() => {
+              if (!hasProMembership) {
+                safePush('ChooseSubscription', { mode: 'upgrade' });
+                return;
+              }
+              safePush('Tracking');
+            }}
             accessibilityRole="button"
             accessibilityLabel="Go to Tracking"
           >
