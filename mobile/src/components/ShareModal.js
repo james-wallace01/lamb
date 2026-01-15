@@ -30,13 +30,10 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
     assets,
     vaultMemberships,
     permissionGrants,
-    acceptInvitationCode,
     showAlert,
   } = useData();
   const Alert = { alert: showAlert };
-  const [query, setQuery] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteCode, setInviteCode] = useState('');
   const [creatingInvite, setCreatingInvite] = useState(false);
   const [pendingInvites, setPendingInvites] = useState([]);
   // Back-compat: DataContext still accepts a legacy "role" string to map into permissions.
@@ -70,17 +67,6 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
     }
     return [];
   }, [vaultIdForTarget, targetType, targetId, vaultMemberships, permissionGrants]);
-
-  const suggestions = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return [];
-    return users.filter(u => {
-      if (u.id === currentUser?.id) return false;
-      if (alreadySharedIds.includes(u.id)) return false;
-      const full = `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase();
-      return (u.username || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q) || full.includes(q);
-    }).slice(0, 6);
-  }, [users, query, currentUser, alreadySharedIds]);
 
   const existingShares = useMemo(() => {
     if (!vaultIdForTarget) return [];
@@ -138,9 +124,33 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
       return;
     }
 
-    setQuery('');
     setCanCreateCollections(false);
     setCanCreateAssets(false);
+  };
+
+  const handleSendInvite = async () => {
+    const email = String(inviteEmail || '').trim().toLowerCase();
+    if (!email) {
+      Alert.alert('Delegate', 'Enter an email to delegate.');
+      return;
+    }
+
+    // Vault owners can create invitation codes (delivered via your existing invite workflow).
+    if (targetType === 'vault' && canInviteByEmail) {
+      await handleCreateInvite();
+      return;
+    }
+
+    // Otherwise: immediately grant access to an existing user matched by email.
+    const match = (users || []).find((u) => String(u?.email || '').toLowerCase() === email);
+    if (!match?.id) {
+      Alert.alert('User not found', 'No user with that email is available to delegate.');
+      return;
+    }
+
+    await handleShare(match.id);
+    setInviteEmail('');
+    Alert.alert('Delegated', 'Delegate access has been granted.');
   };
 
   const canInviteByEmail = useMemo(() => {
@@ -209,30 +219,13 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
         return;
       }
 
-      const code = json?.code ? String(json.code) : '';
-      if (code) setInviteCode(code);
       setInviteEmail('');
-      Alert.alert('Invite created', 'Share the invite code with your delegate.');
+      Alert.alert('Invite sent', 'An invitation has been created for this email.');
     } catch (e) {
       Alert.alert('Invite failed', e?.message || 'Unable to create invitation');
     } finally {
       setCreatingInvite(false);
     }
-  };
-
-  const handleAcceptInvite = async () => {
-    const code = inviteCode.trim();
-    if (!code) {
-      Alert.alert('Invite', 'Paste an invite code to accept.');
-      return;
-    }
-    const res = await acceptInvitationCode?.(code);
-    if (!res || res.ok === false) {
-      Alert.alert('Invite failed', res?.message || 'Unable to accept invite');
-      return;
-    }
-    Alert.alert('Joined', 'You now have access to the vault.');
-    onClose?.();
   };
 
   const handleRevokeInvite = async (code) => {
@@ -318,10 +311,10 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
 
           {targetType === 'vault' && (
             <>
-              <Text style={[styles.label, { color: theme.textMuted, marginTop: 8 }]}>Invite by code</Text>
+              <Text style={[styles.label, { color: theme.textMuted, marginTop: 8 }]}>Invite by email</Text>
               {canInviteByEmail ? (
                 <>
-                  <Text style={[styles.roleHelp, { color: theme.textSecondary }]}>Paid owners can invite delegates by email. Delegates accept using a code.</Text>
+                  <Text style={[styles.roleHelp, { color: theme.textSecondary }]}>Invite a delegate by email.</Text>
                   <TextInput
                     style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                     placeholder="Delegate email"
@@ -329,28 +322,17 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                     value={inviteEmail}
                     autoCapitalize="none"
                     autoCorrect={false}
+                    spellCheck={false}
+                    keyboardType="email-address"
                     onChangeText={setInviteEmail}
                   />
-                  <TouchableOpacity style={[styles.primaryButton, creatingInvite && styles.primaryButtonDisabled]} onPress={handleCreateInvite} disabled={creatingInvite}>
-                    <Text style={styles.primaryButtonText}>{creatingInvite ? 'Creating…' : 'Create invite'}</Text>
+                  <TouchableOpacity style={[styles.primaryButton, creatingInvite && styles.primaryButtonDisabled]} onPress={handleSendInvite} disabled={creatingInvite}>
+                    <Text style={styles.primaryButtonText}>{creatingInvite ? 'Sending…' : 'Send invite'}</Text>
                   </TouchableOpacity>
                 </>
               ) : (
                 <Text style={[styles.roleHelp, { color: theme.textSecondary }]}>Only the vault owner can create invites.</Text>
               )}
-
-              <TextInput
-                style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
-                placeholder="Invite code"
-                placeholderTextColor={theme.placeholder}
-                value={inviteCode}
-                autoCapitalize="none"
-                autoCorrect={false}
-                onChangeText={setInviteCode}
-              />
-              <TouchableOpacity style={[styles.secondaryButton]} onPress={handleAcceptInvite}>
-                <Text style={[styles.secondaryButtonText, { color: theme.text }]}>Accept invite</Text>
-              </TouchableOpacity>
 
               {canInviteByEmail && pendingInvites.length > 0 && (
                 <>
@@ -362,7 +344,6 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                         <View key={inv.id} style={[styles.sharedRow, { backgroundColor: theme.inputBg }]}> 
                           <View style={styles.sharedInfo}>
                             <Text style={[styles.sharedName, { color: theme.text }]}>{inv.invitee_email || inv.email || inv.id}</Text>
-                            <Text style={[styles.sharedMeta, { color: theme.textMuted }]}>{inv.id}</Text>
                           </View>
                           <TouchableOpacity
                             style={[styles.removeBtn, { backgroundColor: theme.surface, borderColor: '#dc2626' }]}
@@ -381,37 +362,24 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
             </>
           )}
 
-            <Text style={[styles.label, { color: theme.textMuted }]}>User</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
-              placeholder="Username or email"
-              placeholderTextColor={theme.placeholder}
-              value={query}
-              autoCapitalize="none"
-              autoCorrect={false}
-              spellCheck={false}
-              onChangeText={setQuery}
-            />
-            {suggestions.length > 0 && (
-              <View style={[styles.suggestions, { borderColor: theme.border, backgroundColor: theme.inputBg }]}>
-                {suggestions.map((u, idx) => (
-                  <TouchableOpacity
-                    key={u.id || u.username || u.email || String(idx)}
-                    style={[
-                      styles.suggestionRow,
-                      { borderBottomColor: theme.border },
-                      idx === suggestions.length - 1 && styles.suggestionRowLast,
-                    ]}
-                    onPress={() => handleShare(u.id)}
-                  >
-                    <View>
-                      <Text style={[styles.suggestionName, { color: theme.text }]}>{u.username || u.email || 'User'}</Text>
-                      <Text style={[styles.suggestionMeta, { color: theme.textMuted }]}>{u.email || `${u.firstName || ''} ${u.lastName || ''}`}</Text>
-                    </View>
-                    <Text style={styles.addText}>Add</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+            {targetType !== 'vault' && (
+              <>
+                <Text style={[styles.label, { color: theme.textMuted }]}>Delegate email</Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
+                  placeholder="Delegate email"
+                  placeholderTextColor={theme.placeholder}
+                  value={inviteEmail}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  spellCheck={false}
+                  keyboardType="email-address"
+                  onChangeText={setInviteEmail}
+                />
+                <TouchableOpacity style={[styles.primaryButton]} onPress={handleSendInvite}>
+                  <Text style={styles.primaryButtonText}>Send invite</Text>
+                </TouchableOpacity>
+              </>
             )}
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
             <Text style={[styles.label, { color: theme.textMuted }]}>Delegate Access</Text>
@@ -595,12 +563,6 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: '#ffffff', fontWeight: '800' },
   secondaryButton: { marginTop: 10, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10, borderWidth: 1, borderColor: '#26344a', backgroundColor: 'transparent', alignItems: 'center' },
   secondaryButtonText: { color: '#e5e7f0', fontWeight: '700' },
-  suggestions: { marginTop: 8, maxHeight: 180, borderWidth: 1, borderColor: '#1f2738', borderRadius: 10, backgroundColor: '#11121a', overflow: 'hidden' },
-  suggestionRow: { padding: 12, borderBottomWidth: 1, borderBottomColor: '#1f2738', flexDirection: 'row', justifyContent: 'space-between' },
-  suggestionRowLast: { borderBottomWidth: 0 },
-  suggestionName: { color: '#fff', fontWeight: '700' },
-  suggestionMeta: { color: '#9aa1b5', fontSize: 12 },
-  addText: { color: '#9ab6ff', fontWeight: '700' },
   roleRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
   roleChip: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: '#1f2738', backgroundColor: '#11121a' },
   roleChipActive: { borderColor: '#2563eb', backgroundColor: '#172447' },
