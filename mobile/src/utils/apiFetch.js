@@ -2,6 +2,7 @@ import { getFirebaseIdToken } from '../firebase';
 
 export async function apiFetch(url, options = {}) {
   const requireAuth = !!options?.requireAuth;
+  const timeoutMs = typeof options?.timeoutMs === 'number' ? options.timeoutMs : 12000;
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -39,6 +40,36 @@ export async function apiFetch(url, options = {}) {
   }
 
   // Strip non-fetch option keys.
-  const { requireAuth: _requireAuth, ...fetchOptions } = options || {};
-  return fetch(url, { ...fetchOptions, headers });
+  const { requireAuth: _requireAuth, timeoutMs: _timeoutMs, ...fetchOptions } = options || {};
+
+  const canAbort = typeof AbortController !== 'undefined';
+  const hasSignal = !!fetchOptions?.signal;
+  const controller = !hasSignal && canAbort && timeoutMs > 0 ? new AbortController() : null;
+  const signal = hasSignal ? fetchOptions.signal : controller?.signal;
+
+  const finalOptions = signal ? { ...fetchOptions, signal, headers } : { ...fetchOptions, headers };
+
+  let timeoutId;
+  try {
+    if (controller && timeoutMs > 0) {
+      timeoutId = setTimeout(() => {
+        try {
+          controller.abort();
+        } catch {
+          // ignore
+        }
+      }, timeoutMs);
+    }
+
+    return await fetch(url, finalOptions);
+  } catch (err) {
+    const name = typeof err?.name === 'string' ? err.name : '';
+    const msg = typeof err?.message === 'string' ? err.message : '';
+    if (name === 'AbortError' || msg.toLowerCase().includes('aborted')) {
+      throw new Error('Request timed out. Check your connection and try again.');
+    }
+    throw err;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 }
