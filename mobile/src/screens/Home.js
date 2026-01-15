@@ -41,7 +41,7 @@ export default function Home({ navigation }) {
     setInviteCode('');
     Alert.alert('Joined', 'You now have access to the shared vault.');
     if (res.vaultId) {
-      navigation.navigate('Vault', { vaultId: res.vaultId });
+      navigation.navigate('SharedVaults', { selectedVaultId: res.vaultId });
     }
   };
 
