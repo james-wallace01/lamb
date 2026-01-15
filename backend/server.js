@@ -1766,8 +1766,20 @@ app.get('/invitations', requireFirebaseAuth, sensitiveRateLimiter, async (req, r
 
     return res.json({ ok: true, invitations: withVault });
   } catch (err) {
+    const code = err?.code;
+    const msg = err?.message ? String(err.message) : '';
     console.error('Error listing user invitations:', err);
-    return res.status(500).json({ error: err?.message || 'Failed to list invitations' });
+
+    // Firestore returns FAILED_PRECONDITION (code 9) when an index is missing or still building.
+    // This endpoint relies on a collectionGroup index for invitations.invitee_email.
+    if (code === 9 || /FAILED_PRECONDITION/i.test(msg)) {
+      return res.status(503).json({
+        error:
+          'Invitations are temporarily unavailable while Firestore indexes are building. Please try again in a few minutes.',
+      });
+    }
+
+    return res.status(500).json({ error: msg || 'Failed to list invitations' });
   }
 });
 
