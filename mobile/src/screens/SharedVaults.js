@@ -53,6 +53,7 @@ export default function SharedVaults({ navigation, route }) {
 
   const listRef = useRef(null);
   const [showJumpToTop, setShowJumpToTop] = useState(false);
+  const showJumpToTopRef = useRef(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [vaultTypeQuery, setVaultTypeQuery] = useState('');
@@ -773,8 +774,11 @@ export default function SharedVaults({ navigation, route }) {
         scrollEventThrottle={16}
         onScroll={(e) => {
           const y = e?.nativeEvent?.contentOffset?.y || 0;
-          if (!showJumpToTop && y > 600) setShowJumpToTop(true);
-          if (showJumpToTop && y < 200) setShowJumpToTop(false);
+          const shouldShow = y > 300;
+          if (shouldShow !== showJumpToTopRef.current) {
+            showJumpToTopRef.current = shouldShow;
+            setShowJumpToTop(shouldShow);
+          }
         }}
         initialNumToRender={12}
         maxToRenderPerBatch={12}
@@ -1694,6 +1698,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 16,
     bottom: 24,
+    zIndex: 50,
+    elevation: 50,
   },
   floatingButton: {
     paddingVertical: 10,
