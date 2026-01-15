@@ -3,7 +3,7 @@ import { Modal, View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView,
 import { BlurView } from 'expo-blur';
 import { useData } from '../context/DataContext';
 import { firestore } from '../firebase';
-import { collection, onSnapshot, orderBy, query as fsQuery } from 'firebase/firestore';
+import { collection, onSnapshot, query as fsQuery } from 'firebase/firestore';
 import { API_URL } from '../config/api';
 import { apiFetch } from '../utils/apiFetch';
 
@@ -200,11 +200,33 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
 
     const vaultId = String(vaultIdForTarget);
     const invRef = collection(firestore, 'vaults', vaultId, 'invitations');
-    const q = fsQuery(invRef, orderBy('createdAt', 'desc'));
+    // Some older invitation docs may have createdAt stored as a Firestore Timestamp,
+    // while newer ones store it as a number. Ordering in Firestore can fail when types mix.
+    // Subscribe without ordering and sort client-side.
+    const q = fsQuery(invRef);
 
     const unsub = onSnapshot(
       q,
       (snap) => {
+        const getCreatedAtMs = (v) => {
+          if (typeof v === 'number' && Number.isFinite(v)) return v;
+          if (v && typeof v.toMillis === 'function') {
+            try {
+              return v.toMillis();
+            } catch {
+              return 0;
+            }
+          }
+          if (v && typeof v === 'object' && typeof v.seconds === 'number') {
+            return Math.floor(v.seconds * 1000);
+          }
+          if (typeof v === 'string') {
+            const t = Date.parse(v);
+            return Number.isFinite(t) ? t : 0;
+          }
+          return 0;
+        };
+
         const invites = snap.docs
           .map((d) => ({ id: String(d.id), ...(d.data() || {}) }))
           .filter((x) => ['PENDING', 'ACCEPTED', 'DENIED'].includes(String(x?.status || '').toUpperCase()))
@@ -215,7 +237,8 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
             if (targetType === 'collection') return sType === 'COLLECTION' && sId === String(targetId);
             if (targetType === 'asset') return sType === 'ASSET' && sId === String(targetId);
             return false;
-          });
+          })
+          .sort((a, b) => getCreatedAtMs(b?.createdAt) - getCreatedAtMs(a?.createdAt));
         setPendingInvites(invites);
       },
       () => {
