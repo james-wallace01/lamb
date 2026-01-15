@@ -48,6 +48,7 @@ export default function SharedVaults({ navigation, route }) {
   const [assetCreateBusy, setAssetCreateBusy] = useState(false);
   const [optimisticCollections, setOptimisticCollections] = useState([]);
   const [optimisticAssets, setOptimisticAssets] = useState([]);
+  const [optimisticDeletedAssetIds, setOptimisticDeletedAssetIds] = useState({});
   const [refreshing, setRefreshing] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -309,6 +310,8 @@ export default function SharedVaults({ navigation, route }) {
     const allAssets = dedupeById([...(prunedOptimistic || []), ...(assets || [])]);
     const queries = [searchQuery, assetTypeQuery].map((x) => String(x || '').trim().toLowerCase()).filter(Boolean);
     let list = allAssets.filter((a) => String(a?.collectionId) === selectedIdStr);
+    const deletedMap = optimisticDeletedAssetIds || {};
+    list = list.filter((a) => !deletedMap[String(a?.id)]);
     if (queries.length) {
       list = list.filter((a) => {
         const t = String(a?.title || '').toLowerCase();
@@ -319,7 +322,7 @@ export default function SharedVaults({ navigation, route }) {
     const dir = assetSortMode === 'za' ? -1 : 1;
     list.sort((a, b) => dir * String(a?.title || '').localeCompare(String(b?.title || '')));
     return list;
-  }, [assets, optimisticAssets, selectedCollectionId, searchQuery, assetTypeQuery, assetSortMode]);
+  }, [assets, optimisticAssets, optimisticDeletedAssetIds, selectedCollectionId, searchQuery, assetTypeQuery, assetSortMode]);
 
   const selectedAsset = useMemo(
     () => {
@@ -878,13 +881,28 @@ export default function SharedVaults({ navigation, route }) {
                         style: 'destructive',
                         onPress: () => {
                           (async () => {
-                            const res = await deleteAsset?.(String(selectedAssetId));
+                            const assetIdToDelete = String(selectedAssetId);
+                            // Optimistic UX: hide immediately so the user can't interact with it while the backend completes.
+                            setOptimisticDeletedAssetIds((prev) => ({ ...(prev || {}), [assetIdToDelete]: true }));
+                            setAssetEditVisible(false);
+                            setSelectedAssetId(null);
+
+                            const res = await deleteAsset?.(assetIdToDelete);
                             if (!res || res.ok === false) {
+                              setOptimisticDeletedAssetIds((prev) => {
+                                const next = { ...(prev || {}) };
+                                delete next[assetIdToDelete];
+                                return next;
+                              });
                               NativeAlert.alert('Delete failed', res?.message || 'Unable to delete asset');
                               return;
                             }
-                            setAssetEditVisible(false);
-                            setSelectedAssetId(null);
+
+                            setOptimisticDeletedAssetIds((prev) => {
+                              const next = { ...(prev || {}) };
+                              delete next[assetIdToDelete];
+                              return next;
+                            });
                           })();
                         },
                       },
