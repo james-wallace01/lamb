@@ -136,11 +136,15 @@ export default function SubscriptionManager({ showTitle = true, showChooseMember
       ) : null}
 
       <TouchableOpacity
-        style={[styles.primaryButton, { borderColor: theme.primary, backgroundColor: theme.primary }, submitting && styles.primaryButtonDisabled]}
+        style={[
+          styles.primaryButton,
+          { borderColor: theme.border, backgroundColor: theme.surface },
+          submitting && styles.primaryButtonDisabled,
+        ]}
         onPress={openAppleSubscriptionSettings}
         disabled={submitting}
       >
-        <Text style={styles.primaryButtonText}>Manage in App Store Subscriptions</Text>
+        <Text style={[styles.primaryButtonText, { color: theme.text }]}>Manage in App Store Subscriptions</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
