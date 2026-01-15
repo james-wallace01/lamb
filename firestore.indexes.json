@@ -2,6 +2,16 @@
   "indexes": [],
   "fieldOverrides": [
     {
+      "collectionGroup": "invitations",
+      "fieldPath": "invitee_email",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
       "collectionGroup": "memberships",
       "fieldPath": "user_id",
       "indexes": [
