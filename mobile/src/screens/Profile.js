@@ -59,12 +59,6 @@ export default function Profile({ navigation, route }) {
     Linking.openURL(url).catch(() => {});
   };
 
-  const netWorth = useMemo(() => {
-    if (!currentUser) return 0;
-    const ownedAssets = assets.filter((a) => a.ownerId === currentUser.id);
-    return ownedAssets.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
-  }, [assets, currentUser]);
-
   useEffect(() => {
     setDraft(currentUser || {});
     setIsEditing(false);
@@ -507,13 +501,6 @@ export default function Profile({ navigation, route }) {
               </TouchableOpacity>
             </View>
 
-            <View style={[styles.netWorthCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Text style={[styles.netWorthLabel, { color: theme.textMuted }]}>Net Worth</Text>
-              <Text style={[styles.netWorthValue, { color: theme.text }]}>
-                ${netWorth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </Text>
-            </View>
-
             <View style={styles.fieldGroup}>
               <Text style={[styles.label, { color: theme.textMuted }]}>First Name</Text>
               <TextInput
@@ -881,9 +868,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  netWorthCard: { marginBottom: 16, padding: 12, borderRadius: 12, backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1 },
-  netWorthLabel: { color: '#9aa1b5', fontSize: 12, marginBottom: 4, fontWeight: '600' },
-  netWorthValue: { color: '#fff', fontSize: 18, fontWeight: '700' },
   fieldGroup: { marginBottom: 12 },
   label: { color: '#9aa1b5', marginBottom: 4, fontWeight: '600', fontSize: 13 },
   input: { backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, borderRadius: 10, padding: 12, color: '#fff' },
