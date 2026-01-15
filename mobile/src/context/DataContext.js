@@ -20,7 +20,25 @@ import {
   updateEmail as firebaseUpdateEmail,
   updatePassword as firebaseUpdatePassword,
 } from 'firebase/auth';
-import { addDoc, collection, collectionGroup, deleteDoc, doc, documentId, getDoc, onSnapshot, query, runTransaction, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import {
+  addDoc,
+  collection,
+  collectionGroup,
+  deleteDoc,
+  doc,
+  documentId,
+  getDoc,
+  getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  runTransaction,
+  setDoc,
+  updateDoc,
+  where,
+  writeBatch,
+} from 'firebase/firestore';
 import { API_URL } from '../config/api';
 import NetInfo from '@react-native-community/netinfo';
 import { apiFetch } from '../utils/apiFetch';
@@ -66,8 +84,10 @@ const COMMON_PASSWORDS = new Set([
 ]);
 
 // Audit logging strategy:
-// - Cloud Functions triggers are the source of truth for create/update/delete.
-// - Client only writes view/access events (not covered by triggers).
+// - Cloud Functions triggers are the source of truth for create/update/delete when deployed.
+// - Client always writes view/access events.
+// - Client may also write Vault/Collection/Asset events as a fallback, with best-effort
+//   duplicate suppression to avoid double-logging when triggers are enabled.
 const CLIENT_AUDIT_VIEW_ONLY = true;
 
 const validatePasswordStrength = (password, { username, email } = {}) => {
@@ -2805,6 +2825,9 @@ export function DataProvider({ children }) {
       const t = type != null ? String(type) : '';
       const allowNonView =
         t.endsWith('_VIEWED') ||
+        t.startsWith('VAULT_') ||
+        t.startsWith('COLLECTION_') ||
+        t.startsWith('ASSET_') ||
         t === 'ASSET_MOVED' ||
         t === 'ASSET_MOVED_IN' ||
         t === 'ASSET_MOVED_OUT' ||
@@ -2825,7 +2848,30 @@ export function DataProvider({ children }) {
     const safePayload = payload && typeof payload === 'object' ? payload : null;
     const fingerprint = buildAuditFingerprint({ vaultId: vId, type, actorUid, payload: safePayload });
 
+    const shouldSkipDuplicate = async () => {
+      try {
+        const snap = await getDocs(
+          query(
+            collection(firestore, 'vaults', vId, 'auditEvents'),
+            orderBy('createdAt', 'desc'),
+            limit(1)
+          )
+        );
+        if (snap.empty) return false;
+        const data = snap.docs[0]?.data?.() || {};
+        const lastFp = data.fingerprint || null;
+        const lastAt = typeof data.createdAt === 'number' ? data.createdAt : null;
+        if (!lastFp || lastFp !== fingerprint) return false;
+        if (!lastAt) return false;
+        if (Math.abs(Date.now() - lastAt) > 5000) return false;
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
     try {
+      if (await shouldSkipDuplicate()) return { ok: true, skipped: true, duplicate: true };
       await addDoc(collection(firestore, 'vaults', vId, 'auditEvents'), {
         createdAt,
         type: String(type || 'UNKNOWN'),
@@ -3183,6 +3229,9 @@ export function DataProvider({ children }) {
         : null) ||
       getVaultPerms(asset.vaultId, userId) ||
       {};
+    // If a delegate has explicit Delete permission, treat them as "owner" for
+    // capability checks so the UI enables Delete (backend enforces the real permission).
+    if (perms[PERM.DELETE]) return 'owner';
     if (perms[PERM.MOVE] || perms[PERM.CLONE]) return 'manager';
     if (perms[PERM.EDIT] || perms[PERM.CREATE]) return 'editor';
     return 'reviewer';

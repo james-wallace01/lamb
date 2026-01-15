@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Modal, RefreshControl, ScrollView, SectionList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert as NativeAlert, Modal, RefreshControl, ScrollView, SectionList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import LambHeader from '../components/LambHeader';
 import ShareModal from '../components/ShareModal';
 import { useData } from '../context/DataContext';
@@ -39,7 +39,6 @@ export default function SharedVaults({ navigation, route }) {
   } = useData();
   const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
-  const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
   const [newCollectionName, setNewCollectionName] = useState('');
   const [newAssetTitle, setNewAssetTitle] = useState('');
@@ -623,10 +622,8 @@ export default function SharedVaults({ navigation, route }) {
     );
   };
 
-  const renderAssetsItem = ({ item, index, section }) => {
+  const renderAssetsItem = ({ item }) => {
     if (!selectedVaultId || !selectedCollectionId) return null;
-
-    const isLast = index === (section?.data?.length || 0) - 1;
     const outerStyle = {
       marginTop: 10,
       backgroundColor: theme.surface,
@@ -637,6 +634,7 @@ export default function SharedVaults({ navigation, route }) {
       borderRadius: 10,
       paddingLeft: 12,
       paddingRight: 14,
+      paddingBottom: 10,
     };
 
     if (item?.__empty) {
@@ -650,6 +648,7 @@ export default function SharedVaults({ navigation, route }) {
     const a = item;
     const canMoveCloneRole = currentUser?.id ? getRoleForAsset?.(String(a.id), String(currentUser.id)) : null;
     const moveCloneCaps = getAssetCapabilities({ role: canMoveCloneRole });
+    const canAssetEditOnlineForRow = moveCloneCaps.canEdit && !isOffline;
     const canAssetMoveOnlineForRow = moveCloneCaps.canMove && !isOffline;
     const canAssetCloneOnlineForRow = moveCloneCaps.canClone && !isOffline && typeof addAsset === 'function';
 
@@ -673,7 +672,20 @@ export default function SharedVaults({ navigation, route }) {
         </TouchableOpacity>
 
         {!isTempId(a?.id) ? (
-          <View style={[styles.assetInlineActions, { paddingBottom: isLast ? 0 : 10 }]}>
+          <View style={styles.assetInlineActions}>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, !canAssetEditOnlineForRow && styles.buttonDisabled]}
+              disabled={!canAssetEditOnlineForRow}
+              onPress={() => {
+                setSelectedAssetId(String(a.id));
+                setAssetEditTitle(limit35(a?.title || ''));
+                setAssetEditCategory(limit35(a?.category || ''));
+                setAssetEditVisible(true);
+              }}
+            >
+              <Text style={[styles.actionButtonText, { color: theme.text }]}>Edit</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, !canAssetMoveOnlineForRow && styles.buttonDisabled]}
               disabled={!canAssetMoveOnlineForRow}
@@ -766,21 +778,26 @@ export default function SharedVaults({ navigation, route }) {
         renderSectionHeader={renderAssetsSectionHeader}
         renderItem={renderAssetsItem}
         renderSectionFooter={renderAssetsSectionFooter}
+        ListFooterComponent={<View style={{ height: 24 }} />}
         ListHeaderComponent={
           <View style={{ gap: 12 }}>
             <LambHeader />
-            <View style={styles.headerRow} />
-
-            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <TextInput
-                style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
-                placeholder="Search vaults, collections, assets"
-                placeholderTextColor={theme.placeholder}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                {...noAutoCorrect}
-              />
+            <View style={styles.headerRow}>
+              <Text style={[styles.title, { color: theme.text }]}>Shared Vaults</Text>
             </View>
+
+            {sortedSharedVaults.length ? (
+              <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+                <TextInput
+                  style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
+                  placeholder="Search vaults, collections, assets"
+                  placeholderTextColor={theme.placeholder}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  {...noAutoCorrect}
+                />
+              </View>
+            ) : null}
 
             <ShareModal
               visible={shareVisible}
@@ -839,7 +856,7 @@ export default function SharedVaults({ navigation, route }) {
                     (async () => {
                       const res = await updateAsset?.(String(selectedAssetId), patch, { expectedEditedAt });
                       if (!res || res.ok === false) {
-                        Alert.alert('Save failed', res?.message || 'Unable to update asset');
+                        NativeAlert.alert('Save failed', res?.message || 'Unable to update asset');
                         return;
                       }
                       setAssetEditVisible(false);
@@ -854,7 +871,7 @@ export default function SharedVaults({ navigation, route }) {
                   disabled={!selectedAssetId || !canAssetDeleteOnline}
                   onPress={() => {
                     if (!selectedAssetId) return;
-                    Alert.alert('Delete Asset?', 'This action cannot be undone.', [
+                    NativeAlert.alert('Delete Asset?', 'This action cannot be undone.', [
                       { text: 'Cancel', style: 'cancel' },
                       {
                         text: 'Delete',
@@ -863,7 +880,7 @@ export default function SharedVaults({ navigation, route }) {
                           (async () => {
                             const res = await deleteAsset?.(String(selectedAssetId));
                             if (!res || res.ok === false) {
-                              Alert.alert('Delete failed', res?.message || 'Unable to delete asset');
+                              NativeAlert.alert('Delete failed', res?.message || 'Unable to delete asset');
                               return;
                             }
                             setAssetEditVisible(false);
@@ -1161,54 +1178,30 @@ export default function SharedVaults({ navigation, route }) {
         </Modal>
 
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}> 
-          <View style={styles.cardRow}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Join a vault</Text>
-            {!inviteOpen ? (
-              <TouchableOpacity
-                style={[styles.addButton, { backgroundColor: theme.success, borderColor: theme.success }, isOffline && styles.buttonDisabled]}
-                onPress={() => setInviteOpen(true)}
-                disabled={isOffline}
-              >
-                <Text style={[styles.addButtonText, { color: theme.onAccentText }]}>+</Text>
-              </TouchableOpacity>
-            ) : null}
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Join a vault</Text>
+          <Text style={[styles.subtitle, { color: theme.textSecondary, marginTop: 6 }]}>Have an invite code? Paste it here to join as a delegate.</Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, alignItems: 'center' }}>
+            <TextInput
+              value={inviteCode}
+              onChangeText={setInviteCode}
+              placeholder="Invite code"
+              placeholderTextColor={theme.placeholder}
+              style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, flex: 1 }]}
+              autoCapitalize="none"
+              {...noAutoCorrect}
+            />
+            <TouchableOpacity
+              style={[
+                styles.secondaryButton,
+                { borderColor: theme.border, backgroundColor: theme.surface, paddingHorizontal: 14, paddingVertical: 10, marginTop: 0 },
+                isOffline && styles.buttonDisabled,
+              ]}
+              onPress={handleAcceptInvite}
+              disabled={isOffline}
+            >
+              <Text style={[styles.secondaryText, { color: theme.textSecondary }]}>Join</Text>
+            </TouchableOpacity>
           </View>
-
-          {inviteOpen ? (
-            <>
-              <Text style={[styles.subtitle, { color: theme.textSecondary, marginTop: 6 }]}>Have an invite code? Paste it here to join as a delegate.</Text>
-              <View style={styles.createRow}>
-                <TextInput
-                  value={inviteCode}
-                  onChangeText={setInviteCode}
-                  placeholder="Invite code"
-                  placeholderTextColor={theme.placeholder}
-                  style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
-                  autoCapitalize="none"
-                  {...noAutoCorrect}
-                />
-                <TouchableOpacity
-                  style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface }]}
-                  onPress={() => {
-                    setInviteCode('');
-                    setInviteOpen(false);
-                  }}
-                >
-                  <Text style={[styles.secondaryText, { color: theme.text }]}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.addButton, { backgroundColor: theme.success, borderColor: theme.success }, (!inviteCode.trim() || isOffline) && styles.buttonDisabled]}
-                  disabled={!inviteCode.trim() || isOffline}
-                  onPress={async () => {
-                    const ok = await handleAcceptInvite();
-                    if (ok) setInviteOpen(false);
-                  }}
-                >
-                  <Text style={[styles.addButtonText, { color: theme.onAccentText }]}>Done</Text>
-                </TouchableOpacity>
-              </View>
-            </>
-          ) : null}
         </View>
 
         <View style={styles.sectionHeader} />

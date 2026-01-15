@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Modal, RefreshControl, ScrollView, SectionList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert as NativeAlert, Modal, RefreshControl, ScrollView, SectionList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import LambHeader from '../components/LambHeader';
 import ShareModal from '../components/ShareModal';
@@ -682,10 +682,8 @@ export default function PrivateVaults({ navigation, route }) {
     );
   };
 
-  const renderAssetsItem = ({ item, index, section }) => {
+  const renderAssetsItem = ({ item }) => {
     if (!selectedVaultId || !selectedCollectionId) return null;
-
-    const isLast = index === (section?.data?.length || 0) - 1;
     const outerStyle = {
       marginTop: 10,
       backgroundColor: theme.surface,
@@ -696,6 +694,7 @@ export default function PrivateVaults({ navigation, route }) {
       borderRadius: 10,
       paddingLeft: 12,
       paddingRight: 14,
+      paddingBottom: 10,
     };
 
     if (item?.__empty) {
@@ -709,6 +708,7 @@ export default function PrivateVaults({ navigation, route }) {
     const a = item;
     const canMoveCloneRole = currentUser?.id ? getRoleForAsset?.(String(a.id), String(currentUser.id)) : null;
     const moveCloneCaps = getAssetCapabilities({ role: canMoveCloneRole });
+    const canAssetEditOnlineForRow = moveCloneCaps.canEdit && !isOffline;
     const canAssetMoveOnlineForRow = moveCloneCaps.canMove && !isOffline;
     const canAssetCloneOnlineForRow = moveCloneCaps.canClone && !isOffline && typeof addAsset === 'function';
 
@@ -743,7 +743,20 @@ export default function PrivateVaults({ navigation, route }) {
         </TouchableOpacity>
 
         {!isTempId(a?.id) ? (
-          <View style={[styles.assetInlineActions, { paddingBottom: isLast ? 0 : 10 }]}>
+          <View style={styles.assetInlineActions}>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, !canAssetEditOnlineForRow && styles.buttonDisabled]}
+              disabled={!canAssetEditOnlineForRow}
+              onPress={() => {
+                setSelectedAssetId(String(a.id));
+                setAssetEditTitle(limit35(a?.title || ''));
+                setAssetEditCategory(limit35(a?.category || ''));
+                setAssetEditVisible(true);
+              }}
+            >
+              <Text style={[styles.actionButtonText, { color: theme.text }]}>Edit</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, !canAssetMoveOnlineForRow && styles.buttonDisabled]}
               disabled={!canAssetMoveOnlineForRow}
@@ -836,6 +849,7 @@ export default function PrivateVaults({ navigation, route }) {
         renderSectionHeader={renderAssetsSectionHeader}
         renderItem={renderAssetsItem}
         renderSectionFooter={renderAssetsSectionFooter}
+        ListFooterComponent={<View style={{ height: 24 }} />}
         ListHeaderComponent={
           <View style={{ gap: 12 }}>
             <LambHeader />
@@ -912,7 +926,7 @@ export default function PrivateVaults({ navigation, route }) {
                     (async () => {
                       const res = await updateAsset?.(String(selectedAssetId), patch, { expectedEditedAt });
                       if (!res || res.ok === false) {
-                        Alert.alert('Save failed', res?.message || 'Unable to update asset');
+                        NativeAlert.alert('Save failed', res?.message || 'Unable to update asset');
                         return;
                       }
                       setAssetEditVisible(false);
@@ -927,7 +941,7 @@ export default function PrivateVaults({ navigation, route }) {
                   disabled={!selectedAssetId || !canAssetDeleteOnline}
                   onPress={() => {
                     if (!selectedAssetId) return;
-                    Alert.alert('Delete Asset?', 'This action cannot be undone.', [
+                    NativeAlert.alert('Delete Asset?', 'This action cannot be undone.', [
                       { text: 'Cancel', style: 'cancel' },
                       {
                         text: 'Delete',
@@ -936,7 +950,7 @@ export default function PrivateVaults({ navigation, route }) {
                           (async () => {
                             const res = await deleteAsset?.(String(selectedAssetId));
                             if (!res || res.ok === false) {
-                              Alert.alert('Delete failed', res?.message || 'Unable to delete asset');
+                              NativeAlert.alert('Delete failed', res?.message || 'Unable to delete asset');
                               return;
                             }
                             setAssetEditVisible(false);

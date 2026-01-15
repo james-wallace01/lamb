@@ -1461,6 +1461,12 @@ app.post('/email-available', emailAvailabilityRateLimiter, async (req, res) => {
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
+    service: process.env.RENDER_SERVICE_NAME || null,
+    region: process.env.RENDER_REGION || null,
+    instanceId: process.env.RENDER_INSTANCE_ID || null,
+    gitCommit: process.env.RENDER_GIT_COMMIT || null,
+    nodeEnv: process.env.NODE_ENV || null,
+    serverTime: Date.now(),
     billingProvider: 'apple_iap',
     appleIapSecretConfigured: !!String(process.env.APPLE_IAP_SHARED_SECRET || '').trim(),
     firebase: firebaseEnabled() ? 'enabled' : 'disabled',
@@ -1907,14 +1913,15 @@ app.post('/vaults/:vaultId/assets/:assetId/delete', requireFirebaseAuth, destruc
 
     let deleted = false;
     await db.runTransaction(async (tx) => {
-      const a = await tx.get(assetRef);
+      // Firestore transactions require all reads before any writes.
+      const [a, usageSnap] = await Promise.all([tx.get(assetRef), tx.get(usageRef)]);
       if (!a.exists) return;
       deleted = true;
-      tx.delete(assetRef);
 
-      const usageSnap = await tx.get(usageRef);
       const usage = usageSnap.exists ? (usageSnap.data() || {}) : {};
       const assetsCount = typeof usage.assetsCount === 'number' ? usage.assetsCount : 0;
+
+      tx.delete(assetRef);
       tx.set(
         usageRef,
         {

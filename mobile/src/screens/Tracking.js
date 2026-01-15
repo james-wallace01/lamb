@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
+import { collection, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 import { useIsFocused } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import LambHeader from '../components/LambHeader';
@@ -272,6 +272,7 @@ export default function Tracking({ navigation }) {
 
   const [events, setEvents] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingEvents, setLoadingEvents] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const mountedRef = useRef(true);
 
@@ -285,6 +286,7 @@ export default function Tracking({ navigation }) {
     if (!firestore) return;
 
     setLoadError(null);
+    setLoadingEvents(true);
 
     try {
       let anyOk = false;
@@ -295,8 +297,12 @@ export default function Tracking({ navigation }) {
           try {
             const q = query(
               collection(firestore, 'vaults', String(v.id), 'auditEvents'),
+              // `createdAt` is stored as a millisecond number (Date.now()) by both
+              // client + Cloud Functions, so we query using numeric bounds.
+              where('createdAt', '>=', selectedDayStartMs),
+              where('createdAt', '<', selectedDayEndMs),
               orderBy('createdAt', 'desc'),
-              limit(50)
+              limit(250)
             );
             const snap = await getDocs(q);
             anyOk = true;
@@ -316,6 +322,8 @@ export default function Tracking({ navigation }) {
       const merged = perVault.flat().filter(Boolean);
       merged.sort((a, b) => (toMillis(b?.createdAt) || 0) - (toMillis(a?.createdAt) || 0));
 
+      // Keep a safety filter in case some events are written outside expected ranges
+      // or come through with a different timestamp field.
       const filtered = merged.filter((evt) => {
         const ts = toMillis(evt?.createdAt ?? evt?.timestamp);
         if (!ts) return false;
@@ -351,6 +359,9 @@ export default function Tracking({ navigation }) {
       if (!mountedRef.current) return;
       setLoadError(msg);
       setEvents([]);
+    } finally {
+      if (!mountedRef.current) return;
+      setLoadingEvents(false);
     }
   };
 
@@ -410,7 +421,7 @@ export default function Tracking({ navigation }) {
                 },
               ]}
             >
-              <Text style={[styles.filterText, { color: vaultFilter === 'PRIVATE' ? theme.text : theme.textMuted }]}>Private Vault</Text>
+              <Text style={[styles.filterText, { color: vaultFilter === 'PRIVATE' ? theme.text : theme.textMuted }]}>Private Vaults</Text>
             </Pressable>
             <Pressable
               onPress={() => setVaultFilter('SHARED')}
@@ -422,7 +433,7 @@ export default function Tracking({ navigation }) {
                 },
               ]}
             >
-              <Text style={[styles.filterText, { color: vaultFilter === 'SHARED' ? theme.text : theme.textMuted }]}>Shared Vault</Text>
+              <Text style={[styles.filterText, { color: vaultFilter === 'SHARED' ? theme.text : theme.textMuted }]}>Shared Vaults</Text>
             </Pressable>
           </View>
         ) : null}
@@ -467,6 +478,22 @@ export default function Tracking({ navigation }) {
           </View>
         ) : null}
 
+        {!!uid ? (
+          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+            {isOffline
+              ? 'Offline — tracking is unavailable.'
+              : trackedVaults.length === 0
+                ? vaultFilter === 'PRIVATE'
+                  ? 'No private vaults to track.'
+                  : 'No shared vaults to track.'
+                : loadError
+                  ? `Tracking unavailable: ${loadError}`
+                  : loadingEvents
+                    ? 'Loading activity…'
+                    : `${events.length} event${events.length === 1 ? '' : 's'} on this day`}
+          </Text>
+        ) : null}
+
         {!!uid && showDatePicker ? (
           <View style={[styles.datePickerWrap, { borderColor: theme.border, backgroundColor: theme.surface }]}>
             <DateTimePicker
@@ -487,16 +514,8 @@ export default function Tracking({ navigation }) {
           </View>
         ) : null}
 
-        {isOffline ? (
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Offline — tracking is unavailable.</Text>
-        ) : !uid ? (
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Sign in to view tracking.</Text>
-        ) : trackedVaults.length === 0 ? (
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-            {vaultFilter === 'PRIVATE' ? 'No private vaults to track.' : 'No shared vaults to track.'}
-          </Text>
-        ) : loadError ? (
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Tracking unavailable: {loadError}</Text>
+        {isOffline || !uid || trackedVaults.length === 0 || loadError ? (
+          !uid ? <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Sign in to view tracking.</Text> : null
         ) : events.length === 0 ? (
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No activity for this day.</Text>
         ) : (
@@ -578,7 +597,7 @@ const styles = StyleSheet.create({
   filterText: { fontSize: 13, fontWeight: '700' },
 
   dateRow: { flexDirection: 'row', gap: 10, width: '100%', alignItems: 'stretch' },
-  datePill: { flex: 1, paddingVertical: 10, minHeight: 44, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  datePill: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   datePickerWrap: { borderWidth: 1, borderRadius: 10, overflow: 'hidden' },
 
   card: { padding: 14, borderRadius: 10, backgroundColor: '#11121a', borderWidth: 1, borderColor: '#1f2738' },
