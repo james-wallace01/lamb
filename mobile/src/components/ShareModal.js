@@ -395,48 +395,6 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
               ) : (
                 <Text style={[styles.roleHelp, { color: theme.textSecondary }]}>Only the vault owner can create invites.</Text>
               )}
-
-              {canInviteByEmail && pendingInvites.length > 0 && (
-                <>
-                  <View style={[styles.miniDivider, { backgroundColor: theme.border }]} />
-                  <Text style={[styles.label, { color: theme.textMuted }]}>Invites</Text>
-                  <View style={[styles.sharedBox, { borderColor: theme.border, backgroundColor: theme.surface }]}> 
-                    <ScrollView style={{ maxHeight: 160 }} showsVerticalScrollIndicator={false}>
-                      {pendingInvites.map((inv) => (
-                        <View key={inv.id} style={[styles.sharedRow, { backgroundColor: theme.inputBg }]}> 
-                          <View style={styles.sharedHeaderRow}>
-                            <View style={styles.sharedInfoLeft}>
-                              <Text style={[styles.sharedName, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
-                                {inv.invitee_email || inv.email || inv.id}
-                              </Text>
-                            </View>
-                            <View style={styles.sharedRightActions}>
-                              {(() => {
-                                const pres = getInviteStatusPresentation(inv.status);
-                                return (
-                                  <View style={[styles.statusPill, { backgroundColor: pres.bg, borderColor: pres.border }]}>
-                                    <Text style={[styles.statusText, { color: pres.text }]}>{pres.label}</Text>
-                                  </View>
-                                );
-                              })()}
-
-                              {String(inv?.status || '').toUpperCase() === 'PENDING' ? (
-                                <TouchableOpacity
-                                  style={[styles.removeBtn, { backgroundColor: theme.surface, borderColor: '#dc2626' }]}
-                                  onPress={() => handleRevokeInvite(inv.id)}
-                                >
-                                  <Text style={[styles.removeText, { color: '#dc2626' }]}>Revoke</Text>
-                                </TouchableOpacity>
-                              ) : null}
-                            </View>
-                          </View>
-                        </View>
-                      ))}
-                    </ScrollView>
-                  </View>
-                </>
-              )}
-
               <View style={[styles.divider, { backgroundColor: theme.border }]} />
             </>
           )}
@@ -461,9 +419,50 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                 {inviteEmailError ? (
                   <Text style={[styles.inlineError, { color: '#dc2626' }]}>{inviteEmailError}</Text>
                 ) : null}
-                <TouchableOpacity style={[styles.primaryButton]} onPress={handleSendInvite}>
-                  <Text style={styles.primaryButtonText}>Send invite</Text>
+                <TouchableOpacity style={[styles.primaryButton, creatingInvite && styles.primaryButtonDisabled]} onPress={handleSendInvite} disabled={creatingInvite}>
+                  <Text style={styles.primaryButtonText}>{creatingInvite ? 'Sending…' : 'Send invite'}</Text>
                 </TouchableOpacity>
+              </>
+            )}
+
+            {canInviteByEmail && pendingInvites.length > 0 && (
+              <>
+                <View style={[styles.miniDivider, { backgroundColor: theme.border }]} />
+                <Text style={[styles.label, { color: theme.textMuted }]}>Invites</Text>
+                <View style={[styles.sharedBox, { borderColor: theme.border, backgroundColor: theme.surface }]}> 
+                  <ScrollView style={{ maxHeight: 160 }} showsVerticalScrollIndicator={false}>
+                    {pendingInvites.map((inv) => (
+                      <View key={inv.id} style={[styles.sharedRow, { backgroundColor: theme.inputBg }]}> 
+                        <View style={styles.sharedHeaderRow}>
+                          <View style={styles.sharedInfoLeft}>
+                            <Text style={[styles.sharedName, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
+                              {inv.invitee_email || inv.email || inv.id}
+                            </Text>
+                          </View>
+                          <View style={styles.sharedRightActions}>
+                            {(() => {
+                              const pres = getInviteStatusPresentation(inv.status);
+                              return (
+                                <View style={[styles.statusPill, { backgroundColor: pres.bg, borderColor: pres.border }]}>
+                                  <Text style={[styles.statusText, { color: pres.text }]}>{pres.label}</Text>
+                                </View>
+                              );
+                            })()}
+
+                            {String(inv?.status || '').toUpperCase() === 'PENDING' ? (
+                              <TouchableOpacity
+                                style={[styles.removeBtn, { backgroundColor: theme.surface, borderColor: '#dc2626' }]}
+                                onPress={() => handleRevokeInvite(inv.id)}
+                              >
+                                <Text style={[styles.removeText, { color: '#dc2626' }]}>Revoke</Text>
+                              </TouchableOpacity>
+                            ) : null}
+                          </View>
+                        </View>
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
               </>
             )}
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
