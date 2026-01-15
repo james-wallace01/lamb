@@ -312,7 +312,9 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
           ) : null}
 
           <View style={styles.modalContent}>
-            <Text style={[styles.title, { color: theme.text }]}>Share {targetType}</Text>
+            <Text style={[styles.title, { color: theme.text }]}>
+              {targetType === 'collection' ? 'Delegate Collection' : `Share ${targetType}`}
+            </Text>
 
           {targetType === 'vault' && (
             <>
@@ -385,6 +387,9 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
               placeholder="Username or email"
               placeholderTextColor={theme.placeholder}
               value={query}
+              autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
               onChangeText={setQuery}
             />
             {suggestions.length > 0 && (

@@ -367,7 +367,7 @@ export default function Vault({ navigation, route }) {
               disabled={!canShareOnline}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               accessibilityRole="button"
-              accessibilityLabel="Share collection"
+              accessibilityLabel="Delegate collection"
             >
               <Text style={styles.sharePillText}>Share</Text>
             </TouchableOpacity>

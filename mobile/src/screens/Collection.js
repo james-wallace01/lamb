@@ -452,7 +452,7 @@ export default function Collection({ navigation, route }) {
               onPress={() => openShare('collection', collectionId)}
               disabled={!canShareOnline}
               accessibilityRole="button"
-              accessibilityLabel="Share collection"
+              accessibilityLabel="Delegate collection"
             >
               <Text style={styles.secondaryButtonText}>Share</Text>
             </TouchableOpacity>
