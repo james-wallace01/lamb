@@ -316,6 +316,18 @@ export default function Vault({ navigation, route }) {
     setShareVisible(true);
   };
 
+  useEffect(() => {
+    const p = route?.params || {};
+    if (p.openEdit) {
+      openEditModal();
+      navigation.setParams({ openEdit: undefined });
+    }
+    if (p.openShare) {
+      openShare(p.shareTargetType || 'vault', p.shareTargetId || vaultId);
+      navigation.setParams({ openShare: undefined, shareTargetType: undefined, shareTargetId: undefined });
+    }
+  }, [route?.params, navigation, openEditModal, vaultId]);
+
   const getCollectionShareCount = (collectionId) => {
     const vId = String(vaultId);
     const cId = String(collectionId);

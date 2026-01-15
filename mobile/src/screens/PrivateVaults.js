@@ -4,6 +4,7 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import LambHeader from '../components/LambHeader';
 import { useData } from '../context/DataContext';
 import { firestore } from '../firebase';
+import { getCollectionCapabilities, getVaultCapabilities } from '../policies/capabilities';
 import { runWithMinimumDuration } from '../utils/timing';
 
 export default function PrivateVaults({ navigation, route }) {
@@ -14,6 +15,13 @@ export default function PrivateVaults({ navigation, route }) {
     assets,
     currentUser,
     addVault,
+    addCollection,
+    deleteVault,
+    deleteCollection,
+    getRoleForVault,
+    canCreateCollectionsInVault,
+    getRoleForCollection,
+    canCreateAssetsInCollection,
     refreshData,
     theme,
     vaultMemberships,
@@ -135,6 +143,18 @@ export default function PrivateVaults({ navigation, route }) {
     [myVaults, selectedVaultId]
   );
 
+  const vaultCaps = useMemo(() => {
+    if (!selectedVaultId || !currentUser?.id) return getVaultCapabilities({ role: null, canCreateCollections: false });
+    const role = getRoleForVault?.(String(selectedVaultId), String(currentUser.id));
+    const canCreateCollections = canCreateCollectionsInVault?.(String(selectedVaultId), String(currentUser.id));
+    return getVaultCapabilities({ role, canCreateCollections });
+  }, [selectedVaultId, currentUser?.id, getRoleForVault, canCreateCollectionsInVault]);
+
+  const canVaultEditOnline = vaultCaps.canEdit && !isOffline;
+  const canVaultShareOnline = vaultCaps.canShare && !isOffline;
+  const canVaultCloneOnline = vaultCaps.canClone && !isOffline;
+  const canVaultDeleteOnline = vaultCaps.canDelete && !isOffline;
+
   const vaultCollections = useMemo(() => {
     if (!selectedVaultId) return [];
     const list = (collections || []).filter((c) => String(c?.vaultId) === String(selectedVaultId));
@@ -154,6 +174,19 @@ export default function PrivateVaults({ navigation, route }) {
     () => (selectedCollectionId ? (collections || []).find((c) => String(c?.id) === String(selectedCollectionId)) : null),
     [collections, selectedCollectionId]
   );
+
+  const collectionCaps = useMemo(() => {
+    if (!selectedCollectionId || !currentUser?.id) return getCollectionCapabilities({ role: null, canCreateAssets: false });
+    const role = getRoleForCollection?.(String(selectedCollectionId), String(currentUser.id));
+    const canCreateAssets = canCreateAssetsInCollection?.(String(selectedCollectionId), String(currentUser.id));
+    return getCollectionCapabilities({ role, canCreateAssets });
+  }, [selectedCollectionId, currentUser?.id, getRoleForCollection, canCreateAssetsInCollection]);
+
+  const canCollectionEditOnline = collectionCaps.canEdit && !isOffline;
+  const canCollectionShareOnline = collectionCaps.canShare && !isOffline;
+  const canCollectionMoveOnline = collectionCaps.canMove && !isOffline;
+  const canCollectionCloneOnline = collectionCaps.canClone && !isOffline;
+  const canCollectionDeleteOnline = collectionCaps.canDelete && !isOffline;
 
   const collectionAssets = useMemo(() => {
     if (!selectedCollectionId) return [];
@@ -293,6 +326,78 @@ export default function PrivateVaults({ navigation, route }) {
                   })}
                 </ScrollView>
               )}
+
+              <View style={styles.actionRow}>
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, (!selectedVaultId || !canVaultEditOnline) && styles.buttonDisabled]}
+                  disabled={!selectedVaultId || !canVaultEditOnline}
+                  onPress={() => navigation.navigate('Vault', { vaultId: selectedVaultId, openEdit: true })}
+                >
+                  <Text style={[styles.actionButtonText, { color: theme.text }]}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, (!selectedVaultId || !canVaultShareOnline) && styles.buttonDisabled]}
+                  disabled={!selectedVaultId || !canVaultShareOnline}
+                  onPress={() => navigation.navigate('Vault', { vaultId: selectedVaultId, openShare: true, shareTargetType: 'vault', shareTargetId: selectedVaultId })}
+                >
+                  <Text style={[styles.actionButtonText, { color: theme.text }]}>Delegate</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, (!selectedVaultId || !canVaultCloneOnline) && styles.buttonDisabled]}
+                  disabled={!selectedVaultId || !canVaultCloneOnline}
+                  onPress={() => {
+                    if (!selectedVault) return;
+                    const baseName = selectedVault?.name ? String(selectedVault.name) : 'Vault';
+                    const copyName = limit35(`${baseName} (Copy)`);
+                    (async () => {
+                      const res = await addVault({
+                        name: copyName,
+                        images: Array.isArray(selectedVault?.images) ? selectedVault.images : [],
+                        heroImage: selectedVault?.heroImage || null,
+                      });
+                      if (!res || res.ok === false) {
+                        Alert.alert('Clone failed', res?.message || 'Unable to clone vault');
+                        return;
+                      }
+                      if (res.vaultId) {
+                        onSelectVault(String(res.vaultId));
+                      }
+                    })();
+                  }}
+                >
+                  <Text style={[styles.actionButtonText, { color: theme.text }]}>Clone</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.dangerButton, { backgroundColor: theme.dangerBg, borderColor: theme.dangerBorder }, (!selectedVaultId || !canVaultDeleteOnline) && styles.buttonDisabled]}
+                  disabled={!selectedVaultId || !canVaultDeleteOnline}
+                  onPress={() => {
+                    if (!selectedVaultId) return;
+                    Alert.alert('Delete Vault?', 'This action cannot be undone.', [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: () => {
+                          (async () => {
+                            const res = await deleteVault?.(String(selectedVaultId));
+                            if (!res || res.ok === false) {
+                              Alert.alert('Delete failed', res?.message || 'Unable to delete vault');
+                              return;
+                            }
+                            setSelectedVaultId(null);
+                            setSelectedCollectionId(null);
+                            setVaultDropdownOpen(false);
+                            setCollectionDropdownOpen(false);
+                            await refreshData?.();
+                          })();
+                        },
+                      },
+                    ]);
+                  }}
+                >
+                  <Text style={[styles.actionButtonText, { color: theme.dangerText }]}>Delete</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             <View style={[styles.card, styles.collectionAccent, { backgroundColor: theme.surface, borderColor: theme.border, borderLeftColor: theme.clone }]}>
@@ -333,6 +438,84 @@ export default function PrivateVaults({ navigation, route }) {
                   )}
                 </ScrollView>
               )}
+
+              <View style={styles.actionRow}>
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, (!selectedCollectionId || !canCollectionEditOnline) && styles.buttonDisabled]}
+                  disabled={!selectedCollectionId || !canCollectionEditOnline}
+                  onPress={() => navigation.navigate('Collection', { collectionId: selectedCollectionId, openEdit: true })}
+                >
+                  <Text style={[styles.actionButtonText, { color: theme.text }]}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, (!selectedCollectionId || !canCollectionShareOnline) && styles.buttonDisabled]}
+                  disabled={!selectedCollectionId || !canCollectionShareOnline}
+                  onPress={() => navigation.navigate('Collection', { collectionId: selectedCollectionId, openShare: true, shareTargetType: 'collection', shareTargetId: selectedCollectionId })}
+                >
+                  <Text style={[styles.actionButtonText, { color: theme.text }]}>Delegate</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, (!selectedCollectionId || !canCollectionMoveOnline) && styles.buttonDisabled]}
+                  disabled={!selectedCollectionId || !canCollectionMoveOnline}
+                  onPress={() => navigation.navigate('Collection', { collectionId: selectedCollectionId, openMove: true })}
+                >
+                  <Text style={[styles.actionButtonText, { color: theme.text }]}>Move</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, (!selectedCollectionId || !canCollectionCloneOnline) && styles.buttonDisabled]}
+                  disabled={!selectedCollectionId || !canCollectionCloneOnline}
+                  onPress={() => {
+                    if (!selectedVaultId || !selectedCollection) return;
+                    const baseName = selectedCollection?.name ? String(selectedCollection.name) : 'Collection';
+                    const copyName = limit35(`${baseName} (Copy)`);
+                    (async () => {
+                      const res = await addCollection?.({
+                        vaultId: String(selectedVaultId),
+                        name: copyName,
+                        images: Array.isArray(selectedCollection?.images) ? selectedCollection.images : [],
+                        heroImage: selectedCollection?.heroImage || null,
+                      });
+                      if (!res || res.ok === false) {
+                        Alert.alert('Clone failed', res?.message || 'Unable to clone collection');
+                        return;
+                      }
+                      if (res.collectionId) {
+                        onSelectCollection(String(res.collectionId));
+                      }
+                    })();
+                  }}
+                >
+                  <Text style={[styles.actionButtonText, { color: theme.text }]}>Clone</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.dangerButton, { backgroundColor: theme.dangerBg, borderColor: theme.dangerBorder }, (!selectedCollectionId || !canCollectionDeleteOnline) && styles.buttonDisabled]}
+                  disabled={!selectedCollectionId || !canCollectionDeleteOnline}
+                  onPress={() => {
+                    if (!selectedCollectionId) return;
+                    Alert.alert('Delete Collection?', 'This action cannot be undone.', [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: () => {
+                          (async () => {
+                            const res = await deleteCollection?.(String(selectedCollectionId));
+                            if (!res || res.ok === false) {
+                              Alert.alert('Delete failed', res?.message || 'Unable to delete collection');
+                              return;
+                            }
+                            setSelectedCollectionId(null);
+                            setCollectionDropdownOpen(false);
+                            await refreshData?.();
+                          })();
+                        },
+                      },
+                    ]);
+                  }}
+                >
+                  <Text style={[styles.actionButtonText, { color: theme.dangerText }]}>Delete</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </>
         )}
@@ -389,6 +572,10 @@ const styles = StyleSheet.create({
   vaultAccent: { borderLeftWidth: 4, paddingLeft: 12 },
   collectionAccent: { borderLeftWidth: 4, paddingLeft: 12 },
   assetAccent: { borderLeftWidth: 4, paddingLeft: 12 },
+  actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  actionButton: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1 },
+  actionButtonText: { fontWeight: '700', fontSize: 13 },
+  dangerButton: { borderWidth: 1 },
   cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },

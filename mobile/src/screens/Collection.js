@@ -350,6 +350,22 @@ export default function Collection({ navigation, route }) {
   };
 
   useEffect(() => {
+    const p = route?.params || {};
+    if (p.openEdit) {
+      openEditModal();
+      navigation.setParams({ openEdit: undefined });
+    }
+    if (p.openShare) {
+      openShare(p.shareTargetType || 'collection', p.shareTargetId || collectionId);
+      navigation.setParams({ openShare: undefined, shareTargetType: undefined, shareTargetId: undefined });
+    }
+    if (p.openMove) {
+      setShowMoveBox(true);
+      navigation.setParams({ openMove: undefined });
+    }
+  }, [route?.params, navigation, openEditModal, openShare, collectionId]);
+
+  useEffect(() => {
     setMoveVaultId(collection?.vaultId || null);
   }, [collection?.vaultId]);
 
