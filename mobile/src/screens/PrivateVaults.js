@@ -556,10 +556,6 @@ export default function PrivateVaults({ navigation, route }) {
             backgroundColor: theme.surface,
             borderColor: theme.border,
             borderLeftColor: theme.success,
-            borderBottomLeftRadius: 0,
-            borderBottomRightRadius: 0,
-            borderBottomWidth: 0,
-            paddingBottom: 0,
           },
         ]}
       >
@@ -690,16 +686,16 @@ export default function PrivateVaults({ navigation, route }) {
     if (!selectedVaultId || !selectedCollectionId) return null;
 
     const isLast = index === (section?.data?.length || 0) - 1;
-    const isFirst = index === 0;
     const outerStyle = {
+      marginTop: 10,
       backgroundColor: theme.surface,
       borderColor: theme.border,
       borderLeftColor: theme.success,
       borderLeftWidth: 4,
-      borderRightWidth: 1,
+      borderWidth: 1,
+      borderRadius: 10,
       paddingLeft: 12,
       paddingRight: 14,
-      paddingTop: isFirst ? 8 : 0,
     };
 
     if (item?.__empty) {
@@ -719,7 +715,7 @@ export default function PrivateVaults({ navigation, route }) {
     return (
       <View style={outerStyle}>
         <TouchableOpacity
-          style={[styles.assetRow, { borderBottomColor: theme.border, borderBottomWidth: isLast ? 0 : 1 }]}
+          style={[styles.assetRow, { borderBottomWidth: 0 }]}
           onPress={() => {
             if (isTempId(a?.id)) return;
             setSelectedAssetId(String(a.id));
@@ -747,8 +743,7 @@ export default function PrivateVaults({ navigation, route }) {
         </TouchableOpacity>
 
         {!isTempId(a?.id) ? (
-          <View style={[styles.assetInlineActions, { paddingBottom: isLast ? 0 : 10 }]}
-          >
+          <View style={[styles.assetInlineActions, { paddingBottom: isLast ? 0 : 10 }]}>
             <TouchableOpacity
               style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, !canAssetMoveOnlineForRow && styles.buttonDisabled]}
               disabled={!canAssetMoveOnlineForRow}
@@ -814,26 +809,7 @@ export default function PrivateVaults({ navigation, route }) {
   };
 
   const renderAssetsSectionFooter = () => {
-    if (!selectedVaultId || !selectedCollectionId) return null;
-    return (
-      <View
-        style={[
-          {
-            backgroundColor: theme.surface,
-            borderColor: theme.border,
-            borderLeftColor: theme.success,
-            borderLeftWidth: 4,
-            borderRightWidth: 1,
-            borderBottomWidth: 1,
-            borderBottomLeftRadius: 10,
-            borderBottomRightRadius: 10,
-            paddingLeft: 12,
-            paddingRight: 14,
-            paddingBottom: 10,
-          },
-        ]}
-      />
-    );
+    return null;
   };
 
   return (
