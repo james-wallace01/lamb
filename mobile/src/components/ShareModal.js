@@ -149,8 +149,8 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
       return;
     }
 
-    // Vault owners can create invitation codes (delivered via your existing invite workflow).
-    if (targetType === 'vault' && canInviteByEmail) {
+    // Vault owners can create invitation codes (works for existing users and non-users).
+    if (canInviteByEmail) {
       await handleCreateInvite();
       return;
     }
@@ -168,20 +168,22 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
   };
 
   const canInviteByEmail = useMemo(() => {
-    if (targetType !== 'vault') return false;
-    const v = (vaults || []).find((x) => x?.id === targetId);
-    if (!v) return false;
-    return v?.ownerId && currentUser?.id && v.ownerId === currentUser.id;
-  }, [targetType, targetId, vaults, currentUser]);
+    if (!vaultIdForTarget) return false;
+    const uid = currentUser?.id ? String(currentUser.id) : null;
+    if (!uid) return false;
+    const m = (vaultMemberships || []).find(
+      (x) => x && String(x.vault_id) === String(vaultIdForTarget) && String(x.user_id) === uid
+    );
+    return !!(m && m.status === 'ACTIVE' && m.role === 'OWNER');
+  }, [vaultIdForTarget, vaultMemberships, currentUser]);
 
   useEffect(() => {
     if (!visible) return;
-    if (targetType !== 'vault') return;
     if (!firestore) return;
-    if (!targetId) return;
+    if (!vaultIdForTarget) return;
     if (!canInviteByEmail) return;
 
-    const vaultId = String(targetId);
+    const vaultId = String(vaultIdForTarget);
     const invRef = collection(firestore, 'vaults', vaultId, 'invitations');
     const q = fsQuery(invRef, orderBy('createdAt', 'desc'));
 
@@ -190,7 +192,15 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
       (snap) => {
         const invites = snap.docs
           .map((d) => ({ id: String(d.id), ...(d.data() || {}) }))
-          .filter((x) => ['PENDING', 'ACCEPTED', 'DENIED'].includes(String(x?.status || '').toUpperCase()));
+          .filter((x) => ['PENDING', 'ACCEPTED', 'DENIED'].includes(String(x?.status || '').toUpperCase()))
+          .filter((x) => {
+            const sType = String(x?.scope_type || 'VAULT').toUpperCase();
+            const sId = x?.scope_id == null ? null : String(x.scope_id);
+            if (targetType === 'vault') return sType === 'VAULT';
+            if (targetType === 'collection') return sType === 'COLLECTION' && sId === String(targetId);
+            if (targetType === 'asset') return sType === 'ASSET' && sId === String(targetId);
+            return false;
+          });
         setPendingInvites(invites);
       },
       () => {
@@ -205,7 +215,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
         // ignore
       }
     };
-  }, [visible, targetType, targetId, canInviteByEmail]);
+  }, [visible, targetType, targetId, vaultIdForTarget, canInviteByEmail]);
 
   const handleCreateInvite = async () => {
     const email = inviteEmail.trim().toLowerCase();
@@ -220,12 +230,20 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
     }
     setCreatingInvite(true);
     try {
-      const vaultId = String(targetId);
+      const vaultId = String(vaultIdForTarget);
+      const scopeType = targetType === 'vault' ? 'VAULT' : targetType === 'collection' ? 'COLLECTION' : targetType === 'asset' ? 'ASSET' : 'VAULT';
+      const scopeId = targetType === 'vault' ? null : String(targetId);
+      const permissions =
+        targetType === 'vault'
+          ? { View: true, Create: !!canCreateCollections }
+          : targetType === 'collection'
+            ? { View: true, Create: !!canCreateAssets }
+            : { View: true };
       const resp = await apiFetch(`${API_URL}/vaults/${encodeURIComponent(vaultId)}/invitations`, {
         requireAuth: true,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, scopeType, scopeId, permissions }),
       });
       const json = await resp.json().catch(() => null);
       if (!resp.ok) {
@@ -247,7 +265,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
       Alert.alert('Revoke failed', 'Only the vault owner can revoke invites.');
       return;
     }
-    const vaultId = String(targetId);
+    const vaultId = String(vaultIdForTarget);
     const inviteId = String(code || '').trim();
     if (!vaultId || !inviteId) return;
     try {

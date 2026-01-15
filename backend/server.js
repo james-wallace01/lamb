@@ -280,12 +280,13 @@ const buildInviteEmail = ({ code } = {}) => {
   const appName = getPublicAppName();
   const safeCode = String(code || '').trim();
   const lines = [
-    `You've been invited to join a shared vault in ${appName}.`,
+    `You've been invited to access a shared vault in ${appName}.`,
     '',
     'To accept:',
-    '1) Open the app',
-    '2) Go to Home',
-    '3) Paste this invite code:',
+    `1) If you don't have an account yet, create one using this email address`,
+    '2) Open the app',
+    '3) Go to Home',
+    '4) Paste this invite code:',
     '',
     safeCode,
     '',
@@ -294,11 +295,31 @@ const buildInviteEmail = ({ code } = {}) => {
   return {
     subject: `${appName} vault invitation`,
     text: lines.join('\n'),
-    html: `<p>You've been invited to join a shared vault in <b>${appName}</b>.</p>
+    html: `<p>You've been invited to access a shared vault in <b>${appName}</b>.</p>
 <p><b>Invite code:</b> <code>${safeCode}</code></p>
+<p>If you don't have an account yet, create one using this email address, then accept the invite.</p>
 <p>Open the app → Home → paste the invite code to accept.</p>
 <p style="color:#666">If you weren't expecting this invite, you can ignore this email.</p>`,
   };
+};
+
+const sanitizeInviteScopeType = (value) => {
+  const raw = String(value || '').trim().toUpperCase();
+  if (raw === 'VAULT' || raw === 'COLLECTION' || raw === 'ASSET') return raw;
+  return 'VAULT';
+};
+
+const sanitizePermissionsObject = (value) => {
+  const src = value && typeof value === 'object' ? value : null;
+  const out = { View: true };
+  if (!src) return out;
+
+  // Keep this intentionally minimal + boolean-only.
+  if (src.Create === true) out.Create = true;
+  if (src.Move === true) out.Move = true;
+  if (src.Clone === true) out.Clone = true;
+  if (src.Delete === true) out.Delete = true;
+  return out;
 };
 
 const buildUsernameChangedEmail = ({ oldUsername, newUsername } = {}) => {
@@ -1542,11 +1563,29 @@ app.post('/vaults/:vaultId/invitations', requireFirebaseAuth, inviteRateLimiter,
     const inviteeEmail = normalizeEmail(req.body?.email);
     if (!inviteeEmail) return res.status(400).json({ error: 'Missing email' });
 
+    const scopeType = sanitizeInviteScopeType(req.body?.scope_type || req.body?.scopeType);
+    const scopeId = typeof (req.body?.scope_id ?? req.body?.scopeId) === 'string' ? String(req.body.scope_id ?? req.body.scopeId).trim() : null;
+    if ((scopeType === 'COLLECTION' || scopeType === 'ASSET') && !scopeId) {
+      return res.status(400).json({ error: 'Missing scopeId' });
+    }
+
+    const permissions = sanitizePermissionsObject(req.body?.permissions);
+
     const owner = await assertOwnerForVault(db, vaultId, req.firebaseUser);
     if (!owner.ok) return res.status(owner.status).json({ error: owner.error });
 
     const paid = await assertVaultPaid(db, vaultId);
     if (!paid.ok) return res.status(paid.status).json({ error: paid.error });
+
+    // Validate scope exists (defensive; avoids writing arbitrary scope IDs).
+    if (scopeType === 'COLLECTION') {
+      const cSnap = await db.collection('vaults').doc(vaultId).collection('collections').doc(String(scopeId)).get();
+      if (!cSnap.exists) return res.status(404).json({ error: 'Collection not found' });
+    }
+    if (scopeType === 'ASSET') {
+      const aSnap = await db.collection('vaults').doc(vaultId).collection('assets').doc(String(scopeId)).get();
+      if (!aSnap.exists) return res.status(404).json({ error: 'Asset not found' });
+    }
 
     const quota = await assertAndIncrementVaultDailyQuota(db, vaultId, { kind: 'invite', actorUid: String(req.firebaseUser.uid) });
     if (!quota.ok) return res.status(quota.status).json({ error: quota.error, tier: quota.tier, limits: quota.limits, dateKey: quota.dateKey });
@@ -1562,6 +1601,9 @@ app.post('/vaults/:vaultId/invitations', requireFirebaseAuth, inviteRateLimiter,
       id: code,
       vault_id: vaultId,
       status: 'PENDING',
+      scope_type: scopeType,
+      scope_id: scopeType === 'VAULT' ? null : String(scopeId),
+      permissions,
       invitee_email: inviteeEmail,
       invitee_uid: null,
       createdAt: now,
@@ -1605,6 +1647,46 @@ app.post('/vaults/:vaultId/invitations', requireFirebaseAuth, inviteRateLimiter,
   } catch (err) {
     console.error('Error creating invitation:', err);
     return res.status(500).json({ error: err?.message || 'Failed to create invitation' });
+  }
+});
+
+app.post('/invitations/deny', requireFirebaseAuth, inviteRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+    if (!code) return res.status(400).json({ error: 'Missing code' });
+
+    const vaultId = code.split('_')[0];
+    if (!vaultId) return res.status(400).json({ error: 'Invalid code' });
+
+    const invRef = db.collection('vaults').doc(String(vaultId)).collection('invitations').doc(code);
+    const invSnap = await invRef.get();
+    if (!invSnap.exists) return res.status(404).json({ error: 'Invitation not found' });
+
+    const inv = invSnap.data() || {};
+    if (inv.status !== 'PENDING') return res.status(409).json({ error: 'Invitation is no longer active' });
+
+    const tokenEmail = normalizeEmail(req.firebaseUser?.email);
+    const inviteEmail = normalizeEmail(inv.invitee_email);
+    if (inviteEmail && tokenEmail && inviteEmail !== tokenEmail) {
+      return res.status(403).json({ error: 'This invitation is for a different email' });
+    }
+
+    const uid = String(req.firebaseUser.uid);
+    await invRef.set({ status: 'DENIED', deniedAt: Date.now(), deniedByUid: uid, invitee_uid: uid }, { merge: true });
+
+    await writeAuditEventIfPaid(db, vaultId, {
+      type: 'INVITE_DENIED',
+      actorUid: uid,
+      payload: { invitation_id: code },
+    });
+
+    return res.json({ ok: true, vaultId: String(vaultId) });
+  } catch (err) {
+    console.error('Error denying invitation:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to deny invitation' });
   }
 });
 
@@ -2211,6 +2293,11 @@ app.post('/invitations/accept', requireFirebaseAuth, inviteRateLimiter, async (r
     const uid = String(req.firebaseUser.uid);
     const membershipRef = db.collection('vaults').doc(String(vaultId)).collection('memberships').doc(uid);
     const existingMember = await membershipRef.get();
+
+    const invitePerms = sanitizePermissionsObject(inv.permissions);
+    const scopeType = sanitizeInviteScopeType(inv.scope_type);
+    const scopeId = typeof inv.scope_id === 'string' ? inv.scope_id : null;
+
     if (existingMember.exists) {
       // If already a member, treat as idempotent accept.
       await invRef.set({ status: 'ACCEPTED', acceptedAt: Date.now(), acceptedByUid: uid, invitee_uid: uid }, { merge: true });
@@ -2224,7 +2311,7 @@ app.post('/invitations/accept', requireFirebaseAuth, inviteRateLimiter, async (r
           vault_id: String(vaultId),
           role: 'DELEGATE',
           status: 'ACTIVE',
-          permissions: { View: true },
+          permissions: invitePerms,
           assigned_at: Date.now(),
           revoked_at: null,
           invitedBy: inv.createdBy || null,
@@ -2233,6 +2320,38 @@ app.post('/invitations/accept', requireFirebaseAuth, inviteRateLimiter, async (r
         { merge: true }
       );
       await invRef.set({ status: 'ACCEPTED', acceptedAt: Date.now(), acceptedByUid: uid, invitee_uid: uid }, { merge: true });
+    }
+
+    // Apply scope grants (for collection/asset invites).
+    if (scopeType === 'COLLECTION' || scopeType === 'ASSET') {
+      if (!scopeId) return res.status(400).json({ error: 'Invitation scope is invalid' });
+
+      // Defensive: ensure scope exists.
+      if (scopeType === 'COLLECTION') {
+        const cSnap = await db.collection('vaults').doc(String(vaultId)).collection('collections').doc(String(scopeId)).get();
+        if (!cSnap.exists) return res.status(404).json({ error: 'Collection not found' });
+      }
+      if (scopeType === 'ASSET') {
+        const aSnap = await db.collection('vaults').doc(String(vaultId)).collection('assets').doc(String(scopeId)).get();
+        if (!aSnap.exists) return res.status(404).json({ error: 'Asset not found' });
+      }
+
+      const grantId = `${scopeType}:${String(scopeId)}:${uid}`;
+      const grantRef = db.collection('vaults').doc(String(vaultId)).collection('permissionGrants').doc(grantId);
+      await grantRef.set(
+        {
+          id: grantId,
+          user_id: uid,
+          vault_id: String(vaultId),
+          scope_type: scopeType,
+          scope_id: String(scopeId),
+          permissions: invitePerms,
+          assigned_at: Date.now(),
+          invitedBy: inv.createdBy || null,
+          invitedAt: inv.createdAt || null,
+        },
+        { merge: true }
+      );
     }
 
     await writeAuditEventIfPaid(db, vaultId, {
