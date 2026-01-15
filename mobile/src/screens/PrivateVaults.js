@@ -30,6 +30,7 @@ export default function PrivateVaults({ navigation, route }) {
     updateVault,
     updateCollection,
     moveCollection,
+    moveAsset,
     refreshData,
     theme,
     vaultMemberships,
@@ -89,6 +90,14 @@ export default function PrivateVaults({ navigation, route }) {
   const [selectedAssetId, setSelectedAssetId] = useState(null);
   const [assetEditTitle, setAssetEditTitle] = useState('');
   const [assetEditCategory, setAssetEditCategory] = useState('');
+
+  const [assetMoveVisible, setAssetMoveVisible] = useState(false);
+  const [assetMoveAssetId, setAssetMoveAssetId] = useState(null);
+  const [assetMoveVaultId, setAssetMoveVaultId] = useState(null);
+  const [assetMoveCollectionId, setAssetMoveCollectionId] = useState(null);
+  const [assetMoveVaultDropdownOpen, setAssetMoveVaultDropdownOpen] = useState(false);
+  const [assetMoveCollectionDropdownOpen, setAssetMoveCollectionDropdownOpen] = useState(false);
+  const [assetMoveBusy, setAssetMoveBusy] = useState(false);
 
   const limit35 = (value = '') => String(value).slice(0, 35);
   const makeTempId = () => `temp_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -385,6 +394,47 @@ export default function PrivateVaults({ navigation, route }) {
   const canAssetShareOnline = assetCaps.canShare && !isOffline;
   const canAssetDeleteOnline = assetCaps.canDelete && !isOffline;
 
+  const assetMoveAsset = useMemo(
+    () => {
+      if (!assetMoveAssetId) return null;
+      return (assets || []).find((a) => String(a?.id) === String(assetMoveAssetId)) || null;
+    },
+    [assets, assetMoveAssetId]
+  );
+
+  const assetMoveOwnerVaults = useMemo(() => {
+    const ownerId = assetMoveAsset?.ownerId != null ? String(assetMoveAsset.ownerId) : null;
+    if (!ownerId) return [];
+    const list = (myVaults || []).filter((v) => v?.ownerId != null && String(v.ownerId) === ownerId);
+    list.sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
+    return list;
+  }, [assetMoveAsset?.ownerId, myVaults]);
+
+  const assetMoveOwnerCollections = useMemo(() => {
+    const ownerId = assetMoveAsset?.ownerId != null ? String(assetMoveAsset.ownerId) : null;
+    if (!ownerId || !assetMoveVaultId) return [];
+    const vId = String(assetMoveVaultId);
+    const all = dedupeById([...(optimisticCollections || []), ...(collections || [])]);
+    const list = all.filter((c) => c?.ownerId != null && String(c.ownerId) === ownerId && String(c?.vaultId) === vId);
+    list.sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
+    return list;
+  }, [assetMoveAsset?.ownerId, assetMoveVaultId, collections, optimisticCollections]);
+
+  useEffect(() => {
+    if (!assetMoveVisible) return;
+    if (!assetMoveVaultId || isTempId(assetMoveVaultId)) return;
+    const vId = String(assetMoveVaultId);
+    retainVaultCollections?.(vId);
+    return () => releaseVaultCollections?.(vId);
+  }, [assetMoveVisible, assetMoveVaultId, retainVaultCollections, releaseVaultCollections]);
+
+  useEffect(() => {
+    if (!assetMoveVisible) return;
+    const valid = assetMoveOwnerCollections.some((c) => String(c?.id) === String(assetMoveCollectionId));
+    if (valid) return;
+    setAssetMoveCollectionId(assetMoveOwnerCollections.length ? String(assetMoveOwnerCollections[0].id) : null);
+  }, [assetMoveVisible, assetMoveOwnerCollections, assetMoveCollectionId]);
+
   useEffect(() => {
     setSelectedAssetId(null);
     setAssetEditVisible(false);
@@ -661,6 +711,11 @@ export default function PrivateVaults({ navigation, route }) {
     }
 
     const a = item;
+    const canMoveCloneRole = currentUser?.id ? getRoleForAsset?.(String(a.id), String(currentUser.id)) : null;
+    const moveCloneCaps = getAssetCapabilities({ role: canMoveCloneRole });
+    const canAssetMoveOnlineForRow = moveCloneCaps.canMove && !isOffline;
+    const canAssetCloneOnlineForRow = moveCloneCaps.canClone && !isOffline && typeof addAsset === 'function';
+
     return (
       <View style={outerStyle}>
         <TouchableOpacity
@@ -690,6 +745,70 @@ export default function PrivateVaults({ navigation, route }) {
           </View>
           <Text style={[styles.chevron, { color: theme.textMuted }]}>›</Text>
         </TouchableOpacity>
+
+        {!isTempId(a?.id) ? (
+          <View style={[styles.assetInlineActions, { paddingBottom: isLast ? 0 : 10 }]}
+          >
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, !canAssetMoveOnlineForRow && styles.buttonDisabled]}
+              disabled={!canAssetMoveOnlineForRow}
+              onPress={() => {
+                setAssetMoveAssetId(String(a.id));
+                setAssetMoveVaultId(String(a?.vaultId || selectedVaultId || ''));
+                setAssetMoveCollectionId(String(a?.collectionId || selectedCollectionId || ''));
+                setAssetMoveVaultDropdownOpen(false);
+                setAssetMoveCollectionDropdownOpen(false);
+                setAssetMoveVisible(true);
+              }}
+            >
+              <Text style={[styles.actionButtonText, { color: theme.text }]}>Move</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, !canAssetCloneOnlineForRow && styles.buttonDisabled]}
+              disabled={!canAssetCloneOnlineForRow}
+              onPress={() => {
+                const baseTitle = a?.title ? String(a.title) : 'Untitled';
+                const copyTitle = limit35(`${baseTitle} (Copy)`);
+                const tempId = makeTempId();
+                const optimistic = {
+                  id: tempId,
+                  title: copyTitle,
+                  vaultId: String(a?.vaultId || selectedVaultId || ''),
+                  collectionId: String(a?.collectionId || selectedCollectionId || ''),
+                  category: a?.category ? String(a.category) : '',
+                  createdAt: Date.now(),
+                  editedAt: Date.now(),
+                };
+                setOptimisticAssets((prev) => [...(prev || []), optimistic]);
+                (async () => {
+                  const res = await addAsset?.({
+                    vaultId: String(a?.vaultId || selectedVaultId || ''),
+                    collectionId: String(a?.collectionId || selectedCollectionId || ''),
+                    title: copyTitle,
+                    type: a?.type,
+                    category: a?.category,
+                    images: a?.images,
+                    heroImage: a?.heroImage,
+                  });
+                  if (!res || res.ok === false) {
+                    Alert.alert('Clone failed', res?.message || 'Unable to clone asset');
+                    setOptimisticAssets((prev) => (prev || []).filter((x) => String(x?.id) !== String(tempId)));
+                    return;
+                  }
+                  if (res.assetId) {
+                    const realId = String(res.assetId);
+                    setOptimisticAssets((prev) =>
+                      (prev || []).map((x) => (String(x?.id) === String(tempId) ? { ...x, id: realId } : x))
+                    );
+                  }
+                })();
+              }}
+            >
+              <Text style={[styles.actionButtonText, { color: theme.text }]}>Clone</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </View>
     );
   };
@@ -927,6 +1046,137 @@ export default function PrivateVaults({ navigation, route }) {
             </View>
           </View>
           </Modal>
+
+        <Modal visible={assetMoveVisible} transparent animationType="fade" onRequestClose={() => setAssetMoveVisible(false)}>
+          <View style={styles.modalBackdrop}>
+            <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>Move Asset</Text>
+
+              <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Destination Vault</Text>
+              <TouchableOpacity
+                style={[styles.dropdownButton, { backgroundColor: theme.inputBg, borderColor: theme.border }]}
+                onPress={() => {
+                  setAssetMoveVaultDropdownOpen((v) => !v);
+                  setAssetMoveCollectionDropdownOpen(false);
+                }}
+                disabled={isOffline || assetMoveBusy}
+              >
+                <Text style={[styles.dropdownButtonText, { color: theme.text }]}>
+                  {assetMoveVaultId ? (assetMoveOwnerVaults.find((v) => String(v.id) === String(assetMoveVaultId))?.name || 'Select vault…') : 'Select vault…'}
+                </Text>
+                <Text style={[styles.dropdownArrow, { color: theme.textMuted }]}>{assetMoveVaultDropdownOpen ? '▲' : '▼'}</Text>
+              </TouchableOpacity>
+
+              {assetMoveVaultDropdownOpen ? (
+                <ScrollView style={[styles.dropdownList, { backgroundColor: theme.inputBg, borderColor: theme.border }]} nestedScrollEnabled>
+                  {assetMoveOwnerVaults.map((v) => {
+                    const active = assetMoveVaultId != null && String(v.id) === String(assetMoveVaultId);
+                    return (
+                      <TouchableOpacity
+                        key={v.id}
+                        style={[styles.dropdownItem, { borderBottomColor: theme.border }, active && styles.dropdownItemActive]}
+                        onPress={() => {
+                          setAssetMoveVaultId(String(v.id));
+                          setAssetMoveVaultDropdownOpen(false);
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemText, { color: theme.text }]}>{v.name || v.id}</Text>
+                        {active && <Text style={styles.checkmark}>✓</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              ) : null}
+
+              <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Destination Collection</Text>
+              <TouchableOpacity
+                style={[styles.dropdownButton, { backgroundColor: theme.inputBg, borderColor: theme.border }]}
+                onPress={() => {
+                  setAssetMoveCollectionDropdownOpen((v) => !v);
+                  setAssetMoveVaultDropdownOpen(false);
+                }}
+                disabled={isOffline || assetMoveBusy || !assetMoveVaultId}
+              >
+                <Text style={[styles.dropdownButtonText, { color: theme.text }]}>
+                  {assetMoveCollectionId
+                    ? (assetMoveOwnerCollections.find((c) => String(c.id) === String(assetMoveCollectionId))?.name || 'Select collection…')
+                    : 'Select collection…'}
+                </Text>
+                <Text style={[styles.dropdownArrow, { color: theme.textMuted }]}>{assetMoveCollectionDropdownOpen ? '▲' : '▼'}</Text>
+              </TouchableOpacity>
+
+              {assetMoveCollectionDropdownOpen ? (
+                <ScrollView style={[styles.dropdownList, { backgroundColor: theme.inputBg, borderColor: theme.border }]} nestedScrollEnabled>
+                  {assetMoveOwnerCollections.map((c) => {
+                    const active = assetMoveCollectionId != null && String(c.id) === String(assetMoveCollectionId);
+                    return (
+                      <TouchableOpacity
+                        key={c.id}
+                        style={[styles.dropdownItem, { borderBottomColor: theme.border }, active && styles.dropdownItemActive]}
+                        onPress={() => {
+                          setAssetMoveCollectionId(String(c.id));
+                          setAssetMoveCollectionDropdownOpen(false);
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemText, { color: theme.text }]}>{c.name || c.id}</Text>
+                        {active && <Text style={styles.checkmark}>✓</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              ) : null}
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface }]}
+                  onPress={() => {
+                    setAssetMoveVisible(false);
+                    setAssetMoveAssetId(null);
+                    setAssetMoveVaultDropdownOpen(false);
+                    setAssetMoveCollectionDropdownOpen(false);
+                  }}
+                >
+                  <Text style={[styles.secondaryButtonText, { color: theme.text }]}>Close</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.primaryButton,
+                    { backgroundColor: theme.primary, borderColor: theme.primary },
+                    (isOffline || assetMoveBusy || !assetMoveAssetId || !assetMoveVaultId || !assetMoveCollectionId) && styles.buttonDisabled,
+                  ]}
+                  disabled={isOffline || assetMoveBusy || !assetMoveAssetId || !assetMoveVaultId || !assetMoveCollectionId}
+                  onPress={() => {
+                    if (!assetMoveAssetId || !assetMoveVaultId || !assetMoveCollectionId) return;
+                    if (assetMoveBusy) return;
+                    setAssetMoveBusy(true);
+                    (async () => {
+                      try {
+                        const res = await moveAsset?.({
+                          assetId: String(assetMoveAssetId),
+                          targetVaultId: String(assetMoveVaultId),
+                          targetCollectionId: String(assetMoveCollectionId),
+                        });
+                        if (!res || res.ok === false) {
+                          Alert.alert('Move failed', res?.message || 'Unable to move asset');
+                          return;
+                        }
+                        setAssetMoveVisible(false);
+                        setAssetMoveAssetId(null);
+                        setAssetMoveVaultDropdownOpen(false);
+                        setAssetMoveCollectionDropdownOpen(false);
+                        await refreshData?.();
+                      } finally {
+                        setAssetMoveBusy(false);
+                      }
+                    })();
+                  }}
+                >
+                  <Text style={[styles.primaryButtonText, { color: theme.onAccentText }]}>Move</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
 
         <Modal visible={collectionEditVisible} transparent animationType="fade" onRequestClose={() => setCollectionEditVisible(false)}>
           <View style={styles.modalBackdrop}>
@@ -1192,9 +1442,6 @@ export default function PrivateVaults({ navigation, route }) {
                       {sortedMyVaults.length === 0 ? 'None' : (selectedVault?.name || 'Select vault…')}
                     </Text>
                   </View>
-                  {selectedVaultId ? (
-                    <Text style={[styles.cardSubtitle, { color: theme.textMuted, marginTop: 4 }]}>Delegates: {getDelegateCountForVault(selectedVaultId)}</Text>
-                  ) : null}
                 </View>
                 <Text style={[styles.dropdownArrow, { color: theme.textMuted }]}>{vaultDropdownOpen ? '▲' : '▼'}</Text>
               </TouchableOpacity>
@@ -1612,6 +1859,7 @@ const styles = StyleSheet.create({
   secondaryButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 10, borderWidth: 1 },
   secondaryButtonText: { fontWeight: '700' },
   dangerButtonText: { fontWeight: '800' },
+  assetInlineActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   cardTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
