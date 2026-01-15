@@ -1,16 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Image, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Image, Linking, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fetchSignInMethodsForEmail } from 'firebase/auth';
+import * as WebBrowser from 'expo-web-browser';
+import * as AuthSession from 'expo-auth-session';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 import { firebaseAuth, isFirebaseConfigured } from '../firebase';
 import { API_URL } from '../config/api';
 import { apiFetch } from '../utils/apiFetch';
+import { GOOGLE_ANDROID_CLIENT_ID, GOOGLE_IOS_CLIENT_ID, GOOGLE_WEB_CLIENT_ID, isGoogleOAuthConfigured } from '../config/oauth';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function SignUp({ navigation }) {
-  const { register, loading, theme, ensureFirebaseSignupAuth, backendReachable, showAlert } = useData();
+  const { register, loginWithApple, loginWithGoogleIdToken, loading, theme, ensureFirebaseSignupAuth, backendReachable, showAlert } = useData();
   const Alert = { alert: showAlert };
   const insets = useSafeAreaInsets();
   const [firstName, setFirstName] = useState('');
@@ -24,6 +29,51 @@ export default function SignUp({ navigation }) {
   const [emailBlurred, setEmailBlurred] = useState(false);
 
   const isOffline = backendReachable === false;
+
+  const googleDiscovery = AuthSession.useAutoDiscovery('https://accounts.google.com');
+  const googleClientId = Platform.OS === 'ios'
+    ? (GOOGLE_IOS_CLIENT_ID || GOOGLE_WEB_CLIENT_ID)
+    : Platform.OS === 'android'
+      ? (GOOGLE_ANDROID_CLIENT_ID || GOOGLE_WEB_CLIENT_ID)
+      : GOOGLE_WEB_CLIENT_ID;
+
+  const [googleRequest, googleResponse, googlePromptAsync] = AuthSession.useAuthRequest(
+    {
+      clientId: googleClientId || 'MISSING_CLIENT_ID',
+      scopes: ['openid', 'profile', 'email'],
+      responseType: AuthSession.ResponseType.IdToken,
+      redirectUri: AuthSession.makeRedirectUri({ scheme: 'lamb' }),
+    },
+    googleDiscovery
+  );
+
+  useEffect(() => {
+    if (!googleResponse) return;
+    if (googleResponse.type !== 'success') return;
+    const idToken = googleResponse?.params?.id_token;
+    if (!idToken) {
+      Alert.alert('Google Sign In', 'Google sign-in failed. Please try again.');
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      if (loading || isOffline) return;
+      try {
+        const res = await loginWithGoogleIdToken?.({ idToken });
+        if (!cancelled && res && res.ok === false) {
+          Alert.alert('Google Sign In', res.message || 'Google sign-in failed');
+        }
+      } catch {
+        if (!cancelled) Alert.alert('Google Sign In', 'Google sign-in failed. Please try again.');
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [googleResponse]);
 
   const stripInvisibleChars = (value) => String(value || '').replace(/[\u200B-\u200D\uFEFF]/g, '');
   const normalizeEmail = (value) => stripInvisibleChars(value).trim().toLowerCase();
@@ -266,6 +316,49 @@ export default function SignUp({ navigation }) {
       <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
       <Text style={[styles.tagline, { color: theme.textSecondary }]}>Simple Asset Management</Text>
       <Text style={[styles.title, { color: theme.text }]}>Create Account</Text>
+
+      {Platform.OS === 'ios' && (
+        <TouchableOpacity
+          style={[styles.secondaryButton, { backgroundColor: theme.surface, borderColor: theme.border }, (loading || isOffline) && styles.buttonDisabled]}
+          onPress={async () => {
+            if (loading || isOffline) return;
+            try {
+              const res = await loginWithApple?.();
+              if (!res?.ok && res?.message && res.message !== 'Canceled') {
+                Alert.alert('Apple Sign In', res.message);
+              }
+            } catch {
+              Alert.alert('Apple Sign In', 'Apple Sign In failed. Please try again.');
+            }
+          }}
+          disabled={loading || isOffline}
+        >
+          <Text style={styles.secondaryButtonText}>Continue with Apple</Text>
+        </TouchableOpacity>
+      )}
+
+      <TouchableOpacity
+        style={[styles.secondaryButton, { backgroundColor: theme.surface, borderColor: theme.border }, (loading || isOffline) && styles.buttonDisabled]}
+        onPress={async () => {
+          if (loading || isOffline) return;
+          if (!isGoogleOAuthConfigured()) {
+            Alert.alert('Google Sign In', 'Google sign-in is not configured for this build.');
+            return;
+          }
+          if (!googleDiscovery) {
+            Alert.alert('Google Sign In', 'Google sign-in is not ready yet. Please try again.');
+            return;
+          }
+          try {
+            await googlePromptAsync?.({ useProxy: true });
+          } catch {
+            Alert.alert('Google Sign In', 'Google sign-in failed. Please try again.');
+          }
+        }}
+        disabled={loading || isOffline || !googleRequest || !googleDiscovery}
+      >
+        <Text style={styles.secondaryButtonText}>Continue with Google</Text>
+      </TouchableOpacity>
       
       <TextInput style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]} placeholder="First name" placeholderTextColor={theme.placeholder} value={firstName} onChangeText={setFirstName} />
       
@@ -373,6 +466,8 @@ const styles = StyleSheet.create({
   button: { backgroundColor: '#2563eb', padding: 14, borderRadius: 10, alignItems: 'center', marginTop: 8 },
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: '#fff', fontWeight: '700' },
+  secondaryButton: { backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, padding: 14, borderRadius: 10, alignItems: 'center' },
+  secondaryButtonText: { color: '#e5e7f0', fontWeight: '700' },
   link: { color: '#9ab6ff', marginTop: 12, fontWeight: '600', textAlign: 'center', marginBottom: 32 },
   legalCard: { borderWidth: 1, borderColor: '#1f2738', borderRadius: 12, padding: 16, gap: 8 },
   legalTitle: { color: '#e5e7f0', fontWeight: '700', fontSize: 14, marginBottom: 2 },

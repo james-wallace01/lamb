@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
+import { useIsFocused } from '@react-navigation/native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import LambHeader from '../components/LambHeader';
 import { useData } from '../context/DataContext';
 import { firestore } from '../firebase';
@@ -17,10 +19,129 @@ const titleize = (raw) => {
     .join(' ');
 };
 
-const formatActor = (actorUid, meUid) => {
+const toMillis = (value) => {
+  if (value == null) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (typeof value?.toMillis === 'function') {
+    try {
+      return value.toMillis();
+    } catch {
+      return null;
+    }
+  }
+  return null;
+};
+
+const startOfLocalDayMs = (date) => {
+  const d = date instanceof Date ? date : new Date();
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+};
+
+const addDays = (date, days) => {
+  const d = date instanceof Date ? date : new Date();
+  const next = new Date(d);
+  next.setDate(d.getDate() + Number(days || 0));
+  return next;
+};
+
+const isSameLocalDay = (a, b) => {
+  if (!(a instanceof Date) || !(b instanceof Date)) return false;
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+};
+
+const formatDayLabel = (date) => {
+  if (!(date instanceof Date)) return 'Date';
+  const today = new Date();
+  if (isSameLocalDay(date, today)) return 'Today';
+  if (isSameLocalDay(date, addDays(today, -1))) return 'Yesterday';
+  try {
+    return date.toLocaleDateString();
+  } catch {
+    return 'Date';
+  }
+};
+
+const getEntityLabel = (rawType) => {
+  const t = String(rawType || '').toUpperCase();
+  if (t.includes('ASSET')) return 'Asset';
+  if (t.includes('COLLECTION')) return 'Collection';
+  if (t.includes('VAULT')) return 'Vault';
+  if (t.includes('PERMISSION_GRANT')) return 'Access';
+  if (t.includes('MEMBERSHIP')) return 'Access';
+  return 'Item';
+};
+
+const isCloneEvent = ({ rawType, payload }) => {
+  const t = String(rawType || '').toUpperCase();
+  if (t.includes('CLONED') || t.includes('CLONE')) return true;
+  // Heuristic: the Clone button creates a "(Copy)" asset.
+  const title = payload?.title != null ? String(payload.title) : '';
+  return t === 'ASSET_CREATED' && title.includes('(Copy)');
+};
+
+const isMoveEvent = ({ rawType, payload }) => {
+  const t = String(rawType || '').toUpperCase();
+  if (t.includes('MOVED')) return true;
+  const changes = payload?.changes;
+  if (!changes || typeof changes !== 'object' || Array.isArray(changes)) return false;
+  // Most move operations change one of these identifiers.
+  return (
+    Object.prototype.hasOwnProperty.call(changes, 'collectionId') ||
+    Object.prototype.hasOwnProperty.call(changes, 'collection_id') ||
+    Object.prototype.hasOwnProperty.call(changes, 'vaultId') ||
+    Object.prototype.hasOwnProperty.call(changes, 'vault_id')
+  );
+};
+
+const getActionLabel = ({ rawType, payload }) => {
+  const t = String(rawType || '').toUpperCase();
+  if (!t) return 'Event';
+
+  // View/access
+  if (t.endsWith('_VIEWED')) return 'Viewed';
+
+  if (isCloneEvent({ rawType: t, payload })) return 'Cloned';
+  if (isMoveEvent({ rawType: t, payload })) return 'Moved';
+
+  // Create
+  if (t.endsWith('_CREATED') || t.includes('_CREATED')) return 'Created';
+
+  // Delete intent + result
+  if (t.endsWith('_DELETE_REQUESTED') || t.includes('DELETE_REQUESTED')) return 'Delete';
+  if (t.endsWith('_DELETED') || t.includes('_DELETED') || t === 'VAULT_DELETED') return 'Deleted';
+
+  // Sharing / access
+  if (t.includes('GRANT_CREATED') || t.includes('MEMBERSHIP_CREATED')) return 'Delegate';
+  if (t.includes('GRANT_UPDATED') || t.includes('MEMBERSHIP_UPDATED') || t.includes('SHARE_UPDATED')) return 'Edited';
+  if (t.includes('SHARE_REVOKED') || t.includes('REVOKED') || t.includes('GRANT_DELETED') || t.includes('MEMBERSHIP_DELETED')) return 'Deleted';
+  if (t.includes('SHARED')) return 'Delegate';
+
+  // Update/save
+  if (t.endsWith('_UPDATED') || t.includes('_UPDATED')) return 'Edited';
+
+  // Ownership transfer
+  if (t.includes('OWNERSHIP_TRANSFERRED') || t.includes('TRANSFERRED')) return 'Transfer';
+
+  return 'Event';
+};
+
+const formatActor = (actorUid, meUid, users) => {
   if (!actorUid) return 'Unknown';
-  if (meUid && String(actorUid) === String(meUid)) return 'You';
-  return String(actorUid);
+  const raw = String(actorUid);
+  if (meUid && raw === String(meUid)) return 'You';
+
+  const match = (users || []).find((u) => {
+    const id = u?.id != null ? String(u.id) : null;
+    const userId = u?.user_id != null ? String(u.user_id) : null;
+    const firebaseUid = u?.firebaseUid != null ? String(u.firebaseUid) : null;
+    return (id && id === raw) || (userId && userId === raw) || (firebaseUid && firebaseUid === raw);
+  });
+
+  return match?.username || match?.email || raw;
 };
 
 const describePayload = (payload) => {
@@ -35,23 +156,129 @@ const describePayload = (payload) => {
   return null;
 };
 
-export default function Tracking() {
-  const { theme, currentUser, vaults, backendReachable } = useData();
+const formatChangeValue = (value) => {
+  if (value == null) return '—';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
+
+const getActionStyles = (action, theme) => {
+  const a = String(action || '').toUpperCase();
+
+  const base = {
+    cardBorderColor: theme.border,
+    badgeText: theme.onAccentText || '#fff',
+  };
+
+  if (a === 'DELETE' || a === 'DELETED') {
+    return {
+      ...base,
+      badgeBg: theme.danger || theme.dangerBorder,
+    };
+  }
+
+  if (a === 'MOVE' || a === 'MOVED') {
+    return {
+      ...base,
+      badgeBg: theme.warning || theme.warningBorder || theme.primary,
+    };
+  }
+
+  if (a === 'CLONE' || a === 'CLONED') {
+    return {
+      ...base,
+      badgeBg: theme.clone || theme.cloneBorder || theme.primary,
+    };
+  }
+
+  if (a === 'DELEGATE') {
+    return {
+      ...base,
+      badgeBg: theme.success || theme.successBorder || theme.primary,
+    };
+  }
+
+  if (a === 'EDIT' || a === 'EDITED') {
+    return {
+      ...base,
+      badgeBg: theme.primary,
+    };
+  }
+
+  return {
+    ...base,
+    badgeBg: theme.border,
+    badgeText: theme.text,
+  };
+};
+
+const EMAIL_SENT_MARKER_TYPE = 'NOTIFICATION_EMAIL_SENT';
+
+export default function Tracking({ navigation }) {
+  const { theme, currentUser, vaults, vaultMemberships, users, backendReachable } = useData();
   const isOffline = backendReachable === false;
+  const isFocused = useIsFocused();
 
   const uid = currentUser?.id ? String(currentUser.id) : null;
 
-  const ownedVaults = useMemo(() => {
+  const vaultBuckets = useMemo(() => {
     if (!uid) return [];
-    return (vaults || [])
-      .filter((v) => v?.ownerId != null && String(v.ownerId) === uid)
-      .map((v) => ({ id: String(v.id), name: v.name || 'Vault' }));
-  }, [vaults, uid]);
+
+    const activeVaultIds = new Set(
+      (vaultMemberships || [])
+        .filter((m) => m?.status === 'ACTIVE' && m?.user_id != null && String(m.user_id) === uid && m?.vault_id != null)
+        .map((m) => String(m.vault_id))
+    );
+
+    const owned = [];
+    const shared = [];
+
+    for (const v of (vaults || [])) {
+      const vId = v?.id != null ? String(v.id) : '';
+      if (!vId) continue;
+      const isOwner = v?.ownerId != null && String(v.ownerId) === uid;
+      const isMember = activeVaultIds.has(vId);
+      if (!isOwner && !isMember) continue;
+      const entry = { id: vId, name: v?.name || 'Vault' };
+      if (isOwner) owned.push(entry);
+      else shared.push(entry);
+    }
+
+    return { owned, shared };
+  }, [vaults, vaultMemberships, uid]);
+
+  const initialFilter = useMemo(() => {
+    if (!uid) return 'PRIVATE';
+    return (vaultBuckets?.owned?.length || 0) > 0 ? 'PRIVATE' : 'SHARED';
+  }, [uid, vaultBuckets]);
+
+  const [vaultFilter, setVaultFilter] = useState(initialFilter);
+
+  useEffect(() => {
+    if (vaultFilter === 'PRIVATE' && (vaultBuckets?.owned?.length || 0) === 0 && (vaultBuckets?.shared?.length || 0) > 0) {
+      setVaultFilter('SHARED');
+    }
+  }, [vaultFilter, vaultBuckets]);
+
+  const trackedVaults = useMemo(() => {
+    if (!uid) return [];
+    return vaultFilter === 'PRIVATE' ? (vaultBuckets?.owned || []) : (vaultBuckets?.shared || []);
+  }, [uid, vaultFilter, vaultBuckets]);
 
   const [events, setEvents] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const mountedRef = useRef(true);
+
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const selectedDayStartMs = useMemo(() => startOfLocalDayMs(selectedDate), [selectedDate]);
+  const selectedDayEndMs = useMemo(() => selectedDayStartMs + 24 * 60 * 60 * 1000, [selectedDayStartMs]);
 
   const load = async () => {
     if (!uid) return;
@@ -60,28 +287,65 @@ export default function Tracking() {
     setLoadError(null);
 
     try {
+      let anyOk = false;
+      let firstErr = null;
+
       const perVault = await Promise.all(
-        ownedVaults.map(async (v) => {
-          const q = query(
-            collection(firestore, 'vaults', String(v.id), 'auditEvents'),
-            orderBy('createdAt', 'desc'),
-            limit(50)
-          );
-          const snap = await getDocs(q);
-          return snap.docs.map((d) => ({
-            id: d.id,
-            vaultId: String(v.id),
-            vaultName: v.name,
-            ...(d.data() || {}),
-          }));
+        trackedVaults.map(async (v) => {
+          try {
+            const q = query(
+              collection(firestore, 'vaults', String(v.id), 'auditEvents'),
+              orderBy('createdAt', 'desc'),
+              limit(50)
+            );
+            const snap = await getDocs(q);
+            anyOk = true;
+            return snap.docs.map((d) => ({
+              id: d.id,
+              vaultId: String(v.id),
+              vaultName: v.name,
+              ...(d.data() || {}),
+            }));
+          } catch (e) {
+            if (!firstErr) firstErr = e?.message || String(e);
+            return [];
+          }
         })
       );
 
       const merged = perVault.flat().filter(Boolean);
-      merged.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+      merged.sort((a, b) => (toMillis(b?.createdAt) || 0) - (toMillis(a?.createdAt) || 0));
+
+      const filtered = merged.filter((evt) => {
+        const ts = toMillis(evt?.createdAt ?? evt?.timestamp);
+        if (!ts) return false;
+        return ts >= selectedDayStartMs && ts < selectedDayEndMs;
+      });
+
+      // Some backend emails write a marker audit event so we can show “Email sent” on
+      // the related action without exposing private emailEvents documents to the client.
+      const emailMarkerByRelatedAuditId = new Map();
+      for (const evt of filtered) {
+        if (String(evt?.type || '') !== EMAIL_SENT_MARKER_TYPE) continue;
+        const related = evt?.payload?.related_audit_event_id;
+        if (related) emailMarkerByRelatedAuditId.set(String(related), evt);
+      }
+
+      const filteredVisible = filtered
+        .filter((evt) => String(evt?.type || '') !== EMAIL_SENT_MARKER_TYPE)
+        .map((evt) => {
+          const id = evt?.id != null ? String(evt.id) : null;
+          const marker = id ? emailMarkerByRelatedAuditId.get(id) : null;
+          return {
+            ...evt,
+            __emailSent: !!marker,
+            __emailSentAt: marker ? toMillis(marker?.createdAt) : null,
+          };
+        });
 
       if (!mountedRef.current) return;
-      setEvents(merged);
+      setLoadError(!anyOk && firstErr ? String(firstErr) : null);
+      setEvents(filteredVisible);
     } catch (err) {
       const msg = err?.message || String(err);
       if (!mountedRef.current) return;
@@ -98,9 +362,11 @@ export default function Tracking() {
   }, []);
 
   useEffect(() => {
+    // Reload whenever the screen becomes active again.
+    if (!isFocused) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uid, ownedVaults.length]);
+  }, [isFocused, uid, vaultFilter, trackedVaults.length, selectedDayStartMs]);
 
   const handleRefresh = async () => {
     if (refreshing) return;
@@ -132,35 +398,165 @@ export default function Tracking() {
           <Text style={[styles.title, { color: theme.text }]}>Tracking</Text>
         </View>
 
+        {!!uid ? (
+          <View style={styles.filterRow}>
+            <Pressable
+              onPress={() => setVaultFilter('PRIVATE')}
+              style={[
+                styles.filterPill,
+                {
+                  backgroundColor: vaultFilter === 'PRIVATE' ? theme.surfaceAlt : theme.surface,
+                  borderColor: vaultFilter === 'PRIVATE' ? theme.primary : theme.border,
+                },
+              ]}
+            >
+              <Text style={[styles.filterText, { color: vaultFilter === 'PRIVATE' ? theme.text : theme.textMuted }]}>Private Vault</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setVaultFilter('SHARED')}
+              style={[
+                styles.filterPill,
+                {
+                  backgroundColor: vaultFilter === 'SHARED' ? theme.surfaceAlt : theme.surface,
+                  borderColor: vaultFilter === 'SHARED' ? theme.primary : theme.border,
+                },
+              ]}
+            >
+              <Text style={[styles.filterText, { color: vaultFilter === 'SHARED' ? theme.text : theme.textMuted }]}>Shared Vault</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {!!uid ? (
+          <View style={styles.dateRow}>
+            <Pressable
+              onPress={() => {
+                if (Platform.OS === 'ios') {
+                  setShowDatePicker((v) => !v);
+                } else {
+                  setShowDatePicker(true);
+                }
+              }}
+              style={[
+                styles.datePill,
+                {
+                  backgroundColor: theme.primary,
+                  borderColor: theme.primary,
+                },
+              ]}
+            >
+              <Text style={[styles.filterText, { color: theme.onAccentText || '#fff' }]}>
+                {formatDayLabel(selectedDate)}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => navigation?.navigate?.('EmailNotifications')}
+              style={[
+                styles.datePill,
+                {
+                  backgroundColor: theme.primary,
+                  borderColor: theme.primary,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Go to Email Notifications"
+            >
+              <Text style={[styles.filterText, { color: theme.onAccentText || '#fff' }]}>Notifications</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {!!uid && showDatePicker ? (
+          <View style={[styles.datePickerWrap, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+            <DateTimePicker
+              value={selectedDate}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              maximumDate={new Date()}
+              accentColor={theme.primary}
+              textColor={theme.text}
+              themeVariant={theme.isDark ? 'dark' : 'light'}
+              onChange={(event, nextDate) => {
+                if (Platform.OS !== 'ios') setShowDatePicker(false);
+                if (event?.type === 'dismissed') return;
+                if (!nextDate) return;
+                setSelectedDate(nextDate);
+              }}
+            />
+          </View>
+        ) : null}
+
         {isOffline ? (
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Offline — tracking is unavailable.</Text>
         ) : !uid ? (
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Sign in to view tracking.</Text>
-        ) : ownedVaults.length === 0 ? (
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No owned vaults to track.</Text>
+        ) : trackedVaults.length === 0 ? (
+          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+            {vaultFilter === 'PRIVATE' ? 'No private vaults to track.' : 'No shared vaults to track.'}
+          </Text>
         ) : loadError ? (
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Tracking unavailable: {loadError}</Text>
         ) : events.length === 0 ? (
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No tracking events yet.</Text>
+          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No activity for this day.</Text>
         ) : (
           events.map((evt) => {
-            const when = evt?.createdAt ? new Date(Number(evt.createdAt)).toLocaleString() : '';
-            const type = titleize(evt?.type || 'UNKNOWN');
-            const actor = formatActor(evt?.actor_uid, uid);
-            const detail = describePayload(evt?.payload);
+            const ts = toMillis(evt?.createdAt ?? evt?.timestamp);
+            const when = ts ? new Date(ts).toLocaleString() : '';
+            const rawType = evt?.type || evt?.action || 'UNKNOWN';
+            const action = getActionLabel({ rawType, payload: evt?.payload || null });
+            const entity = getEntityLabel(rawType);
+            const type = `${action} ${entity}`;
+            const actor = formatActor(evt?.actor_uid || evt?.actor_id, uid, users);
+            const detail = describePayload(evt?.payload || evt?.target || evt?.after_state);
+            const rawChanges = evt?.payload?.changes;
+            const changeKeys = rawChanges && typeof rawChanges === 'object' && !Array.isArray(rawChanges) ? Object.keys(rawChanges) : [];
+            const visibleKeys = changeKeys.slice(0, 3);
+            const remaining = changeKeys.length - visibleKeys.length;
+            const actionStyles = getActionStyles(action, theme);
+            const badgeLabel = action;
 
             return (
               <View
                 key={`${evt.vaultId}:${evt.id}`}
-                style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                style={[styles.card, { backgroundColor: theme.surface, borderColor: actionStyles.cardBorderColor }]}
               >
-                <Text style={[styles.cardTitle, { color: theme.text }]}>{type}</Text>
+                <View style={styles.cardHeaderRow}>
+                  <Text style={[styles.cardTitle, { color: theme.text }]}>{type}</Text>
+                  <View
+                    style={[
+                      styles.badge,
+                      {
+                        backgroundColor: actionStyles.badgeBg,
+                        borderWidth: 0,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.badgeText, { color: actionStyles.badgeText }]}>{badgeLabel}</Text>
+                  </View>
+                </View>
                 <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>
                   {evt?.vaultName ? `Vault: ${evt.vaultName}` : 'Vault'}
                   {when ? ` • ${when}` : ''}
                 </Text>
                 <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>By: {actor}</Text>
+                {evt?.__emailSent ? (
+                  <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>Email sent</Text>
+                ) : null}
                 {detail ? <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>{detail}</Text> : null}
+                {visibleKeys.map((k) => {
+                  const ch = rawChanges?.[k] || null;
+                  const from = formatChangeValue(ch?.from);
+                  const to = formatChangeValue(ch?.to);
+                  return (
+                    <Text key={`${evt.vaultId}:${evt.id}:chg:${k}`} style={[styles.cardSubtitle, { color: theme.textMuted }]}>
+                      {k}: {from} → {to}
+                    </Text>
+                  );
+                })}
+                {remaining > 0 ? (
+                  <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>+{remaining} more</Text>
+                ) : null}
               </View>
             );
           })
@@ -177,7 +573,19 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: '700', color: '#fff' },
   subtitle: { color: '#c5c5d0' },
 
+  filterRow: { flexDirection: 'row', gap: 10 },
+  filterPill: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, alignItems: 'center' },
+  filterText: { fontSize: 13, fontWeight: '700' },
+
+  dateRow: { flexDirection: 'row', gap: 10, width: '100%', alignItems: 'stretch' },
+  datePill: { flex: 1, paddingVertical: 10, minHeight: 44, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  datePickerWrap: { borderWidth: 1, borderRadius: 10, overflow: 'hidden' },
+
   card: { padding: 14, borderRadius: 10, backgroundColor: '#11121a', borderWidth: 1, borderColor: '#1f2738' },
+  cardHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   cardTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
   cardSubtitle: { color: '#9aa1b5', marginTop: 4, fontSize: 13 },
+
+  badge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1 },
+  badgeText: { fontSize: 12, fontWeight: '700' },
 });

@@ -61,6 +61,27 @@ Notes:
 - The mobile app enforces HTTPS-only networking and iOS App Transport Security is configured to disallow HTTP.
 - For local development against a local backend, use an HTTPS tunnel (e.g. ngrok/cloudflared) or run your local backend behind HTTPS.
 
+## Apple + Google sign-in
+
+The app supports signing in with Apple and Google via Firebase Auth.
+
+### Firebase console setup
+- Enable **Apple** and **Google** providers in Firebase Console → Authentication → Sign-in method.
+- Apple requires Apple Developer configuration (Sign in with Apple capability + keys). Google requires OAuth client IDs.
+
+### Expo env vars (Google)
+
+Set one or more of these Expo public environment variables:
+- `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`
+- `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`
+- `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`
+
+If none are set, the app will show “Google sign-in is not configured for this build.”
+
+### Expo Go vs builds
+- **Apple Sign In** only appears on iOS.
+- For production behavior, prefer an EAS build (TestFlight / internal distribution). OAuth credentials typically require a real iOS bundle ID + Android package name.
+
 ## Testing/Health
 - Expo doctor: `npx expo-doctor`
 

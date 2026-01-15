@@ -218,8 +218,24 @@ service cloud.firestore {
 
       // Audit events are immutable.
       match /auditEvents/{eventId} {
-        allow read: if isOwner(vaultId) && vaultPaid(vaultId);
-        allow create: if isOwner(vaultId) && vaultPaid(vaultId);
+        function isValidAuditEvent() {
+          let nowMs = request.time.toMillis();
+          return request.resource.data.createdAt is int
+            && request.resource.data.createdAt >= nowMs - (10 * 60 * 1000)
+            && request.resource.data.createdAt <= nowMs + (10 * 60 * 1000)
+            && request.resource.data.type is string
+            && request.resource.data.type.size() >= 1
+            && request.resource.data.actor_uid is string
+            && request.resource.data.actor_uid == uid()
+            && request.resource.data.vault_id is string
+            && request.resource.data.vault_id == vaultId
+            && (!('payload' in request.resource.data) || request.resource.data.payload is map)
+            && (!('source' in request.resource.data) || request.resource.data.source is string)
+            && (!('fingerprint' in request.resource.data) || request.resource.data.fingerprint is string);
+        }
+
+        allow read: if myActiveMembership(vaultId);
+        allow create: if myActiveMembership(vaultId) && isValidAuditEvent();
         allow update, delete: if false;
       }
 

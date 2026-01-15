@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -53,6 +53,7 @@ export default function Asset({ route, navigation }) {
     releaseVaultCollections,
     backendReachable,
     showAlert,
+    createAuditEvent,
   } = useData();
   const Alert = { alert: showAlert };
 
@@ -60,6 +61,23 @@ export default function Asset({ route, navigation }) {
 
   const asset = useMemo(() => assets.find((a) => a.id === assetId), [assetId, assets]);
   const owner = useMemo(() => users.find((u) => u.id === asset?.ownerId), [users, asset]);
+
+  const didLogViewRef = useRef(false);
+
+  useEffect(() => {
+    if (didLogViewRef.current) return;
+    if (isOffline) return;
+    if (!currentUser?.id) return;
+    const vId = routeVaultId ? String(routeVaultId) : (asset?.vaultId ? String(asset.vaultId) : null);
+    const aId = assetId ? String(assetId) : null;
+    if (!vId || !aId) return;
+    didLogViewRef.current = true;
+    createAuditEvent?.({
+      vaultId: vId,
+      type: 'ASSET_VIEWED',
+      payload: { vault_id: vId, asset_id: aId, title: asset?.title || null },
+    }).catch(() => {});
+  }, [asset?.vaultId, asset?.title, assetId, routeVaultId, currentUser?.id, isOffline, createAuditEvent]);
 
   const [moveVaultId, setMoveVaultId] = useState(asset?.vaultId || null);
   const [moveCollectionId, setMoveCollectionId] = useState(asset?.collectionId || null);

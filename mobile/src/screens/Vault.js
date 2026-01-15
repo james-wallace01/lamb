@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, StyleSheet, View, Text, TouchableOpacity, TextInput, Image, ScrollView, Modal, RefreshControl } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useData } from '../context/DataContext';
@@ -10,7 +10,7 @@ import { runWithMinimumDuration } from '../utils/timing';
 
 export default function Vault({ navigation, route }) {
   const { vaultId } = route.params || {};
-  const { loading, vaults, collections, addCollection, currentUser, getRoleForVault, canCreateCollectionsInVault, users, deleteVault, updateVault, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultCollections, releaseVaultCollections, backendReachable, showAlert } = useData();
+  const { loading, vaults, collections, addCollection, currentUser, getRoleForVault, canCreateCollectionsInVault, users, deleteVault, updateVault, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultCollections, releaseVaultCollections, backendReachable, showAlert, createAuditEvent } = useData();
   const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
   const [newName, setNewName] = useState('');
@@ -67,6 +67,22 @@ export default function Vault({ navigation, route }) {
   const storedHeroImage = vault?.heroImage || null;
   const heroImage = storedHeroImage || defaultHeroImage;
   const previewImages = heroImage ? [heroImage, ...vaultImages.filter((img) => img !== storedHeroImage)] : vaultImages;
+
+  const didLogViewRef = useRef(false);
+
+  useEffect(() => {
+    if (didLogViewRef.current) return;
+    if (isOffline) return;
+    if (!currentUser?.id) return;
+    const vId = vaultId ? String(vaultId) : null;
+    if (!vId) return;
+    didLogViewRef.current = true;
+    createAuditEvent?.({
+      vaultId: vId,
+      type: 'VAULT_VIEWED',
+      payload: { vault_id: vId, name: vault?.name || null },
+    }).catch(() => {});
+  }, [vaultId, currentUser?.id, isOffline, createAuditEvent, vault?.name]);
 
   const toImageSource = (value) => (typeof value === 'number' ? value : { uri: value });
 

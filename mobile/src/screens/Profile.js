@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, Image, ScrollView, RefreshControl, Platform, Switch, Linking } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,7 +8,7 @@ import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 import ShareModal from '../components/ShareModal';
 import { getInitials } from '../utils/user';
 
-export default function Profile({ navigation }) {
+export default function Profile({ navigation, route }) {
   const {
     currentUser,
     updateCurrentUser,
@@ -52,6 +52,8 @@ export default function Profile({ navigation }) {
   const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
   const [shareTarget, setShareTarget] = useState(null);
+  const scrollRef = useRef(null);
+  const notificationsOffsetYRef = useRef(null);
 
   const openLegalLink = (url) => {
     Linking.openURL(url).catch(() => {});
@@ -67,6 +69,16 @@ export default function Profile({ navigation }) {
     setDraft(currentUser || {});
     setIsEditing(false);
   }, [currentUser]);
+
+  useEffect(() => {
+    if (route?.params?.scrollTo !== 'notifications') return;
+    const y = notificationsOffsetYRef.current;
+    if (typeof y !== 'number') return;
+
+    // A small top offset keeps the header spacing comfortable.
+    scrollRef.current?.scrollTo?.({ y: Math.max(0, y - 12), animated: true });
+    navigation?.setParams?.({ scrollTo: null });
+  }, [route?.params?.scrollTo, navigation]);
 
   useEffect(() => {
     setCurrentPassword('');
@@ -399,6 +411,7 @@ export default function Profile({ navigation }) {
     <>
     <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
         showsVerticalScrollIndicator={false}
         bounces
@@ -739,7 +752,13 @@ export default function Profile({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+            <View
+              style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              onLayout={(e) => {
+                const y = e?.nativeEvent?.layout?.y;
+                if (typeof y === 'number') notificationsOffsetYRef.current = y;
+              }}
+            > 
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Notifications</Text>
               <TouchableOpacity
                 style={[styles.button, { marginTop: 0 }]}

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, TextInput, ScrollView, Image, Modal, RefreshControl } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useData } from '../context/DataContext';
@@ -10,7 +10,7 @@ import { runWithMinimumDuration } from '../utils/timing';
 
 export default function Collection({ navigation, route }) {
   const { collectionId } = route.params || {};
-  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultAssets, releaseVaultAssets, retainVaultCollections, releaseVaultCollections, backendReachable, showAlert } = useData();
+  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultAssets, releaseVaultAssets, retainVaultCollections, releaseVaultCollections, backendReachable, showAlert, createAuditEvent } = useData();
   const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
   const [newTitle, setNewTitle] = useState('');
@@ -45,6 +45,23 @@ export default function Collection({ navigation, route }) {
   const limit35 = (value = '') => String(value).slice(0, 35);
 
   const collection = useMemo(() => collections.find((c) => c.id === collectionId), [collectionId, collections]);
+
+  const didLogViewRef = useRef(false);
+
+  useEffect(() => {
+    if (didLogViewRef.current) return;
+    if (isOffline) return;
+    if (!currentUser?.id) return;
+    const vId = collection?.vaultId ? String(collection.vaultId) : null;
+    const cId = collectionId ? String(collectionId) : null;
+    if (!vId || !cId) return;
+    didLogViewRef.current = true;
+    createAuditEvent?.({
+      vaultId: vId,
+      type: 'COLLECTION_VIEWED',
+      payload: { vault_id: vId, collection_id: cId, name: collection?.name || null },
+    }).catch(() => {});
+  }, [collection?.vaultId, collection?.name, collectionId, currentUser?.id, isOffline, createAuditEvent]);
 
   useEffect(() => {
     const vId = collection?.vaultId ? String(collection.vaultId) : null;

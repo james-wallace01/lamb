@@ -20,6 +20,15 @@ export const getTheme = (darkEnabled = DEFAULT_DARK_MODE_ENABLED) => {
       dangerBg: '#3b0f0f',
       dangerBorder: '#ef4444',
       dangerText: '#fecaca',
+      danger: '#dc2626',
+      // Action accents (match in-app button colors)
+      warningBorder: '#eab308',
+      successBorder: '#16a34a',
+      cloneBorder: '#a21caf',
+      warning: '#eab308',
+      success: '#16a34a',
+      clone: '#a21caf',
+      onAccentText: '#ffffff',
       inputBg: '#11121a',
     };
   }
@@ -41,6 +50,15 @@ export const getTheme = (darkEnabled = DEFAULT_DARK_MODE_ENABLED) => {
     dangerBg: '#fee2e2',
     dangerBorder: '#ef4444',
     dangerText: '#991b1b',
+    danger: '#dc2626',
+    // Action accents (match in-app button colors)
+    warningBorder: '#eab308',
+    successBorder: '#16a34a',
+    cloneBorder: '#a21caf',
+    warning: '#eab308',
+    success: '#16a34a',
+    clone: '#a21caf',
+    onAccentText: '#ffffff',
     inputBg: '#ffffff',
   };
 };

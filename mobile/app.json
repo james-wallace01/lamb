@@ -13,6 +13,7 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
+      "bundleIdentifier": "app.lamb.mobile",
       "supportsTablet": true,
       "buildNumber": "77",
       "infoPlist": {
@@ -25,6 +26,7 @@
       }
     },
     "android": {
+      "package": "app.lamb.mobile",
       "versionCode": 77,
       "allowBackup": false,
       "adaptiveIcon": {
@@ -48,7 +50,8 @@
         {
           "faceIDPermission": "Allow LAMB to use Face ID to help protect your account."
         }
-      ]
+      ],
+      "expo-web-browser"
     ]
   }
 }

@@ -1,21 +1,26 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { getItem, setItem, removeItem } from '../storage';
 import * as SecureStore from 'expo-secure-store';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import * as Crypto from 'expo-crypto';
 import { DEFAULT_DARK_MODE_ENABLED, getTheme } from '../theme';
 import { getAssetCapabilities, getCollectionCapabilities, getVaultCapabilities } from '../policies/capabilities';
 import { firebaseAuth, firestore, isFirebaseConfigured } from '../firebase';
 import ThemedAlertModal from '../components/ThemedAlertModal';
 import {
   createUserWithEmailAndPassword,
+  signInWithCredential,
   signInWithEmailAndPassword,
   signOut,
   EmailAuthProvider,
+  GoogleAuthProvider,
+  OAuthProvider,
   reauthenticateWithCredential,
   sendEmailVerification,
   updateEmail as firebaseUpdateEmail,
   updatePassword as firebaseUpdatePassword,
 } from 'firebase/auth';
-import { collection, collectionGroup, deleteDoc, doc, documentId, getDoc, onSnapshot, query, runTransaction, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, collectionGroup, deleteDoc, doc, documentId, getDoc, onSnapshot, query, runTransaction, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { API_URL } from '../config/api';
 import NetInfo from '@react-native-community/netinfo';
 import { apiFetch } from '../utils/apiFetch';
@@ -60,6 +65,11 @@ const COMMON_PASSWORDS = new Set([
   'changeme',
 ]);
 
+// Audit logging strategy:
+// - Cloud Functions triggers are the source of truth for create/update/delete.
+// - Client only writes view/access events (not covered by triggers).
+const CLIENT_AUDIT_VIEW_ONLY = true;
+
 const validatePasswordStrength = (password, { username, email } = {}) => {
   const raw = (password || '').toString();
   if (!raw) return { ok: false, message: 'Password is required' };
@@ -100,6 +110,112 @@ const validatePasswordStrength = (password, { username, email } = {}) => {
 };
 
 const clampItemTitle = (value) => String(value || '').slice(0, ITEM_TITLE_MAX_LENGTH);
+
+const truncateAuditString = (value, maxLen = 180) => {
+  const s = value == null ? '' : String(value);
+  if (s.length <= maxLen) return s;
+  return `${s.slice(0, maxLen)}…`;
+};
+
+const normalizeAuditValue = (value) => {
+  if (value == null) return null;
+  const t = typeof value;
+  if (t === 'string') return truncateAuditString(value, 180);
+  if (t === 'number') return Number.isFinite(value) ? value : String(value);
+  if (t === 'boolean') return value;
+
+  if (Array.isArray(value)) {
+    if (value.length <= 8) {
+      return value.map((v) => {
+        const tv = typeof v;
+        if (v == null || tv === 'string' || tv === 'number' || tv === 'boolean') return normalizeAuditValue(v);
+        try {
+          return truncateAuditString(JSON.stringify(v), 180);
+        } catch {
+          return '[complex]';
+        }
+      });
+    }
+    return { __type: 'array', length: value.length };
+  }
+
+  if (t === 'object') {
+    try {
+      return truncateAuditString(JSON.stringify(value), 220);
+    } catch {
+      return '[object]';
+    }
+  }
+
+  try {
+    return truncateAuditString(String(value), 180);
+  } catch {
+    return '[unknown]';
+  }
+};
+
+const auditValuesEqual = (a, b) => {
+  if (a === b) return true;
+  if (a == null && b == null) return true;
+  const ta = typeof a;
+  const tb = typeof b;
+  if (ta !== tb) return false;
+
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) {
+      if (!auditValuesEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+
+  if (ta === 'object') {
+    try {
+      return JSON.stringify(a) === JSON.stringify(b);
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+};
+
+const fnv1a32Hex = (input) => {
+  const str = input == null ? '' : String(input);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < str.length; i += 1) {
+    hash ^= str.charCodeAt(i);
+    // hash *= 16777619 (with 32-bit overflow)
+    hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+};
+
+const buildAuditFingerprint = ({ vaultId, type, actorUid, payload }) => {
+  const v = vaultId != null ? String(vaultId) : '';
+  const t = type != null ? String(type) : '';
+  const a = actorUid != null ? String(actorUid) : '';
+  let p = '';
+  try {
+    p = payload ? JSON.stringify(payload) : '';
+  } catch {
+    p = '[unstringifiable]';
+  }
+  return fnv1a32Hex(`${t}|${v}|${a}|${p}`);
+};
+
+const buildAuditDiff = (beforeData, patch) => {
+  const changes = {};
+  const keys = Object.keys(patch || {});
+  for (const key of keys) {
+    if (key === 'editedAt' || key === 'viewedAt') continue;
+    const before = beforeData ? beforeData[key] : undefined;
+    const after = patch ? patch[key] : undefined;
+    if (auditValuesEqual(before, after)) continue;
+    changes[key] = { from: normalizeAuditValue(before), to: normalizeAuditValue(after) };
+  }
+  return changes;
+};
 
 const stripInvisibleChars = (value) => {
   const raw = (value || '').toString();
@@ -163,12 +279,22 @@ const mapFirebaseAuthError = (error) => {
   if (code === 'auth/email-already-in-use') return 'This email is already in use';
   if (code === 'auth/invalid-email') return 'Please enter a valid email address';
   if (code === 'auth/weak-password') return 'Password is too weak';
+  if (code === 'auth/account-exists-with-different-credential') {
+    return 'An account already exists with this email. Please sign in using the original method.';
+  }
   if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
     return 'Invalid credentials';
   }
   if (code === 'auth/user-disabled') return 'This account is disabled';
   if (code === 'auth/network-request-failed') return 'Network error. Please try again.';
   return error?.message || 'Authentication failed';
+};
+
+const randomNonce = (len = 32) => {
+  const alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._';
+  let out = '';
+  for (let i = 0; i < len; i += 1) out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return out;
 };
 
 const generateStrongPassword = (length = 16) => {
@@ -1614,6 +1740,167 @@ export function DataProvider({ children }) {
     }
   };
 
+  const ensureLocalAndFirestoreUserForFirebaseAuth = async ({ provider, profile } = {}) => {
+    if (!firebaseAuth?.currentUser?.uid) return { ok: false, message: 'Authentication failed' };
+
+    const uid = String(firebaseAuth.currentUser.uid);
+    const email = firebaseAuth.currentUser.email ? normalizeEmail(String(firebaseAuth.currentUser.email)) : '';
+    const displayName = firebaseAuth.currentUser.displayName ? String(firebaseAuth.currentUser.displayName) : '';
+
+    const existingUsernames = new Set(
+      (users || [])
+        .map((u) => (u?.username ? normalizeUsername(u.username) : null))
+        .filter(Boolean)
+    );
+
+    const safeBaseUsername = () => {
+      const fromEmail = email ? String(email).split('@')[0] : '';
+      const fromName = displayName ? displayName.split(/\s+/)[0] : '';
+      const raw = (fromEmail || fromName || profile?.username || 'user').toString();
+      const stripped = stripInvisibleChars(raw)
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]+/g, '-')
+        .replace(/^-+/, '')
+        .replace(/-+$/, '');
+      const candidate = stripped || 'user';
+      const validated = validateUsername(candidate);
+      return validated.ok ? validated.value : 'user';
+    };
+
+    let username = safeBaseUsername();
+    if (existingUsernames.has(username)) {
+      for (let i = 0; i < 50; i += 1) {
+        const next = `${username}${Math.floor(Math.random() * 9000) + 1000}`;
+        if (!existingUsernames.has(next) && validateUsername(next).ok) {
+          username = next;
+          break;
+        }
+      }
+    }
+
+    const [firstNameFromProfile, lastNameFromProfile] = (() => {
+      const full = (profile?.fullName || displayName || '').toString().trim();
+      if (!full) return ['', ''];
+      const parts = full.split(/\s+/).filter(Boolean);
+      if (parts.length === 1) return [parts[0], ''];
+      return [parts[0], parts.slice(1).join(' ')];
+    })();
+
+    const now = Date.now();
+    const newUser = {
+      id: uid,
+      firstName: profile?.firstName ? String(profile.firstName) : firstNameFromProfile,
+      lastName: profile?.lastName ? String(profile.lastName) : lastNameFromProfile,
+      email,
+      username,
+      prefersDarkMode: DEFAULT_DARK_MODE_ENABLED,
+      profileImage: null,
+      firebaseUid: uid,
+      subscription: null,
+      authProvider: provider || null,
+    };
+
+    if (firestore) {
+      try {
+        await setDoc(
+          doc(firestore, 'users', uid),
+          {
+            user_id: uid,
+            email: newUser.email || null,
+            username: newUser.username,
+            firstName: newUser.firstName || '',
+            lastName: newUser.lastName || '',
+            prefersDarkMode: newUser.prefersDarkMode,
+            createdAt: now,
+            authProvider: newUser.authProvider,
+          },
+          { merge: true }
+        );
+      } catch {
+        // ignore
+      }
+    }
+
+    setUsers((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const next = [];
+      let inserted = false;
+      for (const u of list) {
+        const uUid = u?.firebaseUid
+          ? String(u.firebaseUid)
+          : u?.id != null
+            ? String(u.id)
+            : null;
+        const uEmail = u?.email ? normalizeEmail(u.email) : null;
+        const same = (uUid && uUid === uid) || (uEmail && email && uEmail === email);
+        if (same) {
+          if (!inserted) {
+            next.push({ ...u, ...newUser, id: uid, firebaseUid: uid, email, username });
+            inserted = true;
+          }
+          continue;
+        }
+        next.push(u);
+      }
+      if (!inserted) next.push(newUser);
+      return next;
+    });
+
+    setCurrentUser(withoutPasswordSecrets(withProfileImage(newUser)));
+    setLastActivityAt(now);
+    lastActivityWriteAtRef.current = now;
+    setItem(LAST_ACTIVITY_KEY, now);
+    return { ok: true };
+  };
+
+  const loginWithGoogleIdToken = async ({ idToken } = {}) => {
+    if (!idToken) return { ok: false, message: 'Google sign-in failed' };
+    if (!isFirebaseAuthEnabled()) return { ok: false, message: 'Authentication is unavailable' };
+    try {
+      const credential = GoogleAuthProvider.credential(String(idToken));
+      await signInWithCredential(firebaseAuth, credential);
+      return await ensureLocalAndFirestoreUserForFirebaseAuth({ provider: 'google' });
+    } catch (error) {
+      return { ok: false, message: mapFirebaseAuthError(error) };
+    }
+  };
+
+  const loginWithApple = async () => {
+    if (!isFirebaseAuthEnabled()) return { ok: false, message: 'Authentication is unavailable' };
+    try {
+      const available = await AppleAuthentication.isAvailableAsync();
+      if (!available) return { ok: false, message: 'Apple Sign In is not available on this device' };
+
+      const rawNonce = randomNonce(32);
+      const hashedNonce = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, rawNonce);
+
+      const res = await AppleAuthentication.signInAsync({
+        requestedScopes: [AppleAuthentication.AppleAuthenticationScope.FULL_NAME, AppleAuthentication.AppleAuthenticationScope.EMAIL],
+        nonce: hashedNonce,
+      });
+
+      const identityToken = res?.identityToken ? String(res.identityToken) : null;
+      if (!identityToken) return { ok: false, message: 'Apple Sign In failed' };
+
+      const provider = new OAuthProvider('apple.com');
+      const credential = provider.credential({ idToken: identityToken, rawNonce });
+      await signInWithCredential(firebaseAuth, credential);
+
+      return await ensureLocalAndFirestoreUserForFirebaseAuth({
+        provider: 'apple',
+        profile: {
+          firstName: res?.fullName?.givenName || null,
+          lastName: res?.fullName?.familyName || null,
+          fullName: [res?.fullName?.givenName, res?.fullName?.familyName].filter(Boolean).join(' ') || null,
+        },
+      });
+    } catch (error) {
+      const code = error?.code ? String(error.code) : '';
+      if (code === 'ERR_REQUEST_CANCELED') return { ok: false, message: 'Canceled' };
+      return { ok: false, message: error?.message ? String(error.message) : 'Apple Sign In failed' };
+    }
+  };
+
   const ensureFirebaseSignupAuth = async ({ email: rawEmail, password: rawPassword, username: rawUsername } = {}) => {
     const em = validateEmail(rawEmail);
     if (!em.ok) return { ok: false, message: em.message };
@@ -2088,6 +2375,16 @@ export function DataProvider({ children }) {
       try {
         await batch.commit();
 
+        // Best-effort audit trail.
+        createAuditEvent({
+          vaultId: String(vaultId),
+          type: 'VAULT_CREATED',
+          payload: {
+            vault_id: String(vaultId),
+            name: vaultName,
+          },
+        }).catch(() => {});
+
         // Optimistically reflect the new vault immediately, even if remote listeners are impaired.
         const localVault = {
           id: vaultId,
@@ -2160,7 +2457,19 @@ export function DataProvider({ children }) {
       });
       const json = await resp.json().catch(() => null);
       if (!resp.ok) return { ok: false, message: json?.error || 'Unable to create collection' };
-      return { ok: true, collectionId: json?.collectionId || null };
+      const createdId = json?.collectionId || null;
+      if (createdId) {
+        createAuditEvent({
+          vaultId: vId,
+          type: 'COLLECTION_CREATED',
+          payload: {
+            vault_id: vId,
+            collection_id: String(createdId),
+            name: clampItemTitle((name || 'Untitled').trim()),
+          },
+        }).catch(() => {});
+      }
+      return { ok: true, collectionId: createdId };
     };
 
     const canCreateAssetsInCollection = (collectionId, userId) => {
@@ -2188,7 +2497,22 @@ export function DataProvider({ children }) {
       });
       const json = await resp.json().catch(() => null);
       if (!resp.ok) return { ok: false, message: json?.error || 'Unable to create asset' };
-      return { ok: true, assetId: json?.assetId || null };
+      const createdId = json?.assetId || null;
+      if (createdId) {
+        createAuditEvent({
+          vaultId: vId,
+          type: 'ASSET_CREATED',
+          payload: {
+            vault_id: vId,
+            asset_id: String(createdId),
+            collection_id: String(collectionId),
+            title: clampItemTitle((title || 'Untitled').trim()),
+            type: type || '',
+            category: category || '',
+          },
+        }).catch(() => {});
+      }
+      return { ok: true, assetId: createdId };
     };
 
     const shareVault = async ({ vaultId, userId, role = 'reviewer', canCreateCollections = false }) => {
@@ -2204,6 +2528,17 @@ export function DataProvider({ children }) {
         assigned_at: Date.now(),
         revoked_at: null,
       }, { merge: true });
+
+      createAuditEvent({
+        vaultId: vId,
+        type: 'VAULT_SHARED',
+        payload: {
+          vault_id: vId,
+          target_user_id: uid,
+          role: 'DELEGATE',
+          permissions: perms,
+        },
+      }).catch(() => {});
       return { ok: true };
     };
 
@@ -2238,6 +2573,17 @@ export function DataProvider({ children }) {
         permissions: perms,
         assigned_at: Date.now(),
       }, { merge: true });
+
+      createAuditEvent({
+        vaultId: vId,
+        type: 'COLLECTION_SHARED',
+        payload: {
+          vault_id: vId,
+          collection_id: String(collectionId),
+          target_user_id: uId,
+          permissions: perms,
+        },
+      }).catch(() => {});
       return { ok: true };
     };
 
@@ -2272,6 +2618,17 @@ export function DataProvider({ children }) {
         permissions: perms,
         assigned_at: Date.now(),
       }, { merge: true });
+
+      createAuditEvent({
+        vaultId: vId,
+        type: 'ASSET_SHARED',
+        payload: {
+          vault_id: vId,
+          asset_id: String(assetId),
+          target_user_id: uId,
+          permissions: perms,
+        },
+      }).catch(() => {});
       return { ok: true };
     };
 
@@ -2280,6 +2637,16 @@ export function DataProvider({ children }) {
       const uId = String(userId);
       const perms = legacyRoleToPerms({ role: role || 'reviewer', canCreate: !!canCreateCollections });
       await updateDoc(doc(firestore, 'vaults', vId, 'memberships', uId), { permissions: perms });
+
+      createAuditEvent({
+        vaultId: vId,
+        type: 'VAULT_SHARE_UPDATED',
+        payload: {
+          vault_id: vId,
+          target_user_id: uId,
+          permissions: perms,
+        },
+      }).catch(() => {});
       return { ok: true };
     };
 
@@ -2291,6 +2658,17 @@ export function DataProvider({ children }) {
       const perms = legacyRoleToPerms({ role: role || 'reviewer', canCreate: !!canCreateAssets });
       const grantId = `${SCOPE_TYPE.COLLECTION}:${String(collectionId)}:${uId}`;
       await setDoc(doc(firestore, 'vaults', vId, 'permissionGrants', grantId), { permissions: perms }, { merge: true });
+
+      createAuditEvent({
+        vaultId: vId,
+        type: 'COLLECTION_SHARE_UPDATED',
+        payload: {
+          vault_id: vId,
+          collection_id: String(collectionId),
+          target_user_id: uId,
+          permissions: perms,
+        },
+      }).catch(() => {});
       return { ok: true };
     };
 
@@ -2302,6 +2680,17 @@ export function DataProvider({ children }) {
       const perms = legacyRoleToPerms({ role: role || 'reviewer', canCreate: false });
       const grantId = `${SCOPE_TYPE.ASSET}:${String(assetId)}:${uId}`;
       await setDoc(doc(firestore, 'vaults', vId, 'permissionGrants', grantId), { permissions: perms }, { merge: true });
+
+      createAuditEvent({
+        vaultId: vId,
+        type: 'ASSET_SHARE_UPDATED',
+        payload: {
+          vault_id: vId,
+          asset_id: String(assetId),
+          target_user_id: uId,
+          permissions: perms,
+        },
+      }).catch(() => {});
       return { ok: true };
     };
 
@@ -2312,6 +2701,15 @@ export function DataProvider({ children }) {
         status: 'REVOKED',
         revoked_at: Date.now(),
       });
+
+      createAuditEvent({
+        vaultId: vId,
+        type: 'VAULT_SHARE_REVOKED',
+        payload: {
+          vault_id: vId,
+          target_user_id: uId,
+        },
+      }).catch(() => {});
       return { ok: true };
     };
 
@@ -2321,6 +2719,16 @@ export function DataProvider({ children }) {
       const vId = String(collection.vaultId);
       const grantId = `${SCOPE_TYPE.COLLECTION}:${String(collectionId)}:${String(userId)}`;
       await deleteDoc(doc(firestore, 'vaults', vId, 'permissionGrants', grantId));
+
+      createAuditEvent({
+        vaultId: vId,
+        type: 'COLLECTION_SHARE_REVOKED',
+        payload: {
+          vault_id: vId,
+          collection_id: String(collectionId),
+          target_user_id: String(userId),
+        },
+      }).catch(() => {});
       return { ok: true };
     };
 
@@ -2330,6 +2738,16 @@ export function DataProvider({ children }) {
       const vId = String(asset.vaultId);
       const grantId = `${SCOPE_TYPE.ASSET}:${String(assetId)}:${String(userId)}`;
       await deleteDoc(doc(firestore, 'vaults', vId, 'permissionGrants', grantId));
+
+      createAuditEvent({
+        vaultId: vId,
+        type: 'ASSET_SHARE_REVOKED',
+        payload: {
+          vault_id: vId,
+          asset_id: String(assetId),
+          target_user_id: String(userId),
+        },
+      }).catch(() => {});
       return { ok: true };
     };
 
@@ -2369,8 +2787,60 @@ export function DataProvider({ children }) {
       }, { merge: true });
 
       await batch.commit();
+
+      createAuditEvent({
+        vaultId: vId,
+        type: 'VAULT_OWNERSHIP_TRANSFERRED',
+        payload: {
+          vault_id: vId,
+          from_user_id: fromUid,
+          to_user_id: toUid,
+        },
+      }).catch(() => {});
       return { ok: true };
     };
+
+  const createAuditEvent = async ({ vaultId, type, payload } = {}) => {
+    if (CLIENT_AUDIT_VIEW_ONLY) {
+      const t = type != null ? String(type) : '';
+      const allowNonView =
+        t.endsWith('_VIEWED') ||
+        t === 'ASSET_MOVED' ||
+        t === 'ASSET_MOVED_IN' ||
+        t === 'ASSET_MOVED_OUT' ||
+        t === 'COLLECTION_MOVED_IN' ||
+        t === 'COLLECTION_MOVED_OUT';
+      if (!allowNonView) {
+        return { ok: true, skipped: true };
+      }
+    }
+
+    const actorUid = currentUser?.id != null ? String(currentUser.id) : null;
+    const vId = vaultId != null ? String(vaultId) : '';
+    if (!firestore) return { ok: false, message: 'Firestore is not configured' };
+    if (!actorUid) return { ok: false, message: 'Not signed in' };
+    if (!vId) return { ok: false, message: 'Missing vault' };
+
+    const createdAt = Date.now();
+    const safePayload = payload && typeof payload === 'object' ? payload : null;
+    const fingerprint = buildAuditFingerprint({ vaultId: vId, type, actorUid, payload: safePayload });
+
+    try {
+      await addDoc(collection(firestore, 'vaults', vId, 'auditEvents'), {
+        createdAt,
+        type: String(type || 'UNKNOWN'),
+        actor_uid: actorUid,
+        actor_id: actorUid,
+        vault_id: vId,
+        payload: safePayload,
+        source: 'client',
+        fingerprint,
+      });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, message: mapFirestoreError(e) };
+    }
+  };
 
   const updateVault = async (vaultId, patch) => {
     const args = Array.from(arguments);
@@ -2385,18 +2855,31 @@ export function DataProvider({ children }) {
     }
 
     const vaultRef = doc(firestore, 'vaults', String(vaultId));
+
+    let beforeData = null;
+
     try {
       await runTransaction(firestore, async (tx) => {
+        const snap = await tx.get(vaultRef);
+        if (!snap.exists()) throw { code: 'not-found' };
+        beforeData = snap.data() || null;
         if (expectedEditedAt != null) {
-          const snap = await tx.get(vaultRef);
-          if (!snap.exists()) throw { code: 'not-found' };
-          const currentEditedAt = snap.data()?.editedAt ?? null;
-          if (currentEditedAt !== expectedEditedAt) {
-            throw { code: 'conflict', currentEditedAt };
-          }
+          const currentEditedAt = beforeData?.editedAt ?? null;
+          if (currentEditedAt !== expectedEditedAt) throw { code: 'conflict', currentEditedAt };
         }
         tx.update(vaultRef, { ...nextPatch, editedAt });
       });
+
+      // Best-effort audit trail.
+      const diff = buildAuditDiff(beforeData, nextPatch);
+      createAuditEvent({
+        vaultId: String(vaultId),
+        type: 'VAULT_UPDATED',
+        payload: {
+          vault_id: String(vaultId),
+          changes: diff,
+        },
+      }).catch(() => {});
       return { ok: true };
     } catch (e) {
       if (e?.code === 'conflict') return { ok: false, code: 'conflict', message: 'This vault was updated by someone else. Reload and try again.' };
@@ -2420,18 +2903,30 @@ export function DataProvider({ children }) {
     }
 
     const ref = doc(firestore, 'vaults', String(collection.vaultId), 'collections', String(collectionId));
+    let beforeData = null;
     try {
       await runTransaction(firestore, async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists()) throw { code: 'not-found' };
+        beforeData = snap.data() || null;
         if (expectedEditedAt != null) {
-          const snap = await tx.get(ref);
-          if (!snap.exists()) throw { code: 'not-found' };
-          const currentEditedAt = snap.data()?.editedAt ?? null;
-          if (currentEditedAt !== expectedEditedAt) {
-            throw { code: 'conflict', currentEditedAt };
-          }
+          const currentEditedAt = beforeData?.editedAt ?? null;
+          if (currentEditedAt !== expectedEditedAt) throw { code: 'conflict', currentEditedAt };
         }
         tx.update(ref, { ...nextPatch, editedAt });
       });
+
+      // Best-effort audit trail.
+      const diff = buildAuditDiff(beforeData, nextPatch);
+      createAuditEvent({
+        vaultId: String(collection.vaultId),
+        type: 'COLLECTION_UPDATED',
+        payload: {
+          vault_id: String(collection.vaultId),
+          collection_id: String(collectionId),
+          changes: diff,
+        },
+      }).catch(() => {});
       return { ok: true };
     } catch (e) {
       if (e?.code === 'conflict') return { ok: false, code: 'conflict', message: 'This collection was updated by someone else. Reload and try again.' };
@@ -2455,18 +2950,30 @@ export function DataProvider({ children }) {
     }
 
     const ref = doc(firestore, 'vaults', String(asset.vaultId), 'assets', String(assetId));
+    let beforeData = null;
     try {
       await runTransaction(firestore, async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists()) throw { code: 'not-found' };
+        beforeData = snap.data() || null;
         if (expectedEditedAt != null) {
-          const snap = await tx.get(ref);
-          if (!snap.exists()) throw { code: 'not-found' };
-          const currentEditedAt = snap.data()?.editedAt ?? null;
-          if (currentEditedAt !== expectedEditedAt) {
-            throw { code: 'conflict', currentEditedAt };
-          }
+          const currentEditedAt = beforeData?.editedAt ?? null;
+          if (currentEditedAt !== expectedEditedAt) throw { code: 'conflict', currentEditedAt };
         }
         tx.update(ref, { ...nextPatch, editedAt });
       });
+
+      // Best-effort audit trail.
+      const diff = buildAuditDiff(beforeData, nextPatch);
+      createAuditEvent({
+        vaultId: String(asset.vaultId),
+        type: 'ASSET_UPDATED',
+        payload: {
+          vault_id: String(asset.vaultId),
+          asset_id: String(assetId),
+          changes: diff,
+        },
+      }).catch(() => {});
       return { ok: true };
     } catch (e) {
       if (e?.code === 'conflict') return { ok: false, code: 'conflict', message: 'This asset was updated by someone else. Reload and try again.' };
@@ -2491,6 +2998,13 @@ export function DataProvider({ children }) {
     });
     const json = await resp.json().catch(() => null);
     if (!resp.ok) return { ok: false, message: json?.error || 'Unable to move collection' };
+    const payload = {
+      collection_id: String(collectionId),
+      from_vault_id: fromVaultId,
+      to_vault_id: toVaultId,
+    };
+    createAuditEvent({ vaultId: fromVaultId, type: 'COLLECTION_MOVED_OUT', payload: { vault_id: fromVaultId, ...payload } }).catch(() => {});
+    createAuditEvent({ vaultId: toVaultId, type: 'COLLECTION_MOVED_IN', payload: { vault_id: toVaultId, ...payload } }).catch(() => {});
     return { ok: true, collectionId: json?.collectionId || null };
   };
 
@@ -2507,6 +3021,19 @@ export function DataProvider({ children }) {
         collectionId: toCollectionId,
         editedAt: Date.now(),
       });
+
+      createAuditEvent({
+        vaultId: fromVaultId,
+        type: 'ASSET_MOVED',
+        payload: {
+          vault_id: fromVaultId,
+          asset_id: String(assetId),
+          from_vault_id: fromVaultId,
+          to_vault_id: toVaultId,
+          from_collection_id: asset?.collectionId != null ? String(asset.collectionId) : null,
+          to_collection_id: toCollectionId,
+        },
+      }).catch(() => {});
       return { ok: true };
     }
 
@@ -2518,11 +3045,31 @@ export function DataProvider({ children }) {
     });
     const json = await resp.json().catch(() => null);
     if (!resp.ok) return { ok: false, message: json?.error || 'Unable to move asset' };
+
+    const movePayload = {
+      asset_id: String(assetId),
+      from_vault_id: fromVaultId,
+      to_vault_id: toVaultId,
+      from_collection_id: asset?.collectionId != null ? String(asset.collectionId) : null,
+      to_collection_id: toCollectionId,
+    };
+    createAuditEvent({ vaultId: fromVaultId, type: 'ASSET_MOVED_OUT', payload: { vault_id: fromVaultId, ...movePayload } }).catch(() => {});
+    createAuditEvent({ vaultId: toVaultId, type: 'ASSET_MOVED_IN', payload: { vault_id: toVaultId, ...movePayload } }).catch(() => {});
     return { ok: true, assetId: json?.assetId || null };
   };
 
   const deleteVault = async (vaultId) => {
     const vId = String(vaultId);
+
+    // Best-effort: log the intent before the vault/membership may disappear.
+    createAuditEvent({
+      vaultId: vId,
+      type: 'VAULT_DELETE_REQUESTED',
+      payload: {
+        vault_id: vId,
+      },
+    }).catch(() => {});
+
     const resp = await apiFetch(`${API_URL}/vaults/${encodeURIComponent(vId)}/delete`, {
       requireAuth: true,
       method: 'POST',
@@ -2538,6 +3085,17 @@ export function DataProvider({ children }) {
     const collection = collections.find((c) => c.id === collectionId);
     if (!collection) return { ok: false, message: 'Collection not found' };
     const vId = String(collection.vaultId);
+
+    createAuditEvent({
+      vaultId: vId,
+      type: 'COLLECTION_DELETE_REQUESTED',
+      payload: {
+        vault_id: vId,
+        collection_id: String(collectionId),
+        name: collection?.name || null,
+      },
+    }).catch(() => {});
+
     const resp = await apiFetch(`${API_URL}/vaults/${encodeURIComponent(vId)}/collections/${encodeURIComponent(String(collectionId))}/delete`, {
       requireAuth: true,
       method: 'POST',
@@ -2553,6 +3111,17 @@ export function DataProvider({ children }) {
     const asset = assets.find((a) => a.id === assetId);
     if (!asset) return { ok: false, message: 'Asset not found' };
     const vId = String(asset.vaultId);
+
+    createAuditEvent({
+      vaultId: vId,
+      type: 'ASSET_DELETE_REQUESTED',
+      payload: {
+        vault_id: vId,
+        asset_id: String(assetId),
+        title: asset?.title || null,
+      },
+    }).catch(() => {});
+
     const resp = await apiFetch(`${API_URL}/vaults/${encodeURIComponent(vId)}/assets/${encodeURIComponent(String(assetId))}/delete`, {
       requireAuth: true,
       method: 'POST',
@@ -2801,6 +3370,8 @@ export function DataProvider({ children }) {
     logout,
     // Auth / profile
     ensureFirebaseSignupAuth: wrapOnlineAsync(ensureFirebaseSignupAuth),
+    loginWithApple: wrapOnlineAsync(loginWithApple),
+    loginWithGoogleIdToken: wrapOnlineAsync(loginWithGoogleIdToken),
     register: wrapOnlineAsync(register),
     updateCurrentUser: wrapOnline(updateCurrentUser),
     resetPassword: wrapOnlineAsync(resetPassword),
@@ -2816,6 +3387,7 @@ export function DataProvider({ children }) {
     addVault: wrapFirestoreAsync(addVault),
     addCollection: wrapFirestoreAsync(addCollection),
     addAsset: wrapFirestoreAsync(addAsset),
+    createAuditEvent: wrapFirestoreAsync(createAuditEvent),
     updateVault: wrapFirestoreAsync(updateVault),
     updateCollection: wrapFirestoreAsync(updateCollection),
     updateAsset: wrapFirestoreAsync(updateAsset),

@@ -1,6 +1,37 @@
 const crypto = require('crypto');
 const { sendEmail, isEmailEnabled } = require('./email');
 
+const maybeWriteVaultEmailAuditMarker = async ({
+  db,
+  vaultId,
+  auditEventId,
+  emailEventDocId,
+  category,
+  sentAt,
+} = {}) => {
+  if (!db || !vaultId || !auditEventId || !emailEventDocId) return;
+
+  const id = `aen_${String(emailEventDocId)}`;
+  const ref = db.collection('vaults').doc(String(vaultId)).collection('auditEvents').doc(id);
+
+  try {
+    await ref.create({
+      id,
+      vault_id: String(vaultId),
+      type: 'NOTIFICATION_EMAIL_SENT',
+      actor_uid: null,
+      createdAt: typeof sentAt === 'number' ? sentAt : Date.now(),
+      payload: {
+        related_audit_event_id: String(auditEventId),
+        email_event_id: String(emailEventDocId),
+        category: Object.values(NOTIFICATION_CATEGORIES).includes(category) ? category : null,
+      },
+    });
+  } catch (err) {
+    // Best-effort marker; ignore already-exists and any write failure.
+  }
+};
+
 const NOTIFICATION_CATEGORIES = Object.freeze({
   billing: 'billing',
   accessChanges: 'accessChanges',
@@ -190,7 +221,19 @@ const sendNotificationEmailIdempotent = async ({
 
   const existing = await ref.get();
   if (existing.exists) {
-    return { ok: true, deduped: true, status: (existing.data() || {}).status || 'UNKNOWN' };
+    const data = existing.data() || {};
+    if (data.status === 'SENT' && vaultId && auditEventId) {
+      await maybeWriteVaultEmailAuditMarker({
+        db,
+        vaultId,
+        auditEventId,
+        emailEventDocId: docId,
+        category: safeCategory,
+        sentAt: typeof data.sentAt === 'number' ? data.sentAt : null,
+      });
+    }
+
+    return { ok: true, deduped: true, status: data.status || 'UNKNOWN' };
   }
 
   const storedSettings = recipientUid ? await getNotificationSettings(db, recipientUid) : null;
@@ -240,15 +283,28 @@ const sendNotificationEmailIdempotent = async ({
 
   try {
     const resp = await sendEmail({ to: safeTo, subject, text, html });
+    const sentAt = resp?.ok ? Date.now() : null;
     await ref.set(
       {
         status: resp?.ok ? 'SENT' : 'SKIPPED',
         provider: resp?.provider || null,
-        sentAt: resp?.ok ? Date.now() : null,
+        sentAt,
         reason: resp?.ok ? null : 'provider_skipped',
       },
       { merge: true }
     );
+
+    if (resp?.ok && vaultId && auditEventId) {
+      await maybeWriteVaultEmailAuditMarker({
+        db,
+        vaultId,
+        auditEventId,
+        emailEventDocId: docId,
+        category: safeCategory,
+        sentAt,
+      });
+    }
+
     return { ok: true, sent: !!resp?.ok, provider: resp?.provider || null };
   } catch (err) {
     await ref.set({ status: 'ERROR', error: err?.message ? String(err.message) : String(err) }, { merge: true });
