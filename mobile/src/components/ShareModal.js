@@ -469,13 +469,8 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                         <View style={styles.sharedHeaderRow}>
                           <View style={styles.sharedInfoLeft}>
                             <Text style={[styles.sharedName, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
-                              {s.user?.username || s.userId}
+                              {s.user?.email || s.userId}
                             </Text>
-                            {s.user?.email ? (
-                              <Text style={[styles.sharedMeta, { color: theme.textMuted }]} numberOfLines={1} ellipsizeMode="tail">
-                                {s.user.email}
-                              </Text>
-                            ) : null}
                           </View>
 
                           <View style={styles.sharedRightActions}>
