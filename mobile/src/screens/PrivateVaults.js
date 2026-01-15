@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert as NativeAlert, Modal, RefreshControl, ScrollView, SectionList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import LambHeader from '../components/LambHeader';
@@ -59,6 +59,9 @@ export default function PrivateVaults({ navigation, route }) {
   const [optimisticCollections, setOptimisticCollections] = useState([]);
   const [optimisticAssets, setOptimisticAssets] = useState([]);
   const [optimisticDeletedAssetIds, setOptimisticDeletedAssetIds] = useState({});
+
+  const listRef = useRef(null);
+  const [showJumpToTop, setShowJumpToTop] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [vaultTypeQuery, setVaultTypeQuery] = useState('');
@@ -831,10 +834,17 @@ export default function PrivateVaults({ navigation, route }) {
   return (
     <View style={[styles.wrapper, { backgroundColor: theme.background }]}> 
       <SectionList
+        ref={listRef}
         contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
         bounces
         alwaysBounceVertical
         stickySectionHeadersEnabled={false}
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          const y = e?.nativeEvent?.contentOffset?.y || 0;
+          if (!showJumpToTop && y > 600) setShowJumpToTop(true);
+          if (showJumpToTop && y < 200) setShowJumpToTop(false);
+        }}
         initialNumToRender={12}
         maxToRenderPerBatch={12}
         windowSize={5}
@@ -1824,6 +1834,23 @@ export default function PrivateVaults({ navigation, route }) {
           </View>
         }
       />
+
+      {showJumpToTop ? (
+        <View style={styles.floatingButtonWrap} pointerEvents="box-none">
+          <TouchableOpacity
+            style={[styles.floatingButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }]}
+            onPress={() => {
+              try {
+                listRef.current?.scrollToOffset?.({ offset: 0, animated: true });
+              } catch {
+                // ignore
+              }
+            }}
+          >
+            <Text style={[styles.floatingButtonText, { color: theme.text }]}>Top</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -1918,4 +1945,17 @@ const styles = StyleSheet.create({
   assetTitle: { fontSize: 15, fontWeight: '700' },
   assetMeta: { fontSize: 12, marginTop: 3 },
   assetCount: { fontSize: 13, fontWeight: '700' },
+
+  floatingButtonWrap: {
+    position: 'absolute',
+    right: 16,
+    bottom: 24,
+  },
+  floatingButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  floatingButtonText: { fontWeight: '800', fontSize: 13 },
 });
