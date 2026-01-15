@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AppState, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StackActions } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
+import { FontAwesome6, Ionicons } from '@expo/vector-icons';
 
 import appConfig from '../../app.json';
 import versionInfo from '../../../public/version.json';
@@ -168,8 +168,9 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
             accessibilityRole="button"
             accessibilityLabel="Go to Private Vaults"
           >
-            <Ionicons
-              name={activeTab === 'PrivateVaults' ? 'archive' : 'archive-outline'}
+            <FontAwesome6
+              name="folder-arrow-up"
+              solid
               size={22}
               color={activeTab === 'PrivateVaults' ? activeColor : inactiveColor}
             />
@@ -180,8 +181,9 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
             accessibilityRole="button"
             accessibilityLabel="Go to Shared Vaults"
           >
-            <Ionicons
-              name={activeTab === 'SharedVaults' ? 'share-social' : 'share-social-outline'}
+            <FontAwesome6
+              name="folder-arrow-left-right"
+              solid
               size={22}
               color={activeTab === 'SharedVaults' ? activeColor : inactiveColor}
             />
