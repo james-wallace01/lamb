@@ -1,22 +1,16 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, Image, ScrollView, RefreshControl, Platform, Switch, Linking } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
-import ShareModal from '../components/ShareModal';
 import { getInitials } from '../utils/user';
 
 export default function Profile({ navigation, route }) {
   const {
     currentUser,
     updateCurrentUser,
-    vaults,
-    collections,
-    assets,
-    vaultMemberships,
-    permissionGrants,
     validatePassword,
     resetPassword,
     logout,
@@ -51,7 +45,6 @@ export default function Profile({ navigation, route }) {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
-  const [shareTarget, setShareTarget] = useState(null);
   const scrollRef = useRef(null);
   const notificationsOffsetYRef = useRef(null);
 
@@ -141,57 +134,6 @@ export default function Profile({ navigation, route }) {
       setLoading(false);
     }
   };
-
-  const ownedVaultsShared = useMemo(() => {
-    const uid = currentUser?.id ? String(currentUser.id) : null;
-    if (!uid) return [];
-    return (vaults || [])
-      .filter((v) => v?.ownerId === uid)
-      .map((v) => {
-        const vaultId = String(v.id);
-        const delegateCount = (vaultMemberships || []).filter((m) => m?.vault_id === vaultId && m?.status === 'ACTIVE' && m?.role === 'DELEGATE').length;
-        return { ...v, __shareCount: delegateCount };
-      })
-      .filter((v) => (v.__shareCount || 0) > 0);
-  }, [vaults, currentUser?.id, vaultMemberships]);
-
-  const ownedCollectionsShared = useMemo(() => {
-    const uid = currentUser?.id ? String(currentUser.id) : null;
-    if (!uid) return [];
-    return (collections || [])
-      .filter((c) => c?.ownerId === uid)
-      .map((c) => {
-        const vaultId = String(c.vaultId);
-        const scopeId = String(c.id);
-        const ids = new Set(
-          (permissionGrants || [])
-            .filter((g) => g?.vault_id === vaultId && g?.scope_type === 'COLLECTION' && String(g?.scope_id) === scopeId)
-            .map((g) => String(g.user_id))
-        );
-        return { ...c, __shareCount: ids.size };
-      })
-      .filter((c) => (c.__shareCount || 0) > 0);
-  }, [collections, currentUser?.id, permissionGrants]);
-
-  const ownedAssetsShared = useMemo(() => {
-    const uid = currentUser?.id ? String(currentUser.id) : null;
-    if (!uid) return [];
-    return (assets || [])
-      .filter((a) => a?.ownerId === uid)
-      .map((a) => {
-        const vaultId = String(a.vaultId);
-        const scopeId = String(a.id);
-        const ids = new Set(
-          (permissionGrants || [])
-            .filter((g) => g?.vault_id === vaultId && g?.scope_type === 'ASSET' && String(g?.scope_id) === scopeId)
-            .map((g) => String(g.user_id))
-        );
-        return { ...a, __shareCount: ids.size };
-      })
-      .filter((a) => (a.__shareCount || 0) > 0);
-  }, [assets, currentUser?.id, permissionGrants]);
-
-  const anyShares = ownedVaultsShared.length + ownedCollectionsShared.length + ownedAssetsShared.length > 0;
 
   const handleProfilePictureChange = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -762,49 +704,6 @@ export default function Profile({ navigation, route }) {
               </View>
             )}
 
-            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Sharing</Text>
-              {!anyShares ? (
-                <Text style={[styles.subtitle, { color: theme.textSecondary }]}>You haven’t shared anything.</Text>
-              ) : (
-                <>
-                  {!membershipAccess && (
-                    <Text style={[styles.subtitle, { color: theme.textSecondary }]}>You can revoke access to items you previously shared.</Text>
-                  )}
-                  {ownedVaultsShared.map((v) => (
-                    <TouchableOpacity
-                      key={`vault-${v.id}`}
-                      style={[styles.shareRow, { borderTopColor: theme.border }]}
-                      onPress={() => setShareTarget({ targetType: 'vault', targetId: v.id })}
-                    >
-                      <Text style={[styles.shareRowTitle, { color: theme.text }]}>{v.name || 'Vault'}</Text>
-                      <Text style={[styles.shareRowMeta, { color: theme.textMuted }]}>Vault • {v.__shareCount || 0} shared</Text>
-                    </TouchableOpacity>
-                  ))}
-                  {ownedCollectionsShared.map((c) => (
-                    <TouchableOpacity
-                      key={`collection-${c.id}`}
-                      style={[styles.shareRow, { borderTopColor: theme.border }]}
-                      onPress={() => setShareTarget({ targetType: 'collection', targetId: c.id })}
-                    >
-                      <Text style={[styles.shareRowTitle, { color: theme.text }]}>{c.name || 'Collection'}</Text>
-                      <Text style={[styles.shareRowMeta, { color: theme.textMuted }]}>Collection • {c.__shareCount || 0} shared</Text>
-                    </TouchableOpacity>
-                  ))}
-                  {ownedAssetsShared.map((a) => (
-                    <TouchableOpacity
-                      key={`asset-${a.id}`}
-                      style={[styles.shareRow, { borderTopColor: theme.border }]}
-                      onPress={() => setShareTarget({ targetType: 'asset', targetId: a.id })}
-                    >
-                      <Text style={[styles.shareRowTitle, { color: theme.text }]}>{a.title || 'Asset'}</Text>
-                      <Text style={[styles.shareRowMeta, { color: theme.textMuted }]}>Asset • {a.__shareCount || 0} shared</Text>
-                    </TouchableOpacity>
-                  ))}
-                </>
-              )}
-            </View>
-
             <TouchableOpacity
               style={[styles.button, styles.deleteButton, isOffline && styles.buttonDisabled]}
               onPress={handleDeleteAccount}
@@ -837,12 +736,6 @@ export default function Profile({ navigation, route }) {
         <View style={styles.spacer} />
       </ScrollView>
     </View>
-    <ShareModal
-      visible={!!shareTarget}
-      onClose={() => setShareTarget(null)}
-      targetType={shareTarget?.targetType}
-      targetId={shareTarget?.targetId}
-    />
     </>
   );
 }
@@ -892,9 +785,6 @@ const styles = StyleSheet.create({
   toggleSubtitle: { color: '#9aa1b5', fontSize: 12, marginTop: 2, lineHeight: 16 },
   deleteButton: { backgroundColor: '#3b0f0f', borderColor: '#ef4444', borderWidth: 1 },
   deleteButtonText: { color: '#fecaca' },
-  shareRow: { paddingVertical: 10, borderTopWidth: 1 },
-  shareRowTitle: { fontWeight: '700' },
-  shareRowMeta: { marginTop: 2, fontSize: 12 },
   legalRow: { paddingVertical: 6 },
   legalLink: { color: '#9ab6ff', fontWeight: '600' },
   spacer: { height: 40 },
