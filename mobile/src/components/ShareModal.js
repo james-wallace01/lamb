@@ -2,8 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useData } from '../context/DataContext';
-import { firestore } from '../firebase';
-import { collection, onSnapshot, query as fsQuery } from 'firebase/firestore';
 import { API_URL } from '../config/api';
 import { apiFetch } from '../utils/apiFetch';
 
@@ -38,7 +36,9 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
   const [creatingInvite, setCreatingInvite] = useState(false);
   const [pendingInvites, setPendingInvites] = useState([]);
   const [invitesListenError, setInvitesListenError] = useState('');
+  const [invitesLoading, setInvitesLoading] = useState(false);
   const inviteAbortRef = useRef(null);
+  const invitesLoadAbortRef = useRef(null);
   // Back-compat: DataContext still accepts a legacy "role" string to map into permissions.
   const [role, setRole] = useState(DEFAULT_DELEGATE_ROLE);
   const [canCreateCollections, setCanCreateCollections] = useState(false);
@@ -203,76 +203,104 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
       // ignore
     }
     inviteAbortRef.current = null;
+
+    try {
+      invitesLoadAbortRef.current?.abort?.();
+    } catch {
+      // ignore
+    }
+    invitesLoadAbortRef.current = null;
+
     setCreatingInvite(false);
+    setInvitesLoading(false);
     setInvitesListenError('');
   }, [visible]);
 
-  useEffect(() => {
+  const getCreatedAtMs = (v) => {
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+    if (v && typeof v.toMillis === 'function') {
+      try {
+        return v.toMillis();
+      } catch {
+        return 0;
+      }
+    }
+    if (v && typeof v === 'object' && typeof v.seconds === 'number') {
+      return Math.floor(v.seconds * 1000);
+    }
+    if (typeof v === 'string') {
+      const t = Date.parse(v);
+      return Number.isFinite(t) ? t : 0;
+    }
+    return 0;
+  };
+
+  const loadInvites = async () => {
     if (!visible) return;
-    if (!firestore) return;
     if (!vaultIdForTarget) return;
     if (!canInviteByEmail) return;
 
     const vaultId = String(vaultIdForTarget);
-    const invRef = collection(firestore, 'vaults', vaultId, 'invitations');
-    // Some older invitation docs may have createdAt stored as a Firestore Timestamp,
-    // while newer ones store it as a number. Ordering in Firestore can fail when types mix.
-    // Subscribe without ordering and sort client-side.
-    const q = fsQuery(invRef);
+    setInvitesListenError('');
+    setInvitesLoading(true);
 
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        if (invitesListenError) setInvitesListenError('');
-        const getCreatedAtMs = (v) => {
-          if (typeof v === 'number' && Number.isFinite(v)) return v;
-          if (v && typeof v.toMillis === 'function') {
-            try {
-              return v.toMillis();
-            } catch {
-              return 0;
-            }
-          }
-          if (v && typeof v === 'object' && typeof v.seconds === 'number') {
-            return Math.floor(v.seconds * 1000);
-          }
-          if (typeof v === 'string') {
-            const t = Date.parse(v);
-            return Number.isFinite(t) ? t : 0;
-          }
-          return 0;
-        };
-
-        const invites = snap.docs
-          .map((d) => ({ id: String(d.id), ...(d.data() || {}) }))
-          .filter((x) => ['PENDING', 'ACCEPTED', 'DENIED'].includes(String(x?.status || '').toUpperCase()))
-          .filter((x) => {
-            const sType = String(x?.scope_type || 'VAULT').toUpperCase();
-            const sId = x?.scope_id == null ? null : String(x.scope_id);
-            if (targetType === 'vault') return sType === 'VAULT';
-            if (targetType === 'collection') return sType === 'COLLECTION' && sId === String(targetId);
-            if (targetType === 'asset') return sType === 'ASSET' && sId === String(targetId);
-            return false;
-          })
-          .sort((a, b) => getCreatedAtMs(b?.createdAt) - getCreatedAtMs(a?.createdAt));
-        setPendingInvites(invites);
-      },
-      (err) => {
-        const msg = err?.message ? String(err.message) : 'Unable to load invites.';
-        console.warn('[ShareModal] invites listener failed:', msg);
-        setPendingInvites([]);
-        setInvitesListenError('Unable to load invites.');
-      }
-    );
-
-    return () => {
+    try {
       try {
-        unsub?.();
+        invitesLoadAbortRef.current?.abort?.();
       } catch {
         // ignore
       }
-    };
-  }, [visible, targetType, targetId, vaultIdForTarget, canInviteByEmail]);
+      invitesLoadAbortRef.current = null;
+
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      if (controller) invitesLoadAbortRef.current = controller;
+
+      const resp = await apiFetch(`${API_URL}/vaults/${encodeURIComponent(vaultId)}/invitations`, {
+        requireAuth: true,
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller?.signal,
+        timeoutMs: 12000,
+      });
+
+      const json = await resp.json().catch(() => null);
+      if (!resp.ok) {
+        setPendingInvites([]);
+        setInvitesListenError(json?.error || 'Unable to load invites.');
+        return;
+      }
+
+      const rawInvites = Array.isArray(json?.invitations) ? json.invitations : [];
+      const invites = rawInvites
+        .map((x) => (x && typeof x === 'object' ? x : null))
+        .filter(Boolean)
+        .filter((x) => ['PENDING', 'ACCEPTED', 'DENIED'].includes(String(x?.status || '').toUpperCase()))
+        .filter((x) => {
+          const sType = String(x?.scope_type || 'VAULT').toUpperCase();
+          const sId = x?.scope_id == null ? null : String(x.scope_id);
+          if (targetType === 'vault') return sType === 'VAULT';
+          if (targetType === 'collection') return sType === 'COLLECTION' && sId === String(targetId);
+          if (targetType === 'asset') return sType === 'ASSET' && sId === String(targetId);
+          return false;
+        })
+        .sort((a, b) => getCreatedAtMs(b?.createdAt) - getCreatedAtMs(a?.createdAt));
+
+      setPendingInvites(invites);
+    } catch (err) {
+      setPendingInvites([]);
+      setInvitesListenError(err?.message || 'Unable to load invites.');
+    } finally {
+      invitesLoadAbortRef.current = null;
+      setInvitesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!visible) return;
+    if (!canInviteByEmail) return;
+    loadInvites();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, canInviteByEmail, vaultIdForTarget, targetType, targetId]);
 
   const handleCreateInvite = async () => {
     const email = inviteEmail.trim().toLowerCase();
@@ -331,6 +359,9 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
         return;
       }
 
+      // Refresh list from the same backend that created the invite.
+      await loadInvites();
+
       setInviteEmail('');
       Alert.alert('Invite sent', 'An invitation has been created for this email.');
     } catch (e) {
@@ -361,6 +392,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
         return;
       }
       Alert.alert('Revoked', 'Invitation has been revoked.');
+      await loadInvites();
     } catch (e) {
       Alert.alert('Revoke failed', e?.message || 'Unable to revoke invitation');
     }
@@ -486,9 +518,12 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
               <>
                 <View style={[styles.miniDivider, { backgroundColor: theme.border }]} />
                 <Text style={[styles.label, { color: theme.textMuted }]}>Invites</Text>
+                <Text style={[styles.roleHelp, { color: theme.textSecondary, marginTop: 2 }]}>API: {API_URL}</Text>
                 <View style={[styles.sharedBox, { borderColor: theme.border, backgroundColor: theme.surface }]}> 
                   {invitesListenError ? (
                     <Text style={[styles.roleHelp, { color: '#dc2626', marginTop: 0 }]}>{invitesListenError}</Text>
+                  ) : invitesLoading ? (
+                    <Text style={[styles.roleHelp, { color: theme.textSecondary, marginTop: 0 }]}>Loading…</Text>
                   ) : pendingInvites.length === 0 ? (
                     <Text style={[styles.roleHelp, { color: theme.textSecondary, marginTop: 0 }]}>No invites yet.</Text>
                   ) : (
