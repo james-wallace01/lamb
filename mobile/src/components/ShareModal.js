@@ -41,6 +41,20 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
   const [canCreateCollections, setCanCreateCollections] = useState(false);
   const [canCreateAssets, setCanCreateAssets] = useState(false);
 
+  const getInviteStatusPresentation = (rawStatus) => {
+    const status = String(rawStatus || '').toUpperCase();
+    if (status === 'PENDING') {
+      return { label: 'Pending', bg: '#fbbf24', border: '#f59e0b', text: '#111827' };
+    }
+    if (status === 'ACCEPTED') {
+      return { label: 'Active', bg: '#16a34a', border: '#15803d', text: '#ffffff' };
+    }
+    if (status === 'DENIED') {
+      return { label: 'Denied', bg: '#dc2626', border: '#b91c1c', text: '#ffffff' };
+    }
+    return { label: status || 'Pending', bg: '#0f172a', border: '#334155', text: '#e5e7f0' };
+  };
+
   const vaultIdForTarget = useMemo(() => {
     if (targetType === 'vault') return targetId;
     if (targetType === 'collection') return collections.find((c) => c.id === targetId)?.vaultId || null;
@@ -176,7 +190,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
       (snap) => {
         const invites = snap.docs
           .map((d) => ({ id: String(d.id), ...(d.data() || {}) }))
-          .filter((x) => x?.status === 'PENDING');
+          .filter((x) => ['PENDING', 'ACCEPTED', 'DENIED'].includes(String(x?.status || '').toUpperCase()));
         setPendingInvites(invites);
       },
       () => {
@@ -191,7 +205,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
         // ignore
       }
     };
-  }, [visible, targetType, targetId]);
+  }, [visible, targetType, targetId, canInviteByEmail]);
 
   const handleCreateInvite = async () => {
     const email = inviteEmail.trim().toLowerCase();
@@ -337,7 +351,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
               {canInviteByEmail && pendingInvites.length > 0 && (
                 <>
                   <View style={[styles.miniDivider, { backgroundColor: theme.border }]} />
-                  <Text style={[styles.label, { color: theme.textMuted }]}>Pending invites</Text>
+                  <Text style={[styles.label, { color: theme.textMuted }]}>Invites</Text>
                   <View style={[styles.sharedBox, { borderColor: theme.border, backgroundColor: theme.surface }]}> 
                     <ScrollView style={{ maxHeight: 160 }} showsVerticalScrollIndicator={false}>
                       {pendingInvites.map((inv) => (
@@ -349,15 +363,23 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                               </Text>
                             </View>
                             <View style={styles.sharedRightActions}>
-                              <View style={[styles.statusPill, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                                <Text style={[styles.statusText, { color: theme.textMuted }]}>Pending</Text>
-                              </View>
-                              <TouchableOpacity
-                                style={[styles.removeBtn, { backgroundColor: theme.surface, borderColor: '#dc2626' }]}
-                                onPress={() => handleRevokeInvite(inv.id)}
-                              >
-                                <Text style={[styles.removeText, { color: '#dc2626' }]}>Revoke</Text>
-                              </TouchableOpacity>
+                              {(() => {
+                                const pres = getInviteStatusPresentation(inv.status);
+                                return (
+                                  <View style={[styles.statusPill, { backgroundColor: pres.bg, borderColor: pres.border }]}>
+                                    <Text style={[styles.statusText, { color: pres.text }]}>{pres.label}</Text>
+                                  </View>
+                                );
+                              })()}
+
+                              {String(inv?.status || '').toUpperCase() === 'PENDING' ? (
+                                <TouchableOpacity
+                                  style={[styles.removeBtn, { backgroundColor: theme.surface, borderColor: '#dc2626' }]}
+                                  onPress={() => handleRevokeInvite(inv.id)}
+                                >
+                                  <Text style={[styles.removeText, { color: '#dc2626' }]}>Revoke</Text>
+                                </TouchableOpacity>
+                              ) : null}
                             </View>
                           </View>
                         </View>
@@ -474,8 +496,8 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                           </View>
 
                           <View style={styles.sharedRightActions}>
-                            <View style={[styles.statusPill, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                              <Text style={[styles.statusText, { color: theme.textMuted }]}>Active</Text>
+                            <View style={[styles.statusPill, { backgroundColor: '#16a34a', borderColor: '#15803d' }]}>
+                              <Text style={[styles.statusText, { color: '#ffffff' }]}>Active</Text>
                             </View>
                             <TouchableOpacity
                               style={[styles.removeBtn, { backgroundColor: theme.surface, borderColor: '#dc2626' }]}
