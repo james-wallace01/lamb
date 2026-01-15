@@ -525,14 +525,16 @@ export default function SharedVaults({ navigation, route }) {
           </View>
         </View>
 
-        <TextInput
-          style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, marginTop: 8 }]}
-          placeholder="Type to search assets"
-          placeholderTextColor={theme.placeholder}
-          value={assetTypeQuery}
-          onChangeText={setAssetTypeQuery}
-          {...noAutoCorrect}
-        />
+        {!anyCreateOpen ? (
+          <TextInput
+            style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, marginTop: 8 }]}
+            placeholder="Type to search assets"
+            placeholderTextColor={theme.placeholder}
+            value={assetTypeQuery}
+            onChangeText={setAssetTypeQuery}
+            {...noAutoCorrect}
+          />
+        ) : null}
 
         {assetCreateOpen ? (
           <View style={styles.createRow}>
@@ -799,7 +801,7 @@ export default function SharedVaults({ navigation, route }) {
               <Text style={[styles.title, { color: theme.text }]}>Shared Vaults</Text>
             </View>
 
-            {sortedSharedVaults.length ? (
+            {sortedSharedVaults.length && !anyCreateOpen ? (
               <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
                 <TextInput
                   style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}

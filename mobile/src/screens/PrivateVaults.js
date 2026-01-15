@@ -587,14 +587,16 @@ export default function PrivateVaults({ navigation, route }) {
           </View>
         </View>
 
-        <TextInput
-          style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, marginTop: 8 }]}
-          placeholder="Type to search assets"
-          placeholderTextColor={theme.placeholder}
-          value={assetTypeQuery}
-          onChangeText={setAssetTypeQuery}
-          {...noAutoCorrect}
-        />
+        {!anyCreateOpen ? (
+          <TextInput
+            style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, marginTop: 8 }]}
+            placeholder="Type to search assets"
+            placeholderTextColor={theme.placeholder}
+            value={assetTypeQuery}
+            onChangeText={setAssetTypeQuery}
+            {...noAutoCorrect}
+          />
+        ) : null}
 
         {assetCreateOpen ? (
           <View style={styles.createRow}>
@@ -870,17 +872,19 @@ export default function PrivateVaults({ navigation, route }) {
               <Text style={[styles.title, { color: theme.text }]}>Private Vaults</Text>
             </View>
 
-            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
-            >
-              <TextInput
-                style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
-                placeholder="Search vaults, collections, assets"
-                placeholderTextColor={theme.placeholder}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                {...noAutoCorrect}
-              />
-            </View>
+            {!anyCreateOpen ? (
+              <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              >
+                <TextInput
+                  style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
+                  placeholder="Search vaults, collections, assets"
+                  placeholderTextColor={theme.placeholder}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  {...noAutoCorrect}
+                />
+              </View>
+            ) : null}
 
             <ShareModal
               visible={shareVisible}
