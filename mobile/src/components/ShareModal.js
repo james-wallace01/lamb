@@ -317,7 +317,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                   <Text style={[styles.roleHelp, { color: theme.textSecondary }]}>Invite a delegate by email.</Text>
                   <TextInput
                     style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
-                    placeholder="Delegate email"
+                    placeholder="Email"
                     placeholderTextColor={theme.placeholder}
                     value={inviteEmail}
                     autoCapitalize="none"
@@ -343,7 +343,12 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                       {pendingInvites.map((inv) => (
                         <View key={inv.id} style={[styles.sharedRow, { backgroundColor: theme.inputBg }]}> 
                           <View style={styles.sharedInfo}>
-                            <Text style={[styles.sharedName, { color: theme.text }]}>{inv.invitee_email || inv.email || inv.id}</Text>
+                            <View style={styles.sharedInfoLeft}>
+                              <Text style={[styles.sharedName, { color: theme.text }]}>{inv.invitee_email || inv.email || inv.id}</Text>
+                            </View>
+                            <View style={[styles.statusPill, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                              <Text style={[styles.statusText, { color: theme.textMuted }]}>Pending</Text>
+                            </View>
                           </View>
                           <TouchableOpacity
                             style={[styles.removeBtn, { backgroundColor: theme.surface, borderColor: '#dc2626' }]}
@@ -364,10 +369,10 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
 
             {targetType !== 'vault' && (
               <>
-                <Text style={[styles.label, { color: theme.textMuted }]}>Delegate email</Text>
+                <Text style={[styles.label, { color: theme.textMuted }]}>Email</Text>
                 <TextInput
                   style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
-                  placeholder="Delegate email"
+                  placeholder="Email"
                   placeholderTextColor={theme.placeholder}
                   value={inviteEmail}
                   autoCapitalize="none"
@@ -458,12 +463,17 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                     <View key={s.userId}>
                       <View style={[styles.sharedRow, { backgroundColor: theme.inputBg }]}>
                         <View style={styles.sharedInfo}>
-                          <Text style={[styles.sharedName, { color: theme.text }]}>{s.user?.username || s.userId}</Text>
-                          <Text style={[styles.sharedMeta, { color: theme.textMuted }]}>{s.user?.email || ''}</Text>
+                          <View style={styles.sharedInfoLeft}>
+                            <Text style={[styles.sharedName, { color: theme.text }]}>{s.user?.username || s.userId}</Text>
+                            {s.user?.email ? (
+                              <Text style={[styles.sharedMeta, { color: theme.textMuted }]}>{s.user.email}</Text>
+                            ) : null}
+                          </View>
+                          <View style={[styles.statusPill, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                            <Text style={[styles.statusText, { color: theme.textMuted }]}>Active</Text>
+                          </View>
                         </View>
                         <View style={styles.sharedActions}>
-                          <Text style={[styles.roleHelp, { color: theme.textSecondary }]}>Delegate</Text>
-
                           {(targetType === 'vault' || targetType === 'collection') && (
                             <>
                               <Text style={[styles.label, { color: theme.textMuted }]}>Permissions</Text>
@@ -585,7 +595,10 @@ const styles = StyleSheet.create({
   sharedList: { maxHeight: 250 },
   sharedRow: { flexDirection: 'column', gap: 8, paddingVertical: 10, paddingHorizontal: 10, marginHorizontal: -2, borderRadius: 8, backgroundColor: '#11121a' },
   sharedDivider: { height: 1, backgroundColor: '#1f2738', marginVertical: 8 },
-  sharedInfo: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  sharedInfo: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
+  sharedInfoLeft: { flex: 1, minWidth: 0 },
+  statusPill: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999, borderWidth: 1 },
+  statusText: { fontSize: 12, fontWeight: '800' },
   sharedName: { color: '#fff', fontWeight: '700' },
   sharedMeta: { color: '#9aa1b5', fontSize: 12 },
   sharedActions: { gap: 6 },
