@@ -34,6 +34,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
   } = useData();
   const Alert = { alert: showAlert };
   const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteEmailError, setInviteEmailError] = useState('');
   const [creatingInvite, setCreatingInvite] = useState(false);
   const [pendingInvites, setPendingInvites] = useState([]);
   // Back-compat: DataContext still accepts a legacy "role" string to map into permissions.
@@ -144,10 +145,19 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
 
   const handleSendInvite = async () => {
     const email = String(inviteEmail || '').trim().toLowerCase();
+    const selfEmail = String(currentUser?.email || '').trim().toLowerCase();
     if (!email) {
+      setInviteEmailError('');
       Alert.alert('Delegate', 'Enter an email to delegate.');
       return;
     }
+
+    if (selfEmail && email === selfEmail) {
+      setInviteEmailError("You can't invite yourself!");
+      return;
+    }
+
+    setInviteEmailError('');
 
     // Vault owners can create invitation codes (works for existing users and non-users).
     if (canInviteByEmail) {
@@ -159,6 +169,11 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
     const match = (users || []).find((u) => String(u?.email || '').toLowerCase() === email);
     if (!match?.id) {
       Alert.alert('User not found', 'No user with that email is available to delegate.');
+      return;
+    }
+
+    if (currentUser?.id && String(match.id) === String(currentUser.id)) {
+      setInviteEmailError("You can't invite yourself!");
       return;
     }
 
@@ -219,10 +234,19 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
 
   const handleCreateInvite = async () => {
     const email = inviteEmail.trim().toLowerCase();
+    const selfEmail = String(currentUser?.email || '').trim().toLowerCase();
     if (!email) {
+      setInviteEmailError('');
       Alert.alert('Invite', 'Enter an email to invite.');
       return;
     }
+
+    if (selfEmail && email === selfEmail) {
+      setInviteEmailError("You can't invite yourself!");
+      return;
+    }
+
+    setInviteEmailError('');
     if (creatingInvite) return;
     if (!canInviteByEmail) {
       Alert.alert('Invite', 'Only the vault owner can create invites.');
@@ -356,8 +380,14 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                     autoCorrect={false}
                     spellCheck={false}
                     keyboardType="email-address"
-                    onChangeText={setInviteEmail}
+                    onChangeText={(t) => {
+                      setInviteEmail(t);
+                      if (inviteEmailError) setInviteEmailError('');
+                    }}
                   />
+                  {inviteEmailError ? (
+                    <Text style={[styles.inlineError, { color: '#dc2626' }]}>{inviteEmailError}</Text>
+                  ) : null}
                   <TouchableOpacity style={[styles.primaryButton, creatingInvite && styles.primaryButtonDisabled]} onPress={handleSendInvite} disabled={creatingInvite}>
                     <Text style={styles.primaryButtonText}>{creatingInvite ? 'Sending…' : 'Send invite'}</Text>
                   </TouchableOpacity>
@@ -423,8 +453,14 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
                   autoCorrect={false}
                   spellCheck={false}
                   keyboardType="email-address"
-                  onChangeText={setInviteEmail}
+                  onChangeText={(t) => {
+                    setInviteEmail(t);
+                    if (inviteEmailError) setInviteEmailError('');
+                  }}
                 />
+                {inviteEmailError ? (
+                  <Text style={[styles.inlineError, { color: '#dc2626' }]}>{inviteEmailError}</Text>
+                ) : null}
                 <TouchableOpacity style={[styles.primaryButton]} onPress={handleSendInvite}>
                   <Text style={styles.primaryButtonText}>Send invite</Text>
                 </TouchableOpacity>
@@ -648,4 +684,5 @@ const styles = StyleSheet.create({
   sharedMeta: { color: '#9aa1b5', fontSize: 12 },
   removeBtn: { paddingVertical: 8, paddingHorizontal: 10, borderRadius: 10, borderWidth: 1, borderColor: '#44282c', backgroundColor: '#2a171b', alignSelf: 'flex-start' },
   removeText: { color: '#fca5a5', fontWeight: '700' },
+  inlineError: { marginTop: 6, fontWeight: '700' },
 });
