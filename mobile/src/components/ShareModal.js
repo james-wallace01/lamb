@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useData } from '../context/DataContext';
@@ -37,6 +37,8 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
   const [inviteEmailError, setInviteEmailError] = useState('');
   const [creatingInvite, setCreatingInvite] = useState(false);
   const [pendingInvites, setPendingInvites] = useState([]);
+  const [invitesListenError, setInvitesListenError] = useState('');
+  const inviteAbortRef = useRef(null);
   // Back-compat: DataContext still accepts a legacy "role" string to map into permissions.
   const [role, setRole] = useState(DEFAULT_DELEGATE_ROLE);
   const [canCreateCollections, setCanCreateCollections] = useState(false);
@@ -193,6 +195,19 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
   }, [vaultIdForTarget, vaultMemberships, currentUser]);
 
   useEffect(() => {
+    if (visible) return;
+    // If the modal closes while a network request is in-flight, abort it so the UI can't get stuck.
+    try {
+      inviteAbortRef.current?.abort?.();
+    } catch {
+      // ignore
+    }
+    inviteAbortRef.current = null;
+    setCreatingInvite(false);
+    setInvitesListenError('');
+  }, [visible]);
+
+  useEffect(() => {
     if (!visible) return;
     if (!firestore) return;
     if (!vaultIdForTarget) return;
@@ -208,6 +223,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
     const unsub = onSnapshot(
       q,
       (snap) => {
+        if (invitesListenError) setInvitesListenError('');
         const getCreatedAtMs = (v) => {
           if (typeof v === 'number' && Number.isFinite(v)) return v;
           if (v && typeof v.toMillis === 'function') {
@@ -241,8 +257,11 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
           .sort((a, b) => getCreatedAtMs(b?.createdAt) - getCreatedAtMs(a?.createdAt));
         setPendingInvites(invites);
       },
-      () => {
-        // ignore
+      (err) => {
+        const msg = err?.message ? String(err.message) : 'Unable to load invites.';
+        console.warn('[ShareModal] invites listener failed:', msg);
+        setPendingInvites([]);
+        setInvitesListenError('Unable to load invites.');
       }
     );
 
@@ -277,6 +296,14 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
     }
     setCreatingInvite(true);
     try {
+      // Cancel any previous attempt before starting a new one.
+      try {
+        inviteAbortRef.current?.abort?.();
+      } catch {
+        // ignore
+      }
+      inviteAbortRef.current = null;
+
       const vaultId = String(vaultIdForTarget);
       const scopeType = targetType === 'vault' ? 'VAULT' : targetType === 'collection' ? 'COLLECTION' : targetType === 'asset' ? 'ASSET' : 'VAULT';
       const scopeId = targetType === 'vault' ? null : String(targetId);
@@ -286,11 +313,17 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
           : targetType === 'collection'
             ? { View: true, Create: !!canCreateAssets }
             : { View: true };
+
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      if (controller) inviteAbortRef.current = controller;
+
       const resp = await apiFetch(`${API_URL}/vaults/${encodeURIComponent(vaultId)}/invitations`, {
         requireAuth: true,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, scopeType, scopeId, permissions }),
+        signal: controller?.signal,
+        timeoutMs: 12000,
       });
       const json = await resp.json().catch(() => null);
       if (!resp.ok) {
@@ -303,6 +336,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
     } catch (e) {
       Alert.alert('Invite failed', e?.message || 'Unable to create invitation');
     } finally {
+      inviteAbortRef.current = null;
       setCreatingInvite(false);
     }
   };
@@ -448,43 +482,49 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
               </>
             )}
 
-            {canInviteByEmail && pendingInvites.length > 0 && (
+            {canInviteByEmail && (
               <>
                 <View style={[styles.miniDivider, { backgroundColor: theme.border }]} />
                 <Text style={[styles.label, { color: theme.textMuted }]}>Invites</Text>
                 <View style={[styles.sharedBox, { borderColor: theme.border, backgroundColor: theme.surface }]}> 
-                  <ScrollView style={{ maxHeight: 160 }} showsVerticalScrollIndicator={false}>
-                    {pendingInvites.map((inv) => (
-                      <View key={inv.id} style={[styles.sharedRow, { backgroundColor: theme.inputBg }]}> 
-                        <View style={styles.sharedHeaderRow}>
-                          <View style={styles.sharedInfoLeft}>
-                            <Text style={[styles.sharedName, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
-                              {inv.invitee_email || inv.email || inv.id}
-                            </Text>
-                          </View>
-                          <View style={styles.sharedRightActions}>
-                            {(() => {
-                              const pres = getInviteStatusPresentation(inv.status);
-                              return (
-                                <View style={[styles.statusPill, { backgroundColor: pres.bg, borderColor: pres.border }]}>
-                                  <Text style={[styles.statusText, { color: pres.text }]}>{pres.label}</Text>
-                                </View>
-                              );
-                            })()}
+                  {invitesListenError ? (
+                    <Text style={[styles.roleHelp, { color: '#dc2626', marginTop: 0 }]}>{invitesListenError}</Text>
+                  ) : pendingInvites.length === 0 ? (
+                    <Text style={[styles.roleHelp, { color: theme.textSecondary, marginTop: 0 }]}>No invites yet.</Text>
+                  ) : (
+                    <ScrollView style={{ maxHeight: 160 }} showsVerticalScrollIndicator={false}>
+                      {pendingInvites.map((inv) => (
+                        <View key={inv.id} style={[styles.sharedRow, { backgroundColor: theme.inputBg }]}> 
+                          <View style={styles.sharedHeaderRow}>
+                            <View style={styles.sharedInfoLeft}>
+                              <Text style={[styles.sharedName, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
+                                {inv.invitee_email || inv.email || inv.id}
+                              </Text>
+                            </View>
+                            <View style={styles.sharedRightActions}>
+                              {(() => {
+                                const pres = getInviteStatusPresentation(inv.status);
+                                return (
+                                  <View style={[styles.statusPill, { backgroundColor: pres.bg, borderColor: pres.border }]}>
+                                    <Text style={[styles.statusText, { color: pres.text }]}>{pres.label}</Text>
+                                  </View>
+                                );
+                              })()}
 
-                            {String(inv?.status || '').toUpperCase() === 'PENDING' ? (
-                              <TouchableOpacity
-                                style={[styles.removeBtn, { backgroundColor: theme.surface, borderColor: '#dc2626' }]}
-                                onPress={() => handleRevokeInvite(inv.id)}
-                              >
-                                <Text style={[styles.removeText, { color: '#dc2626' }]}>Revoke</Text>
-                              </TouchableOpacity>
-                            ) : null}
+                              {String(inv?.status || '').toUpperCase() === 'PENDING' ? (
+                                <TouchableOpacity
+                                  style={[styles.removeBtn, { backgroundColor: theme.surface, borderColor: '#dc2626' }]}
+                                  onPress={() => handleRevokeInvite(inv.id)}
+                                >
+                                  <Text style={[styles.removeText, { color: '#dc2626' }]}>Revoke</Text>
+                                </TouchableOpacity>
+                              ) : null}
+                            </View>
                           </View>
                         </View>
-                      </View>
-                    ))}
-                  </ScrollView>
+                      ))}
+                    </ScrollView>
+                  )}
                 </View>
               </>
             )}
