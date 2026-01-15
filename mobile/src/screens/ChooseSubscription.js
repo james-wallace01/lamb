@@ -294,7 +294,7 @@ export default function ChooseSubscription({ navigation, route }) {
 
     Alert.alert(
       'Continue without membership?',
-      'You can still access the app and join a vault as a delegate using an invite code. A paid membership is only required for full access as an owner.',
+      'You can still access the app and join a vault as a delegate via Invitations. A paid membership is only required for full access as an owner.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -326,7 +326,7 @@ export default function ChooseSubscription({ navigation, route }) {
                 return;
               }
 
-              Alert.alert('Account created', 'You can join a vault from Home using an invite code.');
+              Alert.alert('Account created', 'You can join a vault from Home via Invitations.');
             } finally {
               setSubmitting(false);
               skipInFlightRef.current = false;

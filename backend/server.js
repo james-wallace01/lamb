@@ -1690,6 +1690,87 @@ app.post('/invitations/deny', requireFirebaseAuth, inviteRateLimiter, async (req
   }
 });
 
+// Invitee-facing list: show invitations addressed to the authenticated user's email.
+// This is server-side because Firestore rules do not allow invitees to read invitations directly.
+app.get('/invitations', requireFirebaseAuth, sensitiveRateLimiter, async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const email = normalizeEmail(req.firebaseUser?.email);
+    if (!email) return res.status(400).json({ error: 'Missing email on authenticated user' });
+
+    // Query by invitee email only (single-field index); filter/sort in memory to avoid composite index requirements.
+    const snap = await db.collectionGroup('invitations').where('invitee_email', '==', email).limit(100).get();
+    const raw = (snap.docs || []).map((d) => ({ id: d.id, ...(d.data() || {}) }));
+
+    const getCreatedAtMs = (v) => {
+      if (typeof v === 'number' && Number.isFinite(v)) return v;
+      if (v && typeof v.toMillis === 'function') {
+        try {
+          return v.toMillis();
+        } catch {
+          return 0;
+        }
+      }
+      if (v && typeof v === 'object' && typeof v.seconds === 'number') {
+        return Math.floor(v.seconds * 1000);
+      }
+      if (typeof v === 'string') {
+        const t = Date.parse(v);
+        return Number.isFinite(t) ? t : 0;
+      }
+      return 0;
+    };
+
+    const invitations = raw
+      .filter((x) => ['PENDING', 'ACCEPTED', 'DENIED'].includes(String(x?.status || '').toUpperCase()))
+      .sort((a, b) => getCreatedAtMs(b?.createdAt) - getCreatedAtMs(a?.createdAt));
+
+    // Attach minimal vault info so the client can display a friendly label.
+    const vaultIds = Array.from(
+      new Set(
+        invitations
+          .map((inv) => {
+            if (inv?.vault_id) return String(inv.vault_id);
+            const code = typeof inv?.id === 'string' ? inv.id : '';
+            const derived = code.includes('_') ? code.split('_')[0] : '';
+            return derived ? String(derived) : null;
+          })
+          .filter(Boolean)
+      )
+    );
+
+    const vaultMap = new Map();
+    await Promise.all(
+      vaultIds.map(async (vaultId) => {
+        try {
+          const vSnap = await db.collection('vaults').doc(String(vaultId)).get();
+          if (!vSnap.exists) {
+            vaultMap.set(String(vaultId), null);
+            return;
+          }
+          const v = vSnap.data() || {};
+          vaultMap.set(String(vaultId), { id: String(vSnap.id), name: v.name ? String(v.name) : 'Shared Vault' });
+        } catch {
+          vaultMap.set(String(vaultId), null);
+        }
+      })
+    );
+
+    const withVault = invitations.map((inv) => {
+      const vaultId = inv?.vault_id ? String(inv.vault_id) : (typeof inv?.id === 'string' ? String(inv.id).split('_')[0] : '');
+      const vault = vaultId ? vaultMap.get(String(vaultId)) : null;
+      return { ...inv, vault: vault || null };
+    });
+
+    return res.json({ ok: true, invitations: withVault });
+  } catch (err) {
+    console.error('Error listing user invitations:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to list invitations' });
+  }
+});
+
 // Resolve a user identifier (email or username) to a uid.
 // This is intentionally server-side because Firestore rules do not allow listing `/users` from clients.
 // Paid + owner gated to avoid creating a public user directory.

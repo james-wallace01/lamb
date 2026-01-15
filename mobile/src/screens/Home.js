@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View, Text, ScrollView, TextInput, Image, RefreshControl, TouchableOpacity } from 'react-native';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
@@ -6,14 +6,53 @@ import { getInitials } from '../utils/user';
 import { runWithMinimumDuration } from '../utils/timing';
 
 export default function Home({ navigation }) {
-  const { currentUser, refreshData, theme, membershipAccess, acceptInvitationCode, backendReachable, showAlert } = useData();
+  const { currentUser, refreshData, theme, membershipAccess, acceptInvitationCode, denyInvitationCode, listMyInvitations, backendReachable, showAlert } = useData();
   const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
-  const [inviteCode, setInviteCode] = useState('');
+  const [invitations, setInvitations] = useState([]);
+  const [invitesLoading, setInvitesLoading] = useState(false);
+  const [invitesError, setInvitesError] = useState('');
 
   const [avatarFailed, setAvatarFailed] = useState(false);
   const scrollRef = useRef(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  const getInviteStatusPresentation = (rawStatus) => {
+    const status = String(rawStatus || '').toUpperCase();
+    if (status === 'PENDING') {
+      return { label: 'Pending', bg: theme.warning, border: theme.warningBorder, text: theme.isDark ? '#111827' : theme.text };
+    }
+    if (status === 'ACCEPTED') {
+      return { label: 'Active', bg: theme.success, border: theme.successBorder, text: theme.onAccentText };
+    }
+    if (status === 'DENIED') {
+      return { label: 'Denied', bg: theme.danger, border: theme.dangerBorder, text: theme.onAccentText };
+    }
+    return { label: status || 'Pending', bg: theme.surfaceAlt, border: theme.border, text: theme.textSecondary };
+  };
+
+  const loadInvitations = async () => {
+    if (invitesLoading) return;
+    if (isOffline) {
+      setInvitesError('Internet connection required.');
+      setInvitations([]);
+      return;
+    }
+    setInvitesLoading(true);
+    setInvitesError('');
+    try {
+      const res = await listMyInvitations?.();
+      if (!res || res.ok === false) {
+        setInvitations([]);
+        setInvitesError(res?.message || 'Unable to load invitations');
+        return;
+      }
+      const list = Array.isArray(res?.invitations) ? res.invitations : [];
+      setInvitations(list);
+    } finally {
+      setInvitesLoading(false);
+    }
+  };
 
   const handleRefresh = async () => {
     if (refreshing) return;
@@ -21,28 +60,41 @@ export default function Home({ navigation }) {
     try {
       await runWithMinimumDuration(async () => {
         await refreshData?.();
+        await loadInvitations();
       }, 800);
     } finally {
       setRefreshing(false);
     }
   };
 
-  const handleAcceptInvite = async () => {
-    const code = inviteCode.trim();
-    if (!code) {
-      Alert.alert('Invite code', 'Enter an invite code to join a vault.');
-      return;
-    }
-    const res = await acceptInvitationCode?.(code);
+  useEffect(() => {
+    loadInvitations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleAcceptInvitation = async (code) => {
+    const raw = typeof code === 'string' ? code.trim() : '';
+    if (!raw) return;
+    const res = await acceptInvitationCode?.(raw);
     if (!res || res.ok === false) {
       Alert.alert('Invite failed', res?.message || 'Unable to accept invite');
       return;
     }
-    setInviteCode('');
     Alert.alert('Joined', 'You now have access to the shared vault.');
-    if (res.vaultId) {
-      navigation.navigate('SharedVaults', { selectedVaultId: res.vaultId });
+    await loadInvitations();
+    if (res.vaultId) navigation.navigate('SharedVaults', { selectedVaultId: res.vaultId });
+  };
+
+  const handleDenyInvitation = async (code) => {
+    const raw = typeof code === 'string' ? code.trim() : '';
+    if (!raw) return;
+    const res = await denyInvitationCode?.(raw);
+    if (!res || res.ok === false) {
+      Alert.alert('Invite failed', res?.message || 'Unable to deny invite');
+      return;
     }
+    Alert.alert('Denied', 'Invitation denied.');
+    await loadInvitations();
   };
 
   if (!membershipAccess) {
@@ -80,26 +132,54 @@ export default function Home({ navigation }) {
           </View>
 
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}> 
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Join a Vault</Text>
-            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Have an invite code? Paste it here to join as a delegate.</Text>
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, alignItems: 'center' }}>
-              <TextInput
-                value={inviteCode}
-                onChangeText={setInviteCode}
-                placeholder="Invite Code"
-                placeholderTextColor={theme.placeholder}
-                style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, flex: 1 }]}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <TouchableOpacity
-                style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface, paddingHorizontal: 14, paddingVertical: 10 }, isOffline && styles.buttonDisabled]}
-                onPress={handleAcceptInvite}
-                disabled={isOffline}
-              >
-                <Text style={[styles.secondaryText, { color: theme.textSecondary }]}>Join</Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Invitations</Text>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Review invitations to shared vaults.</Text>
+            {invitesError ? <Text style={[styles.subtitle, { color: theme.danger }]}>{invitesError}</Text> : null}
+            {invitesLoading ? (
+              <Text style={[styles.subtitle, { color: theme.textSecondary, marginTop: 8 }]}>Loading…</Text>
+            ) : invitations.length === 0 ? (
+              <Text style={[styles.subtitle, { color: theme.textSecondary, marginTop: 8 }]}>No invitations.</Text>
+            ) : (
+              <View style={{ gap: 10, marginTop: 10 }}>
+                {invitations.map((inv) => {
+                  const pres = getInviteStatusPresentation(inv?.status);
+                  const vaultName = inv?.vault?.name || 'Shared Vault';
+                  const isPending = String(inv?.status || '').toUpperCase() === 'PENDING';
+                  return (
+                    <View key={String(inv?.id)} style={[styles.card, { backgroundColor: theme.surfaceAlt, borderColor: theme.border, marginTop: 0 }]}>
+                      <View style={styles.cardRow}>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
+                            {vaultName}
+                          </Text>
+                        </View>
+                        <View style={[styles.statusPill, { backgroundColor: pres.bg, borderColor: pres.border }]}>
+                          <Text style={[styles.statusText, { color: pres.text }]}>{pres.label}</Text>
+                        </View>
+                      </View>
+                      {isPending ? (
+                        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                          <TouchableOpacity
+                            style={[styles.secondaryButton, { borderColor: theme.successBorder, backgroundColor: theme.success, flex: 1 }]}
+                            onPress={() => handleAcceptInvitation(String(inv.id))}
+                            disabled={isOffline}
+                          >
+                            <Text style={[styles.secondaryText, { color: theme.onAccentText, textAlign: 'center' }]}>Accept</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.secondaryButton, { borderColor: theme.dangerBorder, backgroundColor: theme.danger, flex: 1 }]}
+                            onPress={() => handleDenyInvitation(String(inv.id))}
+                            disabled={isOffline}
+                          >
+                            <Text style={[styles.secondaryText, { color: theme.onAccentText, textAlign: 'center' }]}>Deny</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
           </View>
 
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}> 
@@ -166,26 +246,54 @@ export default function Home({ navigation }) {
         </View>
 
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}> 
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Join a vault</Text>
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Have an invite code? Paste it here to join as a delegate.</Text>
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, alignItems: 'center' }}>
-            <TextInput
-              value={inviteCode}
-              onChangeText={setInviteCode}
-              placeholder="Invite code"
-              placeholderTextColor={theme.placeholder}
-              style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, flex: 1 }]}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <TouchableOpacity
-              style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface, paddingHorizontal: 14, paddingVertical: 10 }, isOffline && styles.buttonDisabled]}
-              onPress={handleAcceptInvite}
-              disabled={isOffline}
-            >
-              <Text style={[styles.secondaryText, { color: theme.textSecondary }]}>Join</Text>
-            </TouchableOpacity>
-          </View>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Invitations</Text>
+          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Review invitations to shared vaults.</Text>
+          {invitesError ? <Text style={[styles.subtitle, { color: theme.danger }]}>{invitesError}</Text> : null}
+          {invitesLoading ? (
+            <Text style={[styles.subtitle, { color: theme.textSecondary, marginTop: 8 }]}>Loading…</Text>
+          ) : invitations.length === 0 ? (
+            <Text style={[styles.subtitle, { color: theme.textSecondary, marginTop: 8 }]}>No invitations.</Text>
+          ) : (
+            <View style={{ gap: 10, marginTop: 10 }}>
+              {invitations.map((inv) => {
+                const pres = getInviteStatusPresentation(inv?.status);
+                const vaultName = inv?.vault?.name || 'Shared Vault';
+                const isPending = String(inv?.status || '').toUpperCase() === 'PENDING';
+                return (
+                  <View key={String(inv?.id)} style={[styles.card, { backgroundColor: theme.surfaceAlt, borderColor: theme.border, marginTop: 0 }]}>
+                    <View style={styles.cardRow}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
+                          {vaultName}
+                        </Text>
+                      </View>
+                      <View style={[styles.statusPill, { backgroundColor: pres.bg, borderColor: pres.border }]}>
+                        <Text style={[styles.statusText, { color: pres.text }]}>{pres.label}</Text>
+                      </View>
+                    </View>
+                    {isPending ? (
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                        <TouchableOpacity
+                          style={[styles.secondaryButton, { borderColor: theme.successBorder, backgroundColor: theme.success, flex: 1 }]}
+                          onPress={() => handleAcceptInvitation(String(inv.id))}
+                          disabled={isOffline}
+                        >
+                          <Text style={[styles.secondaryText, { color: theme.onAccentText, textAlign: 'center' }]}>Accept</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.secondaryButton, { borderColor: theme.dangerBorder, backgroundColor: theme.danger, flex: 1 }]}
+                          onPress={() => handleDenyInvitation(String(inv.id))}
+                          disabled={isOffline}
+                        >
+                          <Text style={[styles.secondaryText, { color: theme.onAccentText, textAlign: 'center' }]}>Deny</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </View>
+          )}
         </View>
       </ScrollView>
     </View>
@@ -220,6 +328,8 @@ const styles = StyleSheet.create({
   separator: { height: 12 },
   secondaryButton: { paddingVertical: 8, paddingHorizontal: 10, borderRadius: 10, borderWidth: 1, borderColor: '#26344a', backgroundColor: '#1b2535' },
   secondaryText: { color: '#d3dcf2', fontWeight: '700' },
+  statusPill: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999, borderWidth: 1 },
+  statusText: { fontSize: 12, fontWeight: '800' },
   sharePill: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 20, backgroundColor: '#22c55e', borderWidth: 2, borderColor: '#16a34a' },
   sharePillText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 

@@ -858,6 +858,63 @@ export function DataProvider({ children }) {
     }
   };
 
+  const denyInvitationCode = async (code) => {
+    const raw = typeof code === 'string' ? code.trim() : '';
+    if (!raw) return { ok: false, message: 'Missing invite code' };
+
+    try {
+      const resp = await apiFetch(`${API_URL}/invitations/deny`, {
+        requireAuth: true,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: raw }),
+      });
+
+      const json = await resp.json().catch(() => null);
+      if (!resp.ok) {
+        return { ok: false, message: (json && json.error) ? String(json.error) : 'Invite deny failed' };
+      }
+
+      return { ok: true, vaultId: json?.vaultId || null };
+    } catch (error) {
+      return { ok: false, message: error?.message || 'Invite deny failed' };
+    }
+  };
+
+  const listMyInvitations = async () => {
+    try {
+      const resp = await apiFetch(`${API_URL}/invitations`, {
+        requireAuth: true,
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+
+      const text = await resp.text().catch(() => '');
+      let json = null;
+      try {
+        json = text ? JSON.parse(text) : null;
+      } catch {
+        json = null;
+      }
+
+      if (!resp.ok) {
+        if (json && json.error) {
+          return { ok: false, message: String(json.error) };
+        }
+        const snippet = String(text || '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 180);
+        return { ok: false, message: snippet ? `HTTP ${resp.status}: ${snippet}` : `HTTP ${resp.status}: Failed to load invitations` };
+      }
+
+      const invitations = Array.isArray(json?.invitations) ? json.invitations : [];
+      return { ok: true, invitations };
+    } catch (error) {
+      return { ok: false, message: error?.message || 'Failed to load invitations' };
+    }
+  };
+
   const enforceSessionTimeout = async () => {
     if (!currentUser) return { ok: true };
     try {
@@ -3402,6 +3459,8 @@ export function DataProvider({ children }) {
     biometricLogin,
     refreshData,
     acceptInvitationCode: wrapOnlineAsync(acceptInvitationCode),
+    denyInvitationCode: wrapOnlineAsync(denyInvitationCode),
+    listMyInvitations: wrapOnlineAsync(listMyInvitations),
     recordActivity,
     enforceSessionTimeout,
     subscriptionTiers: SUBSCRIPTION_TIERS,
