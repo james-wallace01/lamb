@@ -242,21 +242,6 @@ export default function Tracking({ navigation }) {
 
   const uid = currentUser?.id ? String(currentUser.id) : null;
   const hasProMembership = String(currentUser?.subscription?.tier || '').toUpperCase() === 'PRO';
-  const didRedirectRef = useRef(false);
-
-  useEffect(() => {
-    if (!currentUser) return;
-    if (hasProMembership) return;
-    if (didRedirectRef.current) return;
-    didRedirectRef.current = true;
-
-    // Pro-only feature: redirect to upgrade flow.
-    try {
-      navigation?.navigate?.('ChooseSubscription', { mode: 'upgrade' });
-    } catch {
-      // ignore
-    }
-  }, [currentUser, hasProMembership, navigation]);
 
   const vaultBuckets = useMemo(() => {
     if (!uid) return [];
@@ -407,12 +392,14 @@ export default function Tracking({ navigation }) {
   useEffect(() => {
     // Reload whenever the screen becomes active again.
     if (!isFocused) return;
+    if (!hasProMembership) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isFocused, uid, vaultFilter, trackedVaults.length, selectedDayStartMs]);
+  }, [isFocused, hasProMembership, uid, vaultFilter, trackedVaults.length, selectedDayStartMs]);
 
   const handleRefresh = async () => {
     if (refreshing) return;
+    if (!hasProMembership) return;
     setRefreshing(true);
     try {
       await runWithMinimumDuration(async () => {
@@ -428,12 +415,14 @@ export default function Tracking({ navigation }) {
       <ScrollView
         contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={theme.isDark ? '#fff' : '#111827'}
-            progressViewOffset={24}
-          />
+          hasProMembership ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={theme.isDark ? '#fff' : '#111827'}
+              progressViewOffset={24}
+            />
+          ) : null
         }
       >
         <LambHeader />
@@ -441,7 +430,22 @@ export default function Tracking({ navigation }) {
           <Text style={[styles.title, { color: theme.text }]}>Tracking</Text>
         </View>
 
-        {!!uid ? (
+        {!hasProMembership ? (
+          <View style={[styles.lockedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+            <Text style={[styles.lockedTitle, { color: theme.text }]}>Tracking is a Pro feature</Text>
+            <Text style={[styles.lockedText, { color: theme.textSecondary }]}>Upgrade to Pro to access Tracking.</Text>
+            <Pressable
+              onPress={() => navigation.navigate('ChooseSubscription', { mode: 'upgrade' })}
+              style={[styles.lockedButton, { backgroundColor: theme.primary }]}
+              accessibilityRole="button"
+              accessibilityLabel="View membership plans"
+            >
+              <Text style={[styles.lockedButtonText, { color: theme.onAccentText || '#fff' }]}>View plans</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {hasProMembership && !!uid ? (
           <View style={styles.filterRow}>
             <Pressable
               onPress={() => setVaultFilter('PRIVATE')}
@@ -470,7 +474,7 @@ export default function Tracking({ navigation }) {
           </View>
         ) : null}
 
-        {!!uid ? (
+        {hasProMembership && !!uid ? (
           <View style={styles.dateRow}>
             <Pressable
               onPress={() => {
@@ -510,7 +514,7 @@ export default function Tracking({ navigation }) {
           </View>
         ) : null}
 
-        {!!uid ? (
+        {hasProMembership && !!uid ? (
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
             {isOffline
               ? 'Offline — tracking is unavailable.'
@@ -526,7 +530,7 @@ export default function Tracking({ navigation }) {
           </Text>
         ) : null}
 
-        {!!uid && showDatePicker ? (
+        {hasProMembership && !!uid && showDatePicker ? (
           <View style={[styles.datePickerWrap, { borderColor: theme.border, backgroundColor: theme.surface }]}>
             <DateTimePicker
               value={selectedDate}
@@ -546,9 +550,9 @@ export default function Tracking({ navigation }) {
           </View>
         ) : null}
 
-        {isOffline || !uid || trackedVaults.length === 0 || loadError ? (
-          !uid ? <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Sign in to view tracking.</Text> : null
-        ) : events.length === 0 ? (
+        {!uid ? (
+          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Sign in to view tracking.</Text>
+        ) : !hasProMembership ? null : isOffline || trackedVaults.length === 0 || loadError ? null : events.length === 0 ? (
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No activity for this day.</Text>
         ) : (
           events.map((evt) => {
@@ -623,6 +627,12 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { fontSize: 24, fontWeight: '700', color: '#fff' },
   subtitle: { color: '#c5c5d0' },
+
+  lockedCard: { borderWidth: 1, borderColor: '#1f2738', borderRadius: 12, padding: 16, gap: 10 },
+  lockedTitle: { fontSize: 18, fontWeight: '800', color: '#fff' },
+  lockedText: { fontSize: 14, color: '#c5c5d0' },
+  lockedButton: { borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  lockedButtonText: { fontSize: 15, fontWeight: '800', color: '#fff' },
 
   filterRow: { flexDirection: 'row', gap: 10 },
   filterPill: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, alignItems: 'center' },
