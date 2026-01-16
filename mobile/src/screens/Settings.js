@@ -9,7 +9,7 @@ import { runWithMinimumDuration } from '../utils/timing';
 const FEEDBACK_EMAIL = 'support@lamb.app';
 
 export default function Membership({ navigation }) {
-  const { refreshData, theme, vaults, currentUser, showAlert } = useData();
+  const { refreshData, theme, vaults, currentUser, showAlert, updateSubscription } = useData();
   const [refreshing, setRefreshing] = useState(false);
 
   const ownsAnyVault = (vaults || []).some((v) => v?.ownerId && currentUser?.id && v.ownerId === currentUser.id);
@@ -62,6 +62,28 @@ export default function Membership({ navigation }) {
           onChooseMembership={() => navigation.navigate('ChooseSubscription', { mode: 'upgrade' })}
         />
 
+        {typeof __DEV__ !== 'undefined' && __DEV__ ? (
+          <View style={[styles.legalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Developer</Text>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Temporary tools for local testing.</Text>
+            <TouchableOpacity
+              style={[styles.devButton, { backgroundColor: theme.primary, borderColor: theme.primary }]}
+              onPress={() => {
+                const res = updateSubscription?.('PRO');
+                if (res?.ok) {
+                  showAlert?.('Developer', 'Pro enabled locally for this device.');
+                } else {
+                  showAlert?.('Developer', res?.message || 'Unable to enable Pro.');
+                }
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Enable Pro locally"
+            >
+              <Text style={[styles.devButtonText, { color: theme.onAccentText || '#fff' }]}>DEV: Enable Pro</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {!ownsAnyVault ? (
           <View style={[styles.legalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Billing</Text>
@@ -111,5 +133,7 @@ const styles = StyleSheet.create({
   sectionTitle: { color: '#e5e7f0', fontWeight: '700', fontSize: 16, marginBottom: 4 },
   legalRow: { paddingVertical: 6 },
   legalLink: { color: '#9ab6ff', fontWeight: '600' },
+  devButton: { marginTop: 6, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10, borderWidth: 1, alignItems: 'center' },
+  devButtonText: { fontWeight: '800' },
   spacer: { height: 40 },
 });
