@@ -9,7 +9,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
 const https = require('https');
-require('dotenv').config();
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { initFirebaseAdmin, firebaseEnabled, requireFirebaseAuth } = require('./firebaseAdmin');
 const firebaseAdmin = require('firebase-admin');
 const { sendEmail, isEmailEnabled } = require('./email');
