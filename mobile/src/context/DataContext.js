@@ -41,7 +41,7 @@ import {
 } from 'firebase/firestore';
 import { API_URL } from '../config/api';
 import NetInfo from '@react-native-community/netinfo';
-import { apiFetch } from '../utils/apiFetch';
+import { apiFetch, setApiFetchSessionExpiredHandler } from '../utils/apiFetch';
 
 const DATA_KEY = 'lamb-mobile-data-v6';
 const LAST_ACTIVITY_KEY = 'lamb-mobile-last-activity-v1';
@@ -923,8 +923,7 @@ export function DataProvider({ children }) {
       // Prefer the freshest of (persisted) and (in-memory) timestamps.
       const last = Math.max(storedMs || 0, lastActivityAt || 0);
       if (Date.now() - last >= SESSION_TIMEOUT_MS) {
-        setCurrentUser(null);
-        await removeItem(LAST_ACTIVITY_KEY);
+        logout();
         return { ok: false, expired: true };
       }
       return { ok: true };
@@ -1816,6 +1815,16 @@ export function DataProvider({ children }) {
       signOut(firebaseAuth).catch(() => {});
     }
   };
+
+  useEffect(() => {
+    setApiFetchSessionExpiredHandler(() => {
+      logout();
+    });
+
+    return () => {
+      setApiFetchSessionExpiredHandler(null);
+    };
+  }, [logout]);
 
   const ensureLocalAndFirestoreUserForFirebaseAuth = async ({ provider, profile } = {}) => {
     if (!firebaseAuth?.currentUser?.uid) return { ok: false, message: 'Authentication failed' };

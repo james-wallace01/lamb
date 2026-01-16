@@ -1,8 +1,23 @@
 import { getFirebaseIdToken } from '../firebase';
 
+let sessionExpiredHandler = null;
+
+export function setApiFetchSessionExpiredHandler(handler) {
+  sessionExpiredHandler = typeof handler === 'function' ? handler : null;
+}
+
 export async function apiFetch(url, options = {}) {
   const requireAuth = !!options?.requireAuth;
   const timeoutMs = typeof options?.timeoutMs === 'number' ? options.timeoutMs : 12000;
+
+  const notifySessionExpired = (reason) => {
+    if (!requireAuth) return;
+    try {
+      sessionExpiredHandler?.({ reason, url });
+    } catch {
+      // ignore
+    }
+  };
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -33,6 +48,7 @@ export async function apiFetch(url, options = {}) {
     }
   }
   if (requireAuth && !token) {
+    notifySessionExpired('missing_token');
     throw new Error('Session expired. Please sign in with your password.');
   }
   if (token) {
@@ -61,7 +77,11 @@ export async function apiFetch(url, options = {}) {
       }, timeoutMs);
     }
 
-    return await fetch(url, finalOptions);
+    const resp = await fetch(url, finalOptions);
+    if (requireAuth && resp && resp.status === 401) {
+      notifySessionExpired('http_401');
+    }
+    return resp;
   } catch (err) {
     const name = typeof err?.name === 'string' ? err.name : '';
     const msg = typeof err?.message === 'string' ? err.message : '';
