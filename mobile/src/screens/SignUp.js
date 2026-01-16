@@ -15,7 +15,7 @@ import { GOOGLE_ANDROID_CLIENT_ID, GOOGLE_IOS_CLIENT_ID, GOOGLE_WEB_CLIENT_ID, i
 WebBrowser.maybeCompleteAuthSession();
 
 export default function SignUp({ navigation }) {
-  const { register, loginWithApple, loginWithGoogleIdToken, loading, theme, ensureFirebaseSignupAuth, backendReachable, showAlert } = useData();
+  const { register, loginWithApple, loginWithGoogleIdToken, loading, theme, backendReachable, showAlert } = useData();
   const Alert = { alert: showAlert };
   const insets = useSafeAreaInsets();
   const [firstName, setFirstName] = useState('');
@@ -268,28 +268,8 @@ export default function SignUp({ navigation }) {
       return;
     }
 
-    // Authoritative check: attempt to establish Firebase Auth for this email now.
-    // This prevents discovering "email already in use" only after selecting a plan.
-    if (ensureFirebaseSignupAuth) {
-      const authRes = await ensureFirebaseSignupAuth({
-        email: normalizeEmail(email),
-        password,
-        username: normalizeUsername(username),
-      });
-
-      if (authRes && authRes.ok === false) {
-        const msg = authRes.message || 'Unable to create account. Please try again.';
-        if (/email is already in use|email-already-in-use/i.test(String(msg))) {
-          setEmailBlurred(true);
-          setEmailTaken(true);
-          return;
-        }
-        Alert.alert('Sign up failed', msg);
-        return;
-      }
-    }
-
-    // Go directly to plan selection (free trial info is shown on the membership screen).
+    // Go to plan selection. Account creation happens once the user selects a membership
+    // or taps "Skip" on the next screen.
     navigation.navigate('ChooseSubscription', {
       firstName: firstName.trim(),
       lastName: lastName.trim(),
