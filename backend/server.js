@@ -120,6 +120,14 @@ const emailAvailabilityRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Username enumeration protection: also reveals whether an identifier exists.
+const usernameAvailabilityRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const sensitiveRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 120,
@@ -1476,6 +1484,29 @@ app.post('/email-available', emailAvailabilityRateLimiter, async (req, res) => {
   } catch (error) {
     console.error('Email availability endpoint error:', error);
     return res.status(500).json({ error: 'Email check failed' });
+  }
+});
+
+// Username availability check used by the signup UI (runs before the user is authenticated).
+// Note: This endpoint intentionally reveals whether a username exists. Keep the rate limit tight.
+app.post('/username-available', usernameAvailabilityRateLimiter, async (req, res) => {
+  try {
+    res.set('Cache-Control', 'no-store');
+    const username = normalizeUsername(req.body?.username);
+    if (!username) return res.status(400).json({ error: 'Missing username' });
+    if (username.length < 3 || username.length > 20) return res.status(400).json({ error: 'Invalid username' });
+    if (!/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(username)) {
+      return res.status(400).json({ error: 'Invalid username' });
+    }
+
+    const db = getFirestoreDb();
+    if (!db) return res.status(503).json({ error: 'Firebase is not configured on this server' });
+
+    const snap = await db.collection('users').where('username', '==', username).limit(1).get();
+    return res.json({ available: snap.empty });
+  } catch (error) {
+    console.error('Username availability endpoint error:', error);
+    return res.status(500).json({ error: 'Username check failed' });
   }
 });
 

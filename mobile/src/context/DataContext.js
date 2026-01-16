@@ -2055,7 +2055,8 @@ export function DataProvider({ children }) {
     if (!uid) return { ok: false, message: 'Authentication failed' };
 
     // Idempotency: allow register() to be called multiple times for the same authenticated uid.
-    // Only block if a *different* known local user already claims the same email/username.
+    // Only block if a *different known uid* already claims the same email/username.
+    // (Local cache can contain legacy/incomplete users without uid/email; don't let that block signup.)
     const existingLocal = (users || []).find(
       (u) =>
         (u?.username && normalizeUsername(u.username) === un.value) ||
@@ -2080,18 +2081,14 @@ export function DataProvider({ children }) {
 
       const existingUid = existingId != null ? String(existingId) : null;
 
-      // Allow if this is clearly the same authenticated user.
-      if (existingUid && existingUid === uid) {
-        // ok
-      } else if (matchesEmail) {
-        // Email is authoritative for Firebase Auth uniqueness; local cache may have a stale/missing uid.
-        // Treat as idempotent and continue.
-      } else if (matchesUsername && !matchesEmail) {
-        // Username collision with a different email.
-        return { ok: false, message: 'User already exists' };
-      } else {
-        return { ok: false, message: 'User already exists' };
+      // Only block on an email conflict with a different known uid.
+      // Do NOT block on username collisions here: local cache can be stale and username is not
+      // a Firebase Auth-unique identifier.
+      if (existingUid && existingUid !== uid) {
+        if (matchesEmail) return { ok: false, message: 'Email is already in use' };
       }
+
+      // Treat all other cases (including username-only collision) as stale/incomplete local cache.
     }
 
     const tier = subscriptionTier ? String(subscriptionTier).toUpperCase() : null;

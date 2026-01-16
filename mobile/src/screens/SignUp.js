@@ -24,9 +24,12 @@ export default function SignUp({ navigation }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [emailTaken, setEmailTaken] = useState(false);
-  const [emailCheckError, setEmailCheckError] = useState(null);
   const [emailChecking, setEmailChecking] = useState(false);
   const [emailBlurred, setEmailBlurred] = useState(false);
+  const [usernameBlurred, setUsernameBlurred] = useState(false);
+  const [passwordBlurred, setPasswordBlurred] = useState(false);
+  const [usernameTaken, setUsernameTaken] = useState(false);
+  const [usernameChecking, setUsernameChecking] = useState(false);
 
   const isOffline = backendReachable === false;
 
@@ -94,7 +97,7 @@ export default function SignUp({ navigation }) {
     return null;
   };
 
-  const passwordInvalid = useMemo(() => {
+  const passwordInvalidRaw = useMemo(() => {
     if (!password) return false;
     if (password.length < 12) return true;
     if (password.length > 72) return true;
@@ -110,8 +113,10 @@ export default function SignUp({ navigation }) {
     return false;
   }, [password, username, email]);
 
-  // Validate email format/characters
-  const emailError = useMemo(() => {
+  const passwordInvalid = passwordBlurred ? passwordInvalidRaw : false;
+
+  // Validate email format/characters (raw). Display should be gated by emailBlurred.
+  const emailErrorRaw = useMemo(() => {
     const v = normalizeEmail(email);
     if (!v) return null;
     if (v.length > 320) return 'Email is too long';
@@ -121,15 +126,19 @@ export default function SignUp({ navigation }) {
     return null;
   }, [email]);
 
-  const usernameError = useMemo(() => {
+  const emailError = emailBlurred ? emailErrorRaw : null;
+
+  const usernameErrorRaw = useMemo(() => {
     const v = normalizeUsername(username);
     if (!v) return null;
     return validateUsernameLive(v);
   }, [username]);
 
+  const usernameError = usernameBlurred ? usernameErrorRaw : null;
+
   const checkEmailInUse = async (emailValue) => {
     const v = normalizeEmail(emailValue);
-    if (!v || emailError) return { ok: true, taken: false };
+    if (!v || emailErrorRaw) return { ok: true, taken: false };
 
     const withTimeout = async (promise, timeoutMs, timeoutMessage) => {
       let timeoutId;
@@ -182,23 +191,67 @@ export default function SignUp({ navigation }) {
     }
   };
 
+  const checkUsernameInUse = async (usernameValue) => {
+    const u = normalizeUsername(usernameValue);
+    if (!u) return { ok: true, taken: false };
+    if (validateUsernameLive(u)) return { ok: true, taken: false };
+
+    try {
+      const controller = new AbortController();
+      const abortId = setTimeout(() => controller.abort(), 4000);
+      let resp;
+      try {
+        resp = await apiFetch(`${API_URL}/username-available`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: u }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(abortId);
+      }
+      if (resp.ok) {
+        const json = await resp.json().catch(() => null);
+        if (json && json.available === false) return { ok: true, taken: true };
+        if (json && json.available === true) return { ok: true, taken: false };
+      }
+      // If endpoint unavailable, proceed silently.
+      return { ok: true, taken: false };
+    } catch {
+      return { ok: true, taken: false };
+    }
+  };
+
   const handleEmailBlur = async () => {
     setEmailBlurred(true);
     const v = normalizeEmail(email);
-    if (!v || emailError) return;
+    if (!v || emailErrorRaw) return;
 
     setEmailChecking(true);
-    setEmailCheckError(null);
     try {
       const res = await checkEmailInUse(v);
       if (res.ok) {
         setEmailTaken(!!res.taken);
       } else {
         setEmailTaken(false);
-        setEmailCheckError(res.message || 'Could not verify email');
       }
     } finally {
       setEmailChecking(false);
+    }
+  };
+
+  const handleUsernameBlur = async () => {
+    setUsernameBlurred(true);
+    const u = normalizeUsername(username);
+    if (!u) return;
+    if (validateUsernameLive(u)) return;
+
+    setUsernameChecking(true);
+    try {
+      const res = await checkUsernameInUse(u);
+      if (res.ok) setUsernameTaken(!!res.taken);
+    } finally {
+      setUsernameChecking(false);
     }
   };
 
@@ -209,12 +262,13 @@ export default function SignUp({ navigation }) {
     email &&
     username &&
     password &&
-    !emailError &&
+    !emailErrorRaw &&
     !emailTaken &&
     !emailChecking &&
-    !emailCheckError &&
-    !usernameError &&
-    !passwordInvalid;
+    !usernameTaken &&
+    !usernameChecking &&
+    !usernameErrorRaw &&
+    !passwordInvalidRaw;
 
   const handleSubmit = async () => {
     if (isOffline) {
@@ -226,8 +280,9 @@ export default function SignUp({ navigation }) {
       return;
     }
 
-    if (emailError) {
-      Alert.alert('Invalid email', emailError);
+    if (emailErrorRaw) {
+      setEmailBlurred(true);
+      Alert.alert('Invalid email', emailErrorRaw);
       return;
     }
 
@@ -243,14 +298,13 @@ export default function SignUp({ navigation }) {
 
     if (emailChecking) return;
 
-    if (emailCheckError) return;
-
     // Safety net: re-check right before proceeding, but do not alert.
     // If the email is taken, surface it inline on the email field.
     const finalCheck = await checkEmailInUse(email);
     if (!finalCheck.ok) {
-      setEmailCheckError(finalCheck.message || 'Could not verify email');
-      return;
+      // If availability can't be verified (network/backend issue), proceed.
+      // Account creation will be validated when the user chooses a membership or skips.
+      // (We keep UX silent here per request.)
     }
     if (finalCheck.taken) {
       setEmailBlurred(true);
@@ -258,12 +312,28 @@ export default function SignUp({ navigation }) {
       return;
     }
 
-    if (usernameError) {
-      Alert.alert('Invalid username', usernameError);
+    if (usernameChecking) return;
+
+    setUsernameChecking(true);
+    try {
+      const ucheck = await checkUsernameInUse(username);
+      if (ucheck.taken) {
+        setUsernameBlurred(true);
+        setUsernameTaken(true);
+        return;
+      }
+    } finally {
+      setUsernameChecking(false);
+    }
+
+    if (usernameErrorRaw) {
+      setUsernameBlurred(true);
+      Alert.alert('Invalid username', usernameErrorRaw);
       return;
     }
 
-    if (passwordInvalid) {
+    if (passwordInvalidRaw) {
+      setPasswordBlurred(true);
       Alert.alert('Weak password', 'Use 12+ characters with a letter, number, and symbol. Avoid your username/email.');
       return;
     }
@@ -359,32 +429,31 @@ export default function SignUp({ navigation }) {
           onChangeText={(t) => {
             setEmailBlurred(false);
             setEmailTaken(false);
-            setEmailCheckError(null);
             setEmail(normalizeEmail(String(t || '')));
           }}
           onBlur={handleEmailBlur}
         />
         {!!emailError && <Text style={styles.errorText}>{emailError}</Text>}
         {emailBlurred && emailTaken && <Text style={styles.errorText}>Email is already in use</Text>}
-        {!emailError && !emailTaken && emailChecking && (
-          <Text style={styles.errorText}>Checking email…</Text>
-        )}
-        {!emailError && !emailTaken && !!emailCheckError && (
-          <Text style={styles.errorText}>Could not verify email right now</Text>
-        )}
       </View>
       
       <View>
         <TextInput 
-          style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }, usernameError ? styles.inputError : null]}
+          style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }, (usernameError || usernameTaken) ? styles.inputError : null]}
           placeholder="Username" 
           placeholderTextColor={theme.placeholder} 
           value={username} 
           autoCapitalize="none" 
           autoCorrect={false}
-          onChangeText={(t) => setUsername(normalizeUsername(String(t || '')))} 
+          onChangeText={(t) => {
+            setUsernameBlurred(false);
+            setUsernameTaken(false);
+            setUsername(normalizeUsername(String(t || '')));
+          }}
+          onBlur={handleUsernameBlur}
         />
         {!!usernameError && <Text style={styles.errorText}>{usernameError}</Text>}
+        {usernameBlurred && usernameTaken && <Text style={styles.errorText}>Username is already taken</Text>}
       </View>
       
       <View>
@@ -399,7 +468,11 @@ export default function SignUp({ navigation }) {
           // Apple iOS password rules hint (enforcement happens in DataContext.register)
           passwordRules="minlength: 12; required: lower; required: upper; required: digit; required: special;"
           value={password}
-          onChangeText={setPassword}
+          onChangeText={(t) => {
+            setPasswordBlurred(false);
+            setPassword(t);
+          }}
+          onBlur={() => setPasswordBlurred(true)}
         />
         {passwordInvalid && (
           <Text style={styles.errorText}>12+ chars with letter, number, symbol; no spaces; avoid username/email</Text>
