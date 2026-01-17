@@ -43,9 +43,12 @@ import { API_URL } from '../config/api';
 import NetInfo from '@react-native-community/netinfo';
 import { apiFetch, setApiFetchSessionExpiredHandler } from '../utils/apiFetch';
 import NotificationBanner from '../components/NotificationBanner';
+import { appendClientLog } from '../utils/clientLog';
+import { hapticError, hapticSuccess } from '../utils/haptics';
 
 const DATA_KEY = 'lamb-mobile-data-v6';
 const LAST_ACTIVITY_KEY = 'lamb-mobile-last-activity-v1';
+const LAST_SYNCED_AT_KEY = 'lamb-mobile-last-synced-at-v1';
 const BIOMETRIC_SECURE_USER_ID_KEY = 'lamb-mobile-biometric-userid-secure-v1';
 const BIOMETRIC_ENABLED_USER_ID_KEY = 'lamb-mobile-biometric-userid-enabled-v1';
 const LANGUAGE_PREF_KEY = 'lamb-mobile-language-pref-v1';
@@ -749,6 +752,8 @@ const DataContext = createContext(null);
 export function DataProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [backendReachable, setBackendReachable] = useState(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
+  const lastSyncedWriteAtRef = useRef(0);
   const [users, setUsers] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [biometricUserId, setBiometricUserId] = useState(null);
@@ -1097,6 +1102,12 @@ export function DataProvider({ children }) {
         headers: { Accept: 'application/json' },
       });
       setBackendReachable(!!res.ok);
+      if (res.ok) {
+        const now = Date.now();
+        setLastSyncedAt(now);
+        lastSyncedWriteAtRef.current = now;
+        setItem(LAST_SYNCED_AT_KEY, now).catch(() => {});
+      }
       return { ok: !!res.ok };
     } catch {
       setBackendReachable(false);
@@ -1105,6 +1116,20 @@ export function DataProvider({ children }) {
       clearTimeout(timeoutId);
     }
   };
+
+  const touchLastSynced = useCallback((at = Date.now()) => {
+    const ts = typeof at === 'number' && Number.isFinite(at) ? at : Date.now();
+    // Throttle persistent writes; snapshots can fire frequently.
+    const prevWrite = lastSyncedWriteAtRef.current || 0;
+    if (ts - prevWrite < 15 * 1000) {
+      // Still update in-memory timestamp occasionally so the UI doesn't look stale.
+      if (!lastSyncedAt || ts > lastSyncedAt) setLastSyncedAt(ts);
+      return;
+    }
+    lastSyncedWriteAtRef.current = ts;
+    setLastSyncedAt((prev) => (prev && prev > ts ? prev : ts));
+    setItem(LAST_SYNCED_AT_KEY, ts).catch(() => {});
+  }, [lastSyncedAt]);
 
   // Subscription state is managed by Apple IAP verification. The app can refresh app data
   // and/or prompt the user to restore purchases, but there is no backend subscription sync endpoint.
@@ -1156,6 +1181,7 @@ export function DataProvider({ children }) {
 
       return { ok: true, vaultId };
     } catch (error) {
+      appendClientLog({ level: 'error', event: 'invite.accept', message: error?.message || 'Invite accept failed' }).catch(() => {});
       return { ok: false, message: error?.message || 'Invite accept failed' };
     }
   };
@@ -1179,6 +1205,7 @@ export function DataProvider({ children }) {
 
       return { ok: true, vaultId: json?.vaultId || null };
     } catch (error) {
+      appendClientLog({ level: 'error', event: 'invite.deny', message: error?.message || 'Invite deny failed' }).catch(() => {});
       return { ok: false, message: error?.message || 'Invite deny failed' };
     }
   };
@@ -1213,6 +1240,7 @@ export function DataProvider({ children }) {
       const invitations = Array.isArray(json?.invitations) ? json.invitations : [];
       return { ok: true, invitations };
     } catch (error) {
+      appendClientLog({ level: 'error', event: 'invite.list', message: error?.message || 'Failed to load invitations' }).catch(() => {});
       return { ok: false, message: error?.message || 'Failed to load invitations' };
     }
   };
@@ -1301,6 +1329,12 @@ export function DataProvider({ children }) {
           setLastActivityAt(now);
           lastActivityWriteAtRef.current = now;
           await setItem(LAST_ACTIVITY_KEY, now);
+        }
+
+        const storedLastSynced = await getItem(LAST_SYNCED_AT_KEY, null);
+        if (typeof storedLastSynced === 'number' && Number.isFinite(storedLastSynced)) {
+          setLastSyncedAt(storedLastSynced);
+          lastSyncedWriteAtRef.current = storedLastSynced;
         }
         // Localization defaults: device-detected on first run, but always overrideable.
         const storedLang = await getItem(LANGUAGE_PREF_KEY, null);
@@ -1600,6 +1634,7 @@ export function DataProvider({ children }) {
                 .map((d) => ({ id: String(d.id), vaultId: String(vId), ...(d.data() || {}) }))
                 .filter((c) => c?.id);
               setCollections((prev) => replaceForVault({ prev, vaultId: vId, vaultField: 'vaultId', items: remoteCollections }));
+              touchLastSynced();
             },
             () => {
               // ignore
@@ -1652,6 +1687,7 @@ export function DataProvider({ children }) {
                 .map((d) => ({ id: String(d.id), vaultId: String(vId), ...(d.data() || {}) }))
                 .filter((a) => a?.id);
               setAssets((prev) => replaceForVault({ prev, vaultId: vId, vaultField: 'vaultId', items: remoteAssets }));
+              touchLastSynced();
             },
             () => {
               // ignore
@@ -1724,6 +1760,7 @@ export function DataProvider({ children }) {
           (vsnap) => {
             ownedVaultsByActiveOwner = vsnap.docs.map((d) => normalizeVaultDoc({ docId: d.id, data: d.data() })).filter(Boolean);
             recomputeOwnedVaults();
+            touchLastSynced();
           },
           (err) => {
             console.warn('[vaults] owned-by-activeOwnerId snapshot error:', err?.message || err);
@@ -1735,6 +1772,7 @@ export function DataProvider({ children }) {
           (vsnap) => {
             ownedVaultsByOwnerId = vsnap.docs.map((d) => normalizeVaultDoc({ docId: d.id, data: d.data() })).filter(Boolean);
             recomputeOwnedVaults();
+            touchLastSynced();
           },
           (err) => {
             console.warn('[vaults] owned-by-ownerId snapshot error:', err?.message || err);
@@ -1770,6 +1808,7 @@ export function DataProvider({ children }) {
       const unsubMyMemberships = onSnapshot(
         myMembershipsQuery,
         (snap) => {
+          touchLastSynced();
           const myMemberships = snap.docs
             .map((d) => normalizeMembershipDoc({ vaultId: d.data()?.vault_id || d.ref?.parent?.parent?.id, docId: d.id, data: d.data() }))
             .filter(Boolean);
@@ -1789,6 +1828,7 @@ export function DataProvider({ children }) {
             return onSnapshot(
               membershipsCol,
               (msnap) => {
+                touchLastSynced();
                 const members = msnap.docs
                   .map((d) => normalizeMembershipDoc({ vaultId, docId: d.id, data: d.data() }))
                   .filter(Boolean);
@@ -1813,6 +1853,7 @@ export function DataProvider({ children }) {
             return onSnapshot(
               vaultsQuery,
               (vsnap) => {
+                touchLastSynced();
                 const remoteVaults = vsnap.docs.map((d) => normalizeVaultDoc({ docId: d.id, data: d.data() })).filter(Boolean);
                 setVaults((prev) => mergeById(prev, remoteVaults));
               },
@@ -1835,6 +1876,7 @@ export function DataProvider({ children }) {
             return onSnapshot(
               grantsRef,
               (gsnap) => {
+                touchLastSynced();
                 const remoteGrants = gsnap.docs
                   .map((d) => ({ id: String(d.id), vault_id: String(vaultId), ...(d.data() || {}) }))
                   .filter((g) => g?.id);
@@ -2777,6 +2819,8 @@ export function DataProvider({ children }) {
       try {
         await batch.commit();
 
+        hapticSuccess().catch(() => {});
+
         // Best-effort audit trail.
         createAuditEvent({
           vaultId: String(vaultId),
@@ -2836,6 +2880,8 @@ export function DataProvider({ children }) {
         return { ok: true, vaultId };
       } catch (error) {
         const msg = error?.message ? String(error.message) : 'Unable to create vault';
+        appendClientLog({ level: 'error', event: 'vault.create', message: msg }).catch(() => {});
+        hapticError().catch(() => {});
         return { ok: false, message: msg };
       }
     };
@@ -2860,9 +2906,15 @@ export function DataProvider({ children }) {
         }),
       });
       const json = await resp.json().catch(() => null);
-      if (!resp.ok) return { ok: false, message: json?.error || 'Unable to create collection' };
+      if (!resp.ok) {
+        const msg = json?.error || 'Unable to create collection';
+        appendClientLog({ level: 'error', event: 'collection.create', message: msg, meta: { vaultId: vId } }).catch(() => {});
+        hapticError().catch(() => {});
+        return { ok: false, message: msg };
+      }
       const createdId = json?.collectionId || null;
       if (createdId) {
+        hapticSuccess().catch(() => {});
         createAuditEvent({
           vaultId: vId,
           type: 'COLLECTION_CREATED',
@@ -2928,9 +2980,15 @@ export function DataProvider({ children }) {
         }),
       });
       const json = await resp.json().catch(() => null);
-      if (!resp.ok) return { ok: false, message: json?.error || 'Unable to create asset' };
+      if (!resp.ok) {
+        const msg = json?.error || 'Unable to create asset';
+        appendClientLog({ level: 'error', event: 'asset.create', message: msg, meta: { vaultId: vId, collectionId: String(collectionId) } }).catch(() => {});
+        hapticError().catch(() => {});
+        return { ok: false, message: msg };
+      }
       const createdId = json?.assetId || null;
       if (createdId) {
+        hapticSuccess().catch(() => {});
         createAuditEvent({
           vaultId: vId,
           type: 'ASSET_CREATED',
@@ -3367,10 +3425,13 @@ export function DataProvider({ children }) {
           changes: diff,
         },
       }).catch(() => {});
+      hapticSuccess().catch(() => {});
       return { ok: true };
     } catch (e) {
       if (e?.code === 'conflict') return { ok: false, code: 'conflict', message: 'This vault was updated by someone else. Reload and try again.' };
       if (e?.code === 'not-found') return { ok: false, message: 'Vault not found' };
+      appendClientLog({ level: 'error', event: 'vault.update', message: mapFirestoreError(e), meta: { vaultId: String(vaultId) } }).catch(() => {});
+      hapticError().catch(() => {});
       return { ok: false, message: mapFirestoreError(e) };
     }
   };
@@ -3414,10 +3475,13 @@ export function DataProvider({ children }) {
           changes: diff,
         },
       }).catch(() => {});
+      hapticSuccess().catch(() => {});
       return { ok: true };
     } catch (e) {
       if (e?.code === 'conflict') return { ok: false, code: 'conflict', message: 'This collection was updated by someone else. Reload and try again.' };
       if (e?.code === 'not-found') return { ok: false, message: 'Collection not found' };
+      appendClientLog({ level: 'error', event: 'collection.update', message: mapFirestoreError(e), meta: { collectionId: String(collectionId) } }).catch(() => {});
+      hapticError().catch(() => {});
       return { ok: false, message: mapFirestoreError(e) };
     }
   };
@@ -3461,10 +3525,13 @@ export function DataProvider({ children }) {
           changes: diff,
         },
       }).catch(() => {});
+      hapticSuccess().catch(() => {});
       return { ok: true };
     } catch (e) {
       if (e?.code === 'conflict') return { ok: false, code: 'conflict', message: 'This asset was updated by someone else. Reload and try again.' };
       if (e?.code === 'not-found') return { ok: false, message: 'Asset not found' };
+      appendClientLog({ level: 'error', event: 'asset.update', message: mapFirestoreError(e), meta: { assetId: String(assetId) } }).catch(() => {});
+      hapticError().catch(() => {});
       return { ok: false, message: mapFirestoreError(e) };
     }
   };
@@ -3564,7 +3631,13 @@ export function DataProvider({ children }) {
       body: JSON.stringify({ confirm: 'DELETE' }),
     });
     const json = await resp.json().catch(() => null);
-    if (!resp.ok) return { ok: false, message: json?.error || 'Unable to delete vault' };
+    if (!resp.ok) {
+      const msg = json?.error || 'Unable to delete vault';
+      appendClientLog({ level: 'error', event: 'vault.delete', message: msg, meta: { vaultId: vId } }).catch(() => {});
+      hapticError().catch(() => {});
+      return { ok: false, message: msg };
+    }
+    hapticSuccess().catch(() => {});
     return { ok: true };
   };
 
@@ -3590,7 +3663,13 @@ export function DataProvider({ children }) {
       body: JSON.stringify({}),
     });
     const json = await resp.json().catch(() => null);
-    if (!resp.ok) return { ok: false, message: json?.error || 'Unable to delete collection' };
+    if (!resp.ok) {
+      const msg = json?.error || 'Unable to delete collection';
+      appendClientLog({ level: 'error', event: 'collection.delete', message: msg, meta: { collectionId: String(collectionId), vaultId: vId } }).catch(() => {});
+      hapticError().catch(() => {});
+      return { ok: false, message: msg };
+    }
+    hapticSuccess().catch(() => {});
     return { ok: true, deletedAssets: json?.deletedAssets || 0 };
   };
 
@@ -3616,7 +3695,13 @@ export function DataProvider({ children }) {
       body: JSON.stringify({}),
     });
     const json = await resp.json().catch(() => null);
-    if (!resp.ok) return { ok: false, message: json?.error || 'Unable to delete asset' };
+    if (!resp.ok) {
+      const msg = json?.error || 'Unable to delete asset';
+      appendClientLog({ level: 'error', event: 'asset.delete', message: msg, meta: { assetId: String(assetId), vaultId: vId } }).catch(() => {});
+      hapticError().catch(() => {});
+      return { ok: false, message: msg };
+    }
+    hapticSuccess().catch(() => {});
     return { ok: true };
   };
 
@@ -3826,6 +3911,7 @@ export function DataProvider({ children }) {
   const value = useMemo(() => ({
     loading,
     backendReachable,
+    lastSyncedAt,
     checkBackend,
     language,
     currency,

@@ -8,6 +8,7 @@ import { useData } from '../context/DataContext';
 import { getAssetCapabilities, getCollectionCapabilities, getVaultCapabilities } from '../policies/capabilities';
 import { runWithMinimumDuration } from '../utils/timing';
 import { getInitials } from '../utils/user';
+import { useDebouncedValue } from '../utils/useDebouncedValue';
 
 export default function SharedVaults({ navigation, route }) {
   const {
@@ -100,6 +101,7 @@ export default function SharedVaults({ navigation, route }) {
   };
 
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, 180);
   const [vaultTypeQuery, setVaultTypeQuery] = useState('');
   const [collectionTypeQuery, setCollectionTypeQuery] = useState('');
   const [vaultSortMode, setVaultSortMode] = useState('az');
@@ -346,11 +348,11 @@ export default function SharedVaults({ navigation, route }) {
 
   const filteredSharedVaults = useMemo(() => {
     const list = sortedSharedVaults || [];
-    const q1 = searchQuery;
+    const q1 = debouncedSearchQuery;
     const q2 = vaultTypeQuery;
     if (!String(q1 || '').trim() && !String(q2 || '').trim()) return list;
     return list.filter((v) => matchesAllQueries(v?.name, [q1, q2]));
-  }, [sortedSharedVaults, searchQuery, vaultTypeQuery]);
+  }, [sortedSharedVaults, debouncedSearchQuery, vaultTypeQuery]);
 
   useEffect(() => {
     const routeSelected = route?.params?.selectedVaultId ? String(route.params.selectedVaultId) : null;
@@ -471,11 +473,11 @@ export default function SharedVaults({ navigation, route }) {
 
   const filteredVaultCollections = useMemo(() => {
     const list = vaultCollections || [];
-    const q1 = searchQuery;
+    const q1 = debouncedSearchQuery;
     const q2 = collectionTypeQuery;
     if (!String(q1 || '').trim() && !String(q2 || '').trim()) return list;
     return list.filter((c) => matchesAllQueries(c?.name, [q1, q2]));
-  }, [vaultCollections, searchQuery, collectionTypeQuery]);
+  }, [vaultCollections, debouncedSearchQuery, collectionTypeQuery]);
 
   useEffect(() => {
     if (!selectedVaultId) return;
@@ -618,7 +620,7 @@ export default function SharedVaults({ navigation, route }) {
     });
 
     const allAssets = dedupeById([...(prunedOptimistic || []), ...(assets || [])]);
-    const queries = [searchQuery].map((x) => String(x || '').trim().toLowerCase()).filter(Boolean);
+    const queries = [debouncedSearchQuery].map((x) => String(x || '').trim().toLowerCase()).filter(Boolean);
     let list = allAssets.filter((a) => String(a?.collectionId) === selectedIdStr);
     const deletedMap = optimisticDeletedAssetIds || {};
     list = list.filter((a) => !deletedMap[String(a?.id)]);
@@ -632,7 +634,7 @@ export default function SharedVaults({ navigation, route }) {
     const dir = assetSortMode === 'za' ? -1 : 1;
     list.sort((a, b) => dir * String(a?.title || '').localeCompare(String(b?.title || '')));
     return list;
-  }, [assets, optimisticAssets, optimisticDeletedAssetIds, selectedCollectionId, searchQuery, assetSortMode]);
+  }, [assets, optimisticAssets, optimisticDeletedAssetIds, selectedCollectionId, debouncedSearchQuery, assetSortMode]);
 
   const selectedAsset = useMemo(
     () => {
