@@ -3763,6 +3763,7 @@ export function DataProvider({ children }) {
     backendReachable,
     language,
     currency,
+    showVaultTotalValue,
     languageOverrideEnabled,
     currencyOverrideEnabled,
     effectiveLocale,
