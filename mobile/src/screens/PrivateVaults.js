@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert as NativeAlert, Image, Modal, RefreshControl, ScrollView, SectionList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert as NativeAlert, Image, Keyboard, Modal, RefreshControl, ScrollView, SectionList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import LambHeader from '../components/LambHeader';
@@ -173,8 +173,16 @@ export default function PrivateVaults({ navigation, route }) {
 
   const closeVaultEditModal = () => {
     if (vaultEditSavingRef.current) return;
+    Keyboard.dismiss();
     setVaultEditVisible(false);
   };
+
+  useEffect(() => {
+    if (vaultEditVisible) return;
+    vaultEditSavingRef.current = false;
+    setVaultEditSaving(false);
+    Keyboard.dismiss();
+  }, [vaultEditVisible]);
 
   const selectedVaultAssetsForTotal = useMemo(() => {
     if (!selectedVaultId) return [];
@@ -1126,16 +1134,17 @@ export default function PrivateVaults({ navigation, route }) {
           </View>
           </Modal>
 
-            <Modal
-              visible={vaultEditVisible}
-              transparent
-              animationType="fade"
-              onRequestClose={() => {
-                closeVaultEditModal();
-              }}
-            >
-          <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={closeVaultEditModal}>
-            <TouchableOpacity activeOpacity={1} style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            {vaultEditVisible ? (
+              <Modal
+                visible
+                transparent
+                animationType="fade"
+                onRequestClose={() => {
+                  closeVaultEditModal();
+                }}
+              >
+                <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={closeVaultEditModal}>
+                  <TouchableOpacity activeOpacity={1} style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               <Text style={[styles.modalTitle, { color: theme.text }]}>Edit Vault</Text>
               <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Name</Text>
               <TextInput
@@ -1233,9 +1242,10 @@ export default function PrivateVaults({ navigation, route }) {
                   <Text style={[styles.dangerButtonText, { color: theme.dangerText }]}>Delete</Text>
                 </TouchableOpacity>
               </View>
-            </TouchableOpacity>
-          </TouchableOpacity>
-          </Modal>
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              </Modal>
+            ) : null}
 
         <Modal visible={assetMoveVisible} transparent animationType="fade" onRequestClose={() => setAssetMoveVisible(false)}>
           <View style={styles.modalBackdrop}>
