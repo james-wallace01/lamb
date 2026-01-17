@@ -78,7 +78,7 @@ export default function Asset({ route, navigation }) {
 
   useEffect(() => {
     if (didSetRecentRef.current) return;
-    if (!currentUser?.id) return;
+    if (!(currentUser?.id || currentUser?.firebaseUid)) return;
     const aId = assetId ? String(assetId) : null;
     if (!aId) return;
     const vId = routeVaultId ? String(routeVaultId) : (asset?.vaultId ? String(asset.vaultId) : null);
@@ -92,7 +92,7 @@ export default function Asset({ route, navigation }) {
         kind: 'Asset',
       })
     ).catch(() => {});
-  }, [assetId, asset?.title, asset?.vaultId, currentUser?.id, routeVaultId, setRecentlyAccessedEntry]);
+  }, [assetId, asset?.title, asset?.vaultId, currentUser?.id, currentUser?.firebaseUid, routeVaultId, setRecentlyAccessedEntry]);
 
   useEffect(() => {
     if (didLogViewRef.current) return;
@@ -405,6 +405,16 @@ export default function Asset({ route, navigation }) {
       if (!res || res.ok === false) {
         Alert.alert('Clone failed', res?.message || 'Unable to clone asset');
         return;
+      }
+      if (res.assetId) {
+        Promise.resolve(
+          setRecentlyAccessedEntry?.({
+            screen: 'Asset',
+            params: { assetId: String(res.assetId), vaultId: asset?.vaultId != null ? String(asset.vaultId) : undefined },
+            title: copyTitle,
+            kind: 'Asset',
+          })
+        ).catch(() => {});
       }
       Alert.alert('Cloned', 'Asset has been cloned.');
     })();

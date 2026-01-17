@@ -93,7 +93,7 @@ export default function Vault({ navigation, route }) {
 
   useEffect(() => {
     if (didSetRecentRef.current) return;
-    if (!currentUser?.id) return;
+    if (!(currentUser?.id || currentUser?.firebaseUid)) return;
     const vId = vaultId ? String(vaultId) : null;
     if (!vId) return;
     didSetRecentRef.current = true;
@@ -105,7 +105,7 @@ export default function Vault({ navigation, route }) {
         kind: 'Vault',
       })
     ).catch(() => {});
-  }, [vaultId, currentUser?.id, setRecentlyAccessedEntry, vault?.name]);
+  }, [vaultId, currentUser?.id, currentUser?.firebaseUid, setRecentlyAccessedEntry, vault?.name]);
 
   useEffect(() => {
     if (didLogViewRef.current) return;
@@ -698,6 +698,16 @@ export default function Vault({ navigation, route }) {
                           if (!res || res.ok === false) {
                             Alert.alert('Create failed', res?.message || 'Unable to create collection');
                             return;
+                          }
+                          if (res.collectionId) {
+                            Promise.resolve(
+                              setRecentlyAccessedEntry?.({
+                                screen: 'Collection',
+                                params: { collectionId: String(res.collectionId) },
+                                title: newName.trim(),
+                                kind: 'Collection',
+                              })
+                            ).catch(() => {});
                           }
                           setNewName('');
                         })();

@@ -70,7 +70,7 @@ export default function Collection({ navigation, route }) {
 
   useEffect(() => {
     if (didSetRecentRef.current) return;
-    if (!currentUser?.id) return;
+    if (!(currentUser?.id || currentUser?.firebaseUid)) return;
     const cId = collectionId ? String(collectionId) : null;
     if (!cId) return;
     didSetRecentRef.current = true;
@@ -82,7 +82,7 @@ export default function Collection({ navigation, route }) {
         kind: 'Collection',
       })
     ).catch(() => {});
-  }, [collectionId, currentUser?.id, setRecentlyAccessedEntry, collection?.name]);
+  }, [collectionId, currentUser?.id, currentUser?.firebaseUid, setRecentlyAccessedEntry, collection?.name]);
 
   useEffect(() => {
     if (didLogViewRef.current) return;
@@ -582,6 +582,19 @@ export default function Collection({ navigation, route }) {
                 if (!res || res.ok === false) {
                   Alert.alert('Create failed', res?.message || 'Unable to create asset');
                   return;
+                }
+                if (res.assetId) {
+                  Promise.resolve(
+                    setRecentlyAccessedEntry?.({
+                      screen: 'Asset',
+                      params: {
+                        assetId: String(res.assetId),
+                        vaultId: collection?.vaultId != null ? String(collection.vaultId) : undefined,
+                      },
+                      title,
+                      kind: 'Asset',
+                    })
+                  ).catch(() => {});
                 }
                 setNewTitle('');
               })();
