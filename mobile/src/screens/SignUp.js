@@ -455,6 +455,8 @@ export default function SignUp({ navigation }) {
           value={username} 
           autoCapitalize="none" 
           autoCorrect={false}
+          autoComplete="username"
+          textContentType="username"
           onChangeText={(t) => {
             setUsernameBlurred(false);
             setUsernameTaken(false);
