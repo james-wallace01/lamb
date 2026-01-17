@@ -42,6 +42,8 @@ export default function PrivateVaults({ navigation, route }) {
     releaseVaultAssets,
     backendReachable,
     showAlert,
+    showVaultTotalValue,
+    formatCurrencyValue,
   } = useData();
   const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
@@ -156,6 +158,33 @@ export default function PrivateVaults({ navigation, route }) {
   };
 
   const uid = currentUser?.id ? String(currentUser.id) : null;
+
+  const selectedVaultAssetsForTotal = useMemo(() => {
+    if (!selectedVaultId) return [];
+    const vId = String(selectedVaultId);
+    const deletedMap = optimisticDeletedAssetIds || {};
+    const all = dedupeById([...(optimisticAssets || []), ...(assets || [])]);
+    return (all || []).filter((a) => a && String(a?.vaultId || '') === vId && !deletedMap[String(a?.id)]);
+  }, [assets, optimisticAssets, optimisticDeletedAssetIds, selectedVaultId]);
+
+  const selectedVaultTotalValue = useMemo(() => {
+    let sum = 0;
+    for (const a of selectedVaultAssetsForTotal || []) {
+      if (!a || a.__empty) continue;
+      const qtyRaw = Number(a?.quantity);
+      const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
+      const raw = a?.estimateValue ?? a?.value ?? a?.purchasePrice;
+      const n = typeof raw === 'number' ? raw : Number(String(raw || '').replace(/[^0-9.-]/g, ''));
+      if (!Number.isFinite(n)) continue;
+      sum += qty * n;
+    }
+    return sum;
+  }, [selectedVaultAssetsForTotal]);
+
+  const selectedVaultTotalValueLabel = useMemo(() => {
+    if (!formatCurrencyValue) return String(selectedVaultTotalValue || 0);
+    return formatCurrencyValue(selectedVaultTotalValue || 0);
+  }, [formatCurrencyValue, selectedVaultTotalValue]);
 
   const normalizeVaultDoc = ({ docId, data }) => {
     const raw = data || {};
@@ -907,6 +936,15 @@ export default function PrivateVaults({ navigation, route }) {
             <View style={styles.headerRow}>
               <Text style={[styles.title, { color: theme.text }]}>Private Vaults</Text>
             </View>
+
+            {showVaultTotalValue !== false && selectedVaultId ? (
+              <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <View style={styles.totalValueRow}>
+                  <Text style={[styles.totalValueLabel, { color: theme.textSecondary }]}>Total Value</Text>
+                  <Text style={[styles.totalValueAmount, { color: theme.text }]}>{selectedVaultTotalValueLabel}</Text>
+                </View>
+              </View>
+            ) : null}
 
             {!anyCreateOpen ? (
               <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
@@ -1897,6 +1935,9 @@ const styles = StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: '#0b0b0f' },
   container: { padding: 20, paddingBottom: 140, backgroundColor: '#0b0b0f' },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  totalValueRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  totalValueLabel: { fontWeight: '700' },
+  totalValueAmount: { fontWeight: '800', fontSize: 16 },
   title: { fontSize: 24, fontWeight: '700', color: '#fff' },
   subtitle: { color: '#c5c5d0' },
 

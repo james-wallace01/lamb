@@ -50,6 +50,7 @@ const BIOMETRIC_SECURE_USER_ID_KEY = 'lamb-mobile-biometric-userid-secure-v1';
 const BIOMETRIC_ENABLED_USER_ID_KEY = 'lamb-mobile-biometric-userid-enabled-v1';
 const LANGUAGE_PREF_KEY = 'lamb-mobile-language-pref-v1';
 const CURRENCY_PREF_KEY = 'lamb-mobile-currency-pref-v1';
+const SHOW_VAULT_TOTAL_VALUE_KEY = 'lamb-mobile-show-vault-total-value-v1';
 const STORAGE_VERSION = 6;
 // Do not hardcode a remote default avatar URL.
 // Avatar fallback is rendered in the UI when profileImage is missing or fails to load.
@@ -766,6 +767,7 @@ export function DataProvider({ children }) {
   const [languageOverrideEnabled, setLanguageOverrideEnabled] = useState(false);
   const [currency, setCurrency] = useState(() => inferCurrencyFromRegion(deviceRegion));
   const [currencyOverrideEnabled, setCurrencyOverrideEnabled] = useState(false);
+  const [showVaultTotalValue, setShowVaultTotalValue] = useState(true);
   const effectiveLocale = useMemo(() => {
     const lang = normalizeLanguageCode(language) || inferLanguageFromLocale(deviceLocale);
     return deviceRegion ? `${lang}-${deviceRegion}` : (lang || deviceLocale);
@@ -888,6 +890,13 @@ export function DataProvider({ children }) {
     },
     [deviceRegion]
   );
+
+  const setShowVaultTotalValueEnabled = useCallback(async (next) => {
+    const value = !!next;
+    setShowVaultTotalValue(value);
+    await setItem(SHOW_VAULT_TOTAL_VALUE_KEY, value);
+    return { ok: true };
+  }, []);
 
   const formatCurrencyValue = useCallback(
     (value) => {
@@ -1178,6 +1187,7 @@ export function DataProvider({ children }) {
         // Localization defaults: device-detected on first run, but always overrideable.
         const storedLang = await getItem(LANGUAGE_PREF_KEY, null);
         const storedCurrency = await getItem(CURRENCY_PREF_KEY, null);
+        const storedShowVaultTotalValue = await getItem(SHOW_VAULT_TOTAL_VALUE_KEY, null);
         const normalizedLang = normalizeLanguageCode(storedLang);
         const normalizedCurrency = normalizeCurrencyCode(storedCurrency);
         if (normalizedLang) {
@@ -1192,6 +1202,12 @@ export function DataProvider({ children }) {
           setCurrencyOverrideEnabled(true);
         } else {
           setCurrencyOverrideEnabled(false);
+        }
+
+        if (typeof storedShowVaultTotalValue === 'boolean') {
+          setShowVaultTotalValue(storedShowVaultTotalValue);
+        } else {
+          setShowVaultTotalValue(true);
         }
 
         const stored = await getItem(DATA_KEY, null);
@@ -3645,11 +3661,13 @@ export function DataProvider({ children }) {
     checkBackend,
     language,
     currency,
+    showVaultTotalValue,
     languagePreferenceMode: languageOverrideEnabled ? 'manual' : 'auto',
     currencyPreferenceMode: currencyOverrideEnabled ? 'manual' : 'auto',
     locale: effectiveLocale,
     setLanguagePreference,
     setCurrencyPreference,
+    setShowVaultTotalValueEnabled,
     formatCurrencyValue,
     t,
     users,

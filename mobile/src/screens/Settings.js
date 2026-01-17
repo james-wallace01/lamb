@@ -25,6 +25,8 @@ export default function Settings({ navigation }) {
     biometricEnabledForCurrentUser,
     enableBiometricSignInForCurrentUser,
     disableBiometricSignIn,
+    showVaultTotalValue,
+    setShowVaultTotalValueEnabled,
   } = useData();
   const [refreshing, setRefreshing] = useState(false);
   const [languageDraft, setLanguageDraft] = useState(languagePreferenceMode === 'auto' ? '__auto__' : String(language || ''));
@@ -219,6 +221,17 @@ export default function Settings({ navigation }) {
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Preferences</Text>
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Set language and currency anytime.</Text>
+
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleTextCol}>
+              <Text style={[styles.toggleTitle, { color: theme.text }]}>Show Total Value</Text>
+              <Text style={[styles.toggleSubtitle, { color: theme.textMuted }]}>Show a total on Private/Shared Vaults screens.</Text>
+            </View>
+            <Switch
+              value={showVaultTotalValue !== false}
+              onValueChange={(next) => setShowVaultTotalValueEnabled?.(next)}
+            />
+          </View>
 
           <Text style={[styles.prefLabel, { color: theme.textSecondary }]}>Language</Text>
           {Platform.OS === 'ios' ? (
