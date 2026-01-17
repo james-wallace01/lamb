@@ -523,7 +523,9 @@ const getVaultOwnerIdOrNull = async (db, vaultId) => {
     const snap = await db.collection('vaults').doc(String(vaultId)).get();
     if (!snap.exists) return null;
     const data = snap.data() || {};
-    const ownerId = typeof data.activeOwnerId === 'string' ? data.activeOwnerId : null;
+    const ownerId = typeof data.activeOwnerId === 'string'
+      ? data.activeOwnerId
+      : (typeof data.ownerId === 'string' ? data.ownerId : null);
     return ownerId ? String(ownerId) : null;
   } catch {
     return null;
@@ -775,7 +777,37 @@ const canVaultCreate = (membershipData) => {
 
 const assertCanCreateCollection = async (db, vaultId, uid) => {
   const m = await getMembershipDoc(db, vaultId, uid);
-  if (!m) return { ok: false, status: 403, error: 'Not a vault member' };
+  if (!m) {
+    // Owner fallback for legacy/migrated data: allow the vault owner/creator even if
+    // their membership doc is missing (membership self-heal may fail if vault is malformed).
+    try {
+      const vaultSnap = await db.collection('vaults').doc(String(vaultId)).get();
+      const v = vaultSnap.exists ? (vaultSnap.data() || {}) : {};
+      const ownerId = typeof v.activeOwnerId === 'string'
+        ? String(v.activeOwnerId)
+        : (typeof v.ownerId === 'string' ? String(v.ownerId) : null);
+      const createdBy = typeof v.createdBy === 'string' ? String(v.createdBy) : null;
+      if ((ownerId && ownerId === String(uid)) || (createdBy && createdBy === String(uid))) {
+        // Best-effort: create the missing owner membership so future checks succeed.
+        await db.collection('vaults').doc(String(vaultId)).collection('memberships').doc(String(uid)).set(
+          {
+            user_id: String(uid),
+            vault_id: String(vaultId),
+            role: 'OWNER',
+            permissions: null,
+            status: 'ACTIVE',
+            assigned_at: Date.now(),
+            revoked_at: null,
+          },
+          { merge: true }
+        );
+        return { ok: true };
+      }
+    } catch {
+      // fall through
+    }
+    return { ok: false, status: 403, error: 'Not a vault member' };
+  }
   if ((m.data || {}).status !== 'ACTIVE') return { ok: false, status: 403, error: 'Membership inactive' };
   if (canVaultCreate(m.data)) return { ok: true };
   return { ok: false, status: 403, error: 'Create permission required' };
@@ -832,8 +864,42 @@ const assertUnderAssetLimit = async (db, vaultId) => {
 };
 
 const getMembershipDoc = async (db, vaultId, userId) => {
-  const snap = await db.collection('vaults').doc(String(vaultId)).collection('memberships').doc(String(userId)).get();
-  return snap.exists ? { id: snap.id, data: snap.data() || {} } : null;
+  const vId = String(vaultId);
+  const uId = String(userId);
+  const ref = db.collection('vaults').doc(vId).collection('memberships').doc(uId);
+  const snap = await ref.get();
+  if (snap.exists) return { id: snap.id, data: snap.data() || {} };
+
+  // Self-heal: legacy or migrated vaults may be missing an explicit OWNER membership doc.
+  // If the authenticated user is the vault owner (activeOwnerId or ownerId), create the membership.
+  try {
+    const vaultSnap = await db.collection('vaults').doc(vId).get();
+    if (!vaultSnap.exists) return null;
+    const v = vaultSnap.data() || {};
+    const activeOwnerId = typeof v.activeOwnerId === 'string' ? String(v.activeOwnerId) : null;
+    const ownerId = typeof v.ownerId === 'string' ? String(v.ownerId) : null;
+    const createdBy = typeof v.createdBy === 'string' ? String(v.createdBy) : null;
+    const isOwner =
+      (activeOwnerId && activeOwnerId === uId) ||
+      (ownerId && ownerId === uId) ||
+      (createdBy && createdBy === uId);
+    if (!isOwner) return null;
+
+    const now = Date.now();
+    const data = {
+      user_id: uId,
+      vault_id: vId,
+      role: 'OWNER',
+      permissions: null,
+      status: 'ACTIVE',
+      assigned_at: now,
+      revoked_at: null,
+    };
+    await ref.set(data, { merge: true });
+    return { id: uId, data };
+  } catch {
+    return null;
+  }
 };
 
 const assertOwnerForVaultUid = async (db, vaultId, uid) => {

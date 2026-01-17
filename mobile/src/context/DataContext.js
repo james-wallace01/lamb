@@ -1020,7 +1020,11 @@ export function DataProvider({ children }) {
       if (!isFirebaseAuthEnabled() || !firebaseAuth?.currentUser?.uid) {
         return { ok: false, message: 'Authentication is unavailable' };
       }
-      if (String(firebaseAuth.currentUser.uid) !== String(currentUser.id)) {
+      const fbUid = String(firebaseAuth.currentUser.uid);
+      const expectedUid = currentUser?.firebaseUid != null && String(currentUser.firebaseUid)
+        ? String(currentUser.firebaseUid)
+        : String(currentUser.id);
+      if (fbUid !== expectedUid) {
         return { ok: false, message: 'Session mismatch. Please sign in again.' };
       }
       try {

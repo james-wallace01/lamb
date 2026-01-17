@@ -1033,112 +1033,114 @@ export default function PrivateVaults({ navigation, route }) {
             ) : null}
 
             {assetEditVisible ? (
-              <Modal
-                visible
-                transparent
-                animationType="fade"
-                onRequestClose={() => setAssetEditVisible(false)}
-              >
+              <Modal visible transparent animationType="fade" onRequestClose={() => setAssetEditVisible(false)}>
                 <View style={styles.modalBackdrop}>
                   <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>Edit Asset</Text>
+                    <Text style={[styles.modalTitle, { color: theme.text }]}>Edit Asset</Text>
 
-              <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Title</Text>
-              <TextInput
-                value={assetEditTitle}
-                onChangeText={(t) => setAssetEditTitle(limit35(t || ''))}
-                placeholder="Asset title"
-                placeholderTextColor={theme.placeholder}
-                style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
-                {...noAutoCorrect}
-              />
+                    <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Title</Text>
+                    <TextInput
+                      value={assetEditTitle}
+                      onChangeText={(t) => setAssetEditTitle(limit35(t || ''))}
+                      placeholder="Asset title"
+                      placeholderTextColor={theme.placeholder}
+                      style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
+                      {...noAutoCorrect}
+                    />
 
-              <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Category</Text>
-              <TextInput
-                value={assetEditCategory}
-                onChangeText={(t) => setAssetEditCategory(limit35(t || ''))}
-                placeholder="Category"
-                placeholderTextColor={theme.placeholder}
-                style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
-                {...noAutoCorrect}
-              />
+                    <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Category</Text>
+                    <TextInput
+                      value={assetEditCategory}
+                      onChangeText={(t) => setAssetEditCategory(limit35(t || ''))}
+                      placeholder="Category"
+                      placeholderTextColor={theme.placeholder}
+                      style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
+                      {...noAutoCorrect}
+                    />
 
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface }]}
-                  onPress={() => setAssetEditVisible(false)}
-                >
-                  <Text style={[styles.secondaryButtonText, { color: theme.text }]}>Close</Text>
-                </TouchableOpacity>
+                    <View style={styles.modalActions}>
+                      <TouchableOpacity
+                        style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface }]}
+                        onPress={() => setAssetEditVisible(false)}
+                      >
+                        <Text style={[styles.secondaryButtonText, { color: theme.text }]}>Close</Text>
+                      </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[styles.primaryButton, { backgroundColor: theme.primary, borderColor: theme.primary }, (!selectedAssetId || !canAssetEditOnline) && styles.buttonDisabled]}
-                  disabled={!selectedAssetId || !canAssetEditOnline}
-                  onPress={() => {
-                    if (!selectedAssetId) return;
-                    const expectedEditedAt = selectedAsset?.editedAt ?? null;
-                    const patch = {
-                      title: limit35(String(assetEditTitle || '').trim()),
-                      category: limit35(String(assetEditCategory || '').trim()),
-                    };
-                    (async () => {
-                      const res = await updateAsset?.(String(selectedAssetId), patch, { expectedEditedAt });
-                      if (!res || res.ok === false) {
-                        NativeAlert.alert('Save failed', res?.message || 'Unable to update asset');
-                        return;
-                      }
-                      setAssetEditVisible(false);
-                    })();
-                  }}
-                >
-                  <Text style={[styles.primaryButtonText, { color: theme.onAccentText }]}>Save</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.dangerButton, { backgroundColor: theme.dangerBg, borderColor: theme.dangerBorder }, (!selectedAssetId || !canAssetDeleteOnline) && styles.buttonDisabled]}
-                  disabled={!selectedAssetId || !canAssetDeleteOnline}
-                  onPress={() => {
-                    if (!selectedAssetId) return;
-                    NativeAlert.alert('Delete Asset?', 'This action cannot be undone.', [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Delete',
-                        style: 'destructive',
-                        onPress: () => {
+                      <TouchableOpacity
+                        style={[
+                          styles.primaryButton,
+                          { backgroundColor: theme.primary, borderColor: theme.primary },
+                          (!selectedAssetId || !canAssetEditOnline) && styles.buttonDisabled,
+                        ]}
+                        disabled={!selectedAssetId || !canAssetEditOnline}
+                        onPress={() => {
+                          if (!selectedAssetId) return;
+                          const expectedEditedAt = selectedAsset?.editedAt ?? null;
+                          const patch = {
+                            title: limit35(String(assetEditTitle || '').trim()),
+                            category: limit35(String(assetEditCategory || '').trim()),
+                          };
                           (async () => {
-                            const assetIdToDelete = String(selectedAssetId);
-                            // Optimistic UX: hide immediately so the user can't interact with it while the backend completes.
-                            setOptimisticDeletedAssetIds((prev) => ({ ...(prev || {}), [assetIdToDelete]: true }));
-                            setAssetEditVisible(false);
-                            setSelectedAssetId(null);
-
-                            const res = await deleteAsset?.(assetIdToDelete);
+                            const res = await updateAsset?.(String(selectedAssetId), patch, { expectedEditedAt });
                             if (!res || res.ok === false) {
-                              setOptimisticDeletedAssetIds((prev) => {
-                                const next = { ...(prev || {}) };
-                                delete next[assetIdToDelete];
-                                return next;
-                              });
-                              NativeAlert.alert('Delete failed', res?.message || 'Unable to delete asset');
+                              NativeAlert.alert('Save failed', res?.message || 'Unable to update asset');
                               return;
                             }
-
-                            // Cleanup: remove the optimistic hide flag; realtime listeners should also remove the asset.
-                            setOptimisticDeletedAssetIds((prev) => {
-                              const next = { ...(prev || {}) };
-                              delete next[assetIdToDelete];
-                              return next;
-                            });
+                            setAssetEditVisible(false);
                           })();
-                        },
-                      },
-                    ]);
-                  }}
-                >
-                  <Text style={[styles.dangerButtonText, { color: theme.dangerText }]}>Delete</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+                        }}
+                      >
+                        <Text style={[styles.primaryButtonText, { color: theme.onAccentText }]}>Save</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.dangerButton,
+                          { backgroundColor: theme.dangerBg, borderColor: theme.dangerBorder },
+                          (!selectedAssetId || !canAssetDeleteOnline) && styles.buttonDisabled,
+                        ]}
+                        disabled={!selectedAssetId || !canAssetDeleteOnline}
+                        onPress={() => {
+                          if (!selectedAssetId) return;
+                          NativeAlert.alert('Delete Asset?', 'This action cannot be undone.', [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Delete',
+                              style: 'destructive',
+                              onPress: () => {
+                                (async () => {
+                                  const assetIdToDelete = String(selectedAssetId);
+                                  // Optimistic UX: hide immediately so the user can't interact with it while the backend completes.
+                                  setOptimisticDeletedAssetIds((prev) => ({ ...(prev || {}), [assetIdToDelete]: true }));
+                                  setAssetEditVisible(false);
+                                  setSelectedAssetId(null);
+
+                                  const res = await deleteAsset?.(assetIdToDelete);
+                                  if (!res || res.ok === false) {
+                                    setOptimisticDeletedAssetIds((prev) => {
+                                      const next = { ...(prev || {}) };
+                                      delete next[assetIdToDelete];
+                                      return next;
+                                    });
+                                    NativeAlert.alert('Delete failed', res?.message || 'Unable to delete asset');
+                                    return;
+                                  }
+
+                                  // Cleanup: remove the optimistic hide flag; realtime listeners should also remove the asset.
+                                  setOptimisticDeletedAssetIds((prev) => {
+                                    const next = { ...(prev || {}) };
+                                    delete next[assetIdToDelete];
+                                    return next;
+                                  });
+                                })();
+                              },
+                            },
+                          ]);
+                        }}
+                      >
+                        <Text style={[styles.dangerButtonText, { color: theme.dangerText }]}>Delete</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
               </Modal>
@@ -1154,106 +1156,109 @@ export default function PrivateVaults({ navigation, route }) {
                 }}
               >
                 <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={closeVaultEditModal}>
-                  <TouchableOpacity activeOpacity={1} style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>Edit Vault</Text>
-              <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Name</Text>
-              <TextInput
-                value={vaultEditName}
-                onChangeText={(t) => setVaultEditName(limit35(t || ''))}
-                placeholder="Vault name"
-                placeholderTextColor={theme.placeholder}
-                style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
-                {...noAutoCorrect}
-                editable={!vaultEditSaving}
-              />
+                  <TouchableOpacity
+                    activeOpacity={1}
+                    style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                  >
+                    <Text style={[styles.modalTitle, { color: theme.text }]}>Edit Vault</Text>
+                    <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Name</Text>
+                    <TextInput
+                      value={vaultEditName}
+                      onChangeText={(t) => setVaultEditName(limit35(t || ''))}
+                      placeholder="Vault name"
+                      placeholderTextColor={theme.placeholder}
+                      style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
+                      {...noAutoCorrect}
+                      editable={!vaultEditSaving}
+                    />
 
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={[styles.secondaryButton, { borderColor: theme.border }, vaultEditSaving && styles.buttonDisabled]}
-                  onPress={closeVaultEditModal}
-                  disabled={vaultEditSaving}
-                >
-                  <Text style={[styles.secondaryButtonText, { color: theme.text }]}>Close</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.primaryButton,
-                    { backgroundColor: theme.primary, borderColor: theme.primary },
-                    (!selectedVaultId || !canVaultEditOnline || vaultEditSaving) && styles.buttonDisabled,
-                  ]}
-                  disabled={!selectedVaultId || !canVaultEditOnline || vaultEditSaving}
-                  onPress={() => {
-                    if (!selectedVaultId || !selectedVault) return;
-                    if (vaultEditSavingRef.current) return;
-                    vaultEditSavingRef.current = true;
-                    const expectedEditedAt = selectedVault?.editedAt ?? null;
-                    (async () => {
-                      setVaultEditSaving(true);
-                      try {
-                        const res = await updateVault?.(String(selectedVaultId), { name: limit35((vaultEditName || '').trim()) }, { expectedEditedAt });
-                        if (!res || res.ok === false) {
-                          if (res?.code === 'conflict') {
-                            Alert.alert('Updated elsewhere', 'This vault changed on another device. Reload and try again.', [
-                              { text: 'Reload', onPress: () => setVaultEditVisible(false) },
-                              { text: 'Cancel', style: 'cancel' },
-                            ]);
-                            return;
-                          }
-                          Alert.alert('Save failed', res?.message || 'Unable to update vault');
-                          return;
-                        }
-                        setVaultEditVisible(false);
-                        setTimeout(() => {
-                          showNotice?.('Vault saved.', { durationMs: 1200 });
-                        }, 0);
-                      } catch (e) {
-                        Alert.alert('Save failed', e?.message || 'Unable to update vault');
-                      } finally {
-                        vaultEditSavingRef.current = false;
-                        setVaultEditSaving(false);
-                      }
-                    })();
-                  }}
-                >
-                  <Text style={[styles.primaryButtonText, { color: theme.onAccentText }]}>{vaultEditSaving ? 'Saving…' : 'Save'}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.dangerButton,
-                    { backgroundColor: theme.dangerBg, borderColor: theme.dangerBorder },
-                    (!selectedVaultId || !canVaultDeleteOnline || vaultEditSaving) && styles.buttonDisabled,
-                  ]}
-                  disabled={!selectedVaultId || !canVaultDeleteOnline || vaultEditSaving}
-                  onPress={() => {
-                    if (!selectedVaultId) return;
-                    Alert.alert('Delete Vault?', 'This action cannot be undone.', [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Delete',
-                        style: 'destructive',
-                        onPress: () => {
+                    <View style={styles.modalActions}>
+                      <TouchableOpacity
+                        style={[styles.secondaryButton, { borderColor: theme.border }, vaultEditSaving && styles.buttonDisabled]}
+                        onPress={closeVaultEditModal}
+                        disabled={vaultEditSaving}
+                      >
+                        <Text style={[styles.secondaryButtonText, { color: theme.text }]}>Close</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.primaryButton,
+                          { backgroundColor: theme.primary, borderColor: theme.primary },
+                          (!selectedVaultId || !canVaultEditOnline || vaultEditSaving) && styles.buttonDisabled,
+                        ]}
+                        disabled={!selectedVaultId || !canVaultEditOnline || vaultEditSaving}
+                        onPress={() => {
+                          if (!selectedVaultId || !selectedVault) return;
+                          if (vaultEditSavingRef.current) return;
+                          vaultEditSavingRef.current = true;
+                          const expectedEditedAt = selectedVault?.editedAt ?? null;
                           (async () => {
+                            setVaultEditSaving(true);
                             try {
-                              const res = await deleteVault?.(String(selectedVaultId));
+                              const res = await updateVault?.(String(selectedVaultId), { name: limit35((vaultEditName || '').trim()) }, { expectedEditedAt });
                               if (!res || res.ok === false) {
-                                Alert.alert('Delete failed', res?.message || 'Unable to delete vault');
+                                if (res?.code === 'conflict') {
+                                  Alert.alert('Updated elsewhere', 'This vault changed on another device. Reload and try again.', [
+                                    { text: 'Reload', onPress: () => setVaultEditVisible(false) },
+                                    { text: 'Cancel', style: 'cancel' },
+                                  ]);
+                                  return;
+                                }
+                                Alert.alert('Save failed', res?.message || 'Unable to update vault');
                                 return;
                               }
                               setVaultEditVisible(false);
-                              setSelectedVaultId(null);
-                              setSelectedCollectionId(null);
+                              setTimeout(() => {
+                                showNotice?.('Vault saved.', { durationMs: 1200 });
+                              }, 0);
                             } catch (e) {
-                              Alert.alert('Delete failed', e?.message || 'Unable to delete vault');
+                              Alert.alert('Save failed', e?.message || 'Unable to update vault');
+                            } finally {
+                              vaultEditSavingRef.current = false;
+                              setVaultEditSaving(false);
                             }
                           })();
-                        },
-                      },
-                    ]);
-                  }}
-                >
-                  <Text style={[styles.dangerButtonText, { color: theme.dangerText }]}>Delete</Text>
-                </TouchableOpacity>
-              </View>
+                        }}
+                      >
+                        <Text style={[styles.primaryButtonText, { color: theme.onAccentText }]}>{vaultEditSaving ? 'Saving…' : 'Save'}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.dangerButton,
+                          { backgroundColor: theme.dangerBg, borderColor: theme.dangerBorder },
+                          (!selectedVaultId || !canVaultDeleteOnline || vaultEditSaving) && styles.buttonDisabled,
+                        ]}
+                        disabled={!selectedVaultId || !canVaultDeleteOnline || vaultEditSaving}
+                        onPress={() => {
+                          if (!selectedVaultId) return;
+                          Alert.alert('Delete Vault?', 'This action cannot be undone.', [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Delete',
+                              style: 'destructive',
+                              onPress: () => {
+                                (async () => {
+                                  try {
+                                    const res = await deleteVault?.(String(selectedVaultId));
+                                    if (!res || res.ok === false) {
+                                      Alert.alert('Delete failed', res?.message || 'Unable to delete vault');
+                                      return;
+                                    }
+                                    setVaultEditVisible(false);
+                                    setSelectedVaultId(null);
+                                    setSelectedCollectionId(null);
+                                  } catch (e) {
+                                    Alert.alert('Delete failed', e?.message || 'Unable to delete vault');
+                                  }
+                                })();
+                              },
+                            },
+                          ]);
+                        }}
+                      >
+                        <Text style={[styles.dangerButtonText, { color: theme.dangerText }]}>Delete</Text>
+                      </TouchableOpacity>
+                    </View>
                   </TouchableOpacity>
                 </TouchableOpacity>
               </Modal>
