@@ -13,6 +13,7 @@
 
 body {
   font-family: system-ui, sans-serif;
+  @apply bg-neutral-900 text-white;
 }
 
 /* Smooth page transitions */

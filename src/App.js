@@ -2432,7 +2432,7 @@ export default function App() {
   })() : true;
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-white">
+    <div className="min-h-screen bg-neutral-900 text-white">
       {alert && (
         <div className="fixed top-4 inset-x-0 flex justify-center z-[60]">
           <div className="px-4 py-2 bg-blue-700 text-white rounded shadow">{alert}</div>
@@ -2470,7 +2470,7 @@ export default function App() {
       )}
 
       {!shouldCenter && (
-        <header className="border-b border-neutral-900 bg-neutral-950/70 backdrop-blur">
+        <header className="border-b border-neutral-900 bg-neutral-900/70 backdrop-blur">
           <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button className="hover:opacity-80 transition text-left" onClick={() => { setSelectedVaultId(null); setSelectedCollectionId(null); navigateTo(isLoggedIn ? "home" : "landing"); }}>
@@ -3508,7 +3508,7 @@ export default function App() {
         </div>
       </main>
 
-      <footer className="fixed bottom-0 left-0 right-0 border-t border-neutral-900 bg-neutral-950/90 backdrop-blur z-40">
+      <footer className="fixed bottom-0 left-0 right-0 border-t border-neutral-900 bg-neutral-900/90 backdrop-blur z-40">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between text-xs text-neutral-400">
           <span>Liquid Asset Management Board</span>
           <span>{appVersion ? `v${appVersion}` : "Version unavailable"}</span>
