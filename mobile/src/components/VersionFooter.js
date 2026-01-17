@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AppState, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { StackActions } from '@react-navigation/native';
+import { CommonActions } from '@react-navigation/native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import appConfig from '../../app.json';
@@ -120,12 +120,25 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
     return 'Home';
   })();
 
-  const safePush = (routeName, params) => {
+  const tabForRouteName = (routeName) => {
+    const r = String(routeName || '');
+    if (r === 'Membership' || r === 'ChooseSubscription') return 'Membership';
+    if (r === 'Profile' || r === 'EmailNotifications') return 'Profile';
+    if (r === 'PrivateVaults') return 'PrivateVaults';
+    if (r === 'SharedVaults') return 'SharedVaults';
+    if (r === 'Tracking') return 'Tracking';
+    return 'Home';
+  };
+
+  const safeNavigate = (routeName, params) => {
     try {
       if (!navigationRef?.isReady?.()) return;
       const current = navigationRef.getCurrentRoute?.()?.name;
       if (current === routeName) return;
-      navigationRef.dispatch(StackActions.push(routeName, params));
+      const targetTab = tabForRouteName(routeName);
+      if (activeTab && targetTab && activeTab === targetTab) return;
+
+      navigationRef.dispatch(CommonActions.navigate({ name: routeName, params }));
     } catch {
       // ignore
     }
@@ -151,7 +164,7 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
         <View style={styles.navRow}>
           <TouchableOpacity
             style={styles.navButton}
-            onPress={() => safePush('Home')}
+            onPress={() => safeNavigate('Home')}
             accessibilityRole="button"
             accessibilityLabel="Go to Home"
           >
@@ -164,7 +177,7 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
 
           <TouchableOpacity
             style={styles.navButton}
-            onPress={() => safePush('PrivateVaults')}
+            onPress={() => safeNavigate('PrivateVaults')}
             accessibilityRole="button"
             accessibilityLabel="Go to Private Vaults"
           >
@@ -176,7 +189,7 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.navButton}
-            onPress={() => safePush('SharedVaults')}
+            onPress={() => safeNavigate('SharedVaults')}
             accessibilityRole="button"
             accessibilityLabel="Go to Shared Vaults"
           >
@@ -191,10 +204,10 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
             style={styles.navButton}
             onPress={() => {
               if (!hasProMembership) {
-                safePush('ChooseSubscription', { mode: 'upgrade' });
+                safeNavigate('ChooseSubscription', { mode: 'upgrade' });
                 return;
               }
-              safePush('Tracking');
+              safeNavigate('Tracking');
             }}
             accessibilityRole="button"
             accessibilityLabel="Go to Tracking"
@@ -208,7 +221,7 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
 
           <TouchableOpacity
             style={styles.navButton}
-            onPress={() => safePush('Membership')}
+            onPress={() => safeNavigate('Membership')}
             accessibilityRole="button"
             accessibilityLabel="Go to Membership"
           >
@@ -220,7 +233,7 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.navButton}
-            onPress={() => safePush('Profile')}
+            onPress={() => safeNavigate('Profile')}
             accessibilityRole="button"
             accessibilityLabel="Go to Profile"
           >
