@@ -26,6 +26,7 @@ export default function Vault({ navigation, route }) {
   const [shareTargetType, setShareTargetType] = useState(null);
   const [shareTargetId, setShareTargetId] = useState(null);
   const [editVisible, setEditVisible] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
   const [pendingReloadEditedAt, setPendingReloadEditedAt] = useState(null);
   const [infoVisible, setInfoVisible] = useState(false);
   const [editDraft, setEditDraft] = useState({ name: '', description: '', manager: '', images: [], heroImage: '' });
@@ -320,29 +321,39 @@ export default function Vault({ navigation, route }) {
   const handleSaveDraft = () => {
     if (!canEdit) return;
     if (!vault) return;
+    if (editSaving) return;
     const expectedEditedAt = vault?.editedAt ?? null;
     const images = trimToFour(editDraft.images || []);
     const hero = ensureHero(images, editDraft.heroImage);
     (async () => {
-      const res = await updateVault(vaultId, {
-        name: limit35((editDraft.name || '').trim() || vault.name || ''),
-        description: (editDraft.description || '').trim(),
-        manager: (editDraft.manager || '').trim(),
-        images,
-        heroImage: hero,
-      }, { expectedEditedAt });
-      if (!res || res.ok === false) {
-        if (res?.code === 'conflict') {
-          Alert.alert('Updated elsewhere', 'This vault changed on another device. Reload and try again.', [
-            { text: 'Reload', onPress: () => { setPendingReloadEditedAt(expectedEditedAt); setEditVisible(false); } },
-            { text: 'Cancel', style: 'cancel' },
-          ]);
+      setEditSaving(true);
+      try {
+        const res = await updateVault(vaultId, {
+          name: limit35((editDraft.name || '').trim() || vault.name || ''),
+          description: (editDraft.description || '').trim(),
+          manager: (editDraft.manager || '').trim(),
+          images,
+          heroImage: hero,
+        }, { expectedEditedAt });
+
+        if (!res || res.ok === false) {
+          if (res?.code === 'conflict') {
+            Alert.alert('Updated elsewhere', 'This vault changed on another device. Reload and try again.', [
+              { text: 'Reload', onPress: () => { setPendingReloadEditedAt(expectedEditedAt); setEditVisible(false); } },
+              { text: 'Cancel', style: 'cancel' },
+            ]);
+            return;
+          }
+          Alert.alert('Save failed', res?.message || 'Unable to update vault');
           return;
         }
-        Alert.alert('Save failed', res?.message || 'Unable to update vault');
-        return;
+
+        setEditVisible(false);
+      } catch (e) {
+        Alert.alert('Save failed', e?.message || 'Unable to update vault');
+      } finally {
+        setEditSaving(false);
       }
-      setEditVisible(false);
     })();
   };
 
@@ -503,20 +514,20 @@ export default function Vault({ navigation, route }) {
                     </View>
                 </ScrollView>
                 <View style={styles.modalActions}>
-                  <TouchableOpacity style={styles.secondaryButton} onPress={() => setEditVisible(false)}>
+                  <TouchableOpacity style={[styles.secondaryButton, editSaving && styles.buttonDisabled]} onPress={() => setEditVisible(false)} disabled={editSaving}>
                     <Text style={styles.secondaryButtonText}>Close</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.primaryButton, !canEditOnline && styles.buttonDisabled]}
-                    disabled={!canEditOnline}
+                    style={[styles.primaryButton, (!canEditOnline || editSaving) && styles.buttonDisabled]}
+                    disabled={!canEditOnline || editSaving}
                     onPress={handleSaveDraft}
                   >
-                    <Text style={styles.primaryButtonText}>Save</Text>
+                    <Text style={styles.primaryButtonText}>{editSaving ? 'Saving…' : 'Save'}</Text>
                   </TouchableOpacity>
                   {canDelete && (
                     <TouchableOpacity
-                      style={[styles.dangerButton, !canDeleteOnline && styles.buttonDisabled]}
-                      disabled={!canDeleteOnline}
+                      style={[styles.dangerButton, (!canDeleteOnline || editSaving) && styles.buttonDisabled]}
+                      disabled={!canDeleteOnline || editSaving}
                       onPress={() => {
                         Alert.alert('Delete Vault?', 'This action cannot be undone.', [
                           { text: 'Cancel', style: 'cancel' },
@@ -525,12 +536,16 @@ export default function Vault({ navigation, route }) {
                             onPress: () => {
                               setEditVisible(false);
                               (async () => {
-                                const res = await deleteVault(vaultId);
-                                if (!res || res.ok === false) {
-                                  Alert.alert('Delete failed', res?.message || 'Unable to delete vault');
-                                  return;
+                                try {
+                                  const res = await deleteVault(vaultId);
+                                  if (!res || res.ok === false) {
+                                    Alert.alert('Delete failed', res?.message || 'Unable to delete vault');
+                                    return;
+                                  }
+                                  navigation.goBack();
+                                } catch (e) {
+                                  Alert.alert('Delete failed', e?.message || 'Unable to delete vault');
                                 }
-                                navigation.goBack();
                               })();
                             },
                             style: 'destructive',
