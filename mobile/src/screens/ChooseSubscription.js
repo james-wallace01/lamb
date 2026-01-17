@@ -314,12 +314,6 @@ export default function ChooseSubscription({ navigation, route }) {
             setSubmitting(true);
 
             try {
-              const authRes = await ensureFirebaseSignupAuth?.({ email, password, username });
-              if (authRes && authRes.ok === false) {
-                Alert.alert('Sign up failed', authRes.message || 'Unable to create account. Please try again.');
-                return;
-              }
-
               const res = await register({
                 firstName,
                 lastName,

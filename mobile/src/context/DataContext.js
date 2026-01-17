@@ -2342,6 +2342,15 @@ export function DataProvider({ children }) {
       await createUserWithEmailAndPassword(firebaseAuth, em.value, String(rawPassword));
       return { ok: true };
     } catch (error) {
+      const code = error?.code ? String(error.code) : '';
+      if (code === 'auth/email-already-in-use') {
+        try {
+          await signInWithEmailAndPassword(firebaseAuth, em.value, String(rawPassword));
+          return { ok: true };
+        } catch (e2) {
+          return { ok: false, message: mapFirebaseAuthError(e2) };
+        }
+      }
       return { ok: false, message: mapFirebaseAuthError(error) };
     }
   };
@@ -2374,7 +2383,16 @@ export function DataProvider({ children }) {
       try {
         await createUserWithEmailAndPassword(firebaseAuth, em.value, String(password));
       } catch (error) {
-        return { ok: false, message: mapFirebaseAuthError(error) };
+        const code = error?.code ? String(error.code) : '';
+        if (code === 'auth/email-already-in-use') {
+          try {
+            await signInWithEmailAndPassword(firebaseAuth, em.value, String(password));
+          } catch (e2) {
+            return { ok: false, message: mapFirebaseAuthError(e2) };
+          }
+        } else {
+          return { ok: false, message: mapFirebaseAuthError(error) };
+        }
       }
     }
 
