@@ -870,6 +870,29 @@ const getMembershipDoc = async (db, vaultId, userId) => {
   const snap = await ref.get();
   if (snap.exists) return { id: snap.id, data: snap.data() || {} };
 
+  // Legacy compatibility: some data stores memberships with a different document id
+  // (e.g., `${vaultId}:${uid}`) but still includes user_id. Fall back to a query.
+  try {
+    const q = await db
+      .collection('vaults')
+      .doc(vId)
+      .collection('memberships')
+      .where('user_id', '==', uId)
+      .limit(1)
+      .get();
+    if (!q.empty) {
+      const docSnap = q.docs[0];
+      const data = docSnap.data() || {};
+
+      // Best-effort normalization: create the canonical doc id for future lookups.
+      // Do not delete the legacy doc to avoid breaking other readers.
+      await ref.set({ ...data, user_id: uId, vault_id: vId }, { merge: true }).catch(() => {});
+      return { id: docSnap.id, data };
+    }
+  } catch {
+    // ignore
+  }
+
   // Self-heal: legacy or migrated vaults may be missing an explicit OWNER membership doc.
   // If the authenticated user is the vault owner (activeOwnerId or ownerId), create the membership.
   try {
