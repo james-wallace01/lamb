@@ -2315,6 +2315,8 @@ export function DataProvider({ children }) {
     }
   };
 
+  const ensureFirebaseSignupAuthInFlightRef = useRef(null);
+
   const ensureFirebaseSignupAuth = async ({ email: rawEmail, password: rawPassword, username: rawUsername } = {}) => {
     const em = validateEmail(rawEmail);
     if (!em.ok) return { ok: false, message: em.message };
@@ -2338,20 +2340,34 @@ export function DataProvider({ children }) {
       await signOut(firebaseAuth).catch(() => {});
     }
 
-    try {
-      await createUserWithEmailAndPassword(firebaseAuth, em.value, String(rawPassword));
-      return { ok: true };
-    } catch (error) {
-      const code = error?.code ? String(error.code) : '';
-      if (code === 'auth/email-already-in-use') {
-        try {
-          await signInWithEmailAndPassword(firebaseAuth, em.value, String(rawPassword));
-          return { ok: true };
-        } catch (e2) {
-          return { ok: false, message: mapFirebaseAuthError(e2) };
+    const inFlightKey = `signupAuth:${em.value}`;
+    if (ensureFirebaseSignupAuthInFlightRef.current?.key === inFlightKey && ensureFirebaseSignupAuthInFlightRef.current?.promise) {
+      return await ensureFirebaseSignupAuthInFlightRef.current.promise;
+    }
+
+    const promise = (async () => {
+      try {
+        await createUserWithEmailAndPassword(firebaseAuth, em.value, String(rawPassword));
+        return { ok: true };
+      } catch (error) {
+        const code = error?.code ? String(error.code) : '';
+        if (code === 'auth/email-already-in-use') {
+          try {
+            await signInWithEmailAndPassword(firebaseAuth, em.value, String(rawPassword));
+            return { ok: true };
+          } catch (e2) {
+            return { ok: false, message: mapFirebaseAuthError(e2) };
+          }
         }
+        return { ok: false, message: mapFirebaseAuthError(error) };
       }
-      return { ok: false, message: mapFirebaseAuthError(error) };
+    })();
+
+    ensureFirebaseSignupAuthInFlightRef.current = { key: inFlightKey, promise };
+    try {
+      return await promise;
+    } finally {
+      if (ensureFirebaseSignupAuthInFlightRef.current?.key === inFlightKey) ensureFirebaseSignupAuthInFlightRef.current = null;
     }
   };
 
@@ -2379,21 +2395,10 @@ export function DataProvider({ children }) {
       return { ok: false, message: 'You are signed in as a different user. Please sign out and try again.' };
     }
 
+    // Account creation/sign-in must happen via ensureFirebaseSignupAuth().
+    // register() is only responsible for provisioning Firestore state.
     if (!firebaseAuth?.currentUser?.uid) {
-      try {
-        await createUserWithEmailAndPassword(firebaseAuth, em.value, String(password));
-      } catch (error) {
-        const code = error?.code ? String(error.code) : '';
-        if (code === 'auth/email-already-in-use') {
-          try {
-            await signInWithEmailAndPassword(firebaseAuth, em.value, String(password));
-          } catch (e2) {
-            return { ok: false, message: mapFirebaseAuthError(e2) };
-          }
-        } else {
-          return { ok: false, message: mapFirebaseAuthError(error) };
-        }
-      }
+      return { ok: false, message: 'Authentication is not ready. Please try again.' };
     }
 
     const now = Date.now();
@@ -2403,48 +2408,19 @@ export function DataProvider({ children }) {
     // Idempotency: allow register() to be called multiple times for the same authenticated uid.
     // Only block if a *different known uid* already claims the same email/username.
     // (Local cache can contain legacy/incomplete users without uid/email; don't let that block signup.)
-    const existingLocal = (users || []).find(
-      (u) =>
-        (u?.username && normalizeUsername(u.username) === un.value) ||
-        (u?.email && normalizeEmail(u.email) === em.value)
-    );
+    // Only block if a *different firebase uid* already claims the email.
+    // Legacy cached records may have `id`/`user_id` that are not Firebase UIDs.
+    const existingLocal = (users || []).find((u) => u?.email && normalizeEmail(u.email) === em.value);
     if (existingLocal) {
-      const existingEmailNorm = existingLocal?.email ? normalizeEmail(existingLocal.email) : null;
-      const existingUsernameNorm = existingLocal?.username ? normalizeUsername(existingLocal.username) : null;
-      const matchesEmail = !!existingEmailNorm && existingEmailNorm === em.value;
-      const matchesUsername = !!existingUsernameNorm && existingUsernameNorm === un.value;
-
-      const existingId =
+      const existingFirebaseUid =
         existingLocal?.firebaseUid != null
-          ? existingLocal.firebaseUid
+          ? String(existingLocal.firebaseUid)
           : existingLocal?.firebase_uid != null
-            ? existingLocal.firebase_uid
-            : existingLocal?.id != null
-              ? existingLocal.id
-              : existingLocal?.user_id != null
-                ? existingLocal.user_id
-                : null;
-
-      const existingCandidates = [
-        existingLocal?.firebaseUid,
-        existingLocal?.firebase_uid,
-        existingLocal?.id,
-        existingLocal?.user_id,
-      ]
-        .map((x) => (x != null ? String(x) : null))
-        .filter(Boolean);
-
-      const existingUid = existingId != null ? String(existingId) : null;
-      const isSameUser = existingCandidates.some((x) => x === uid);
-
-      // Only block on an email conflict with a different known uid.
-      // Do NOT block on username collisions here: local cache can be stale and username is not
-      // a Firebase Auth-unique identifier.
-      if (!isSameUser && existingUid && existingUid !== uid) {
-        if (matchesEmail) return { ok: false, message: 'Email is already in use' };
+            ? String(existingLocal.firebase_uid)
+            : null;
+      if (existingFirebaseUid && existingFirebaseUid !== uid) {
+        return { ok: false, message: 'Email is already in use' };
       }
-
-      // Treat all other cases (including username-only collision) as stale/incomplete local cache.
     }
 
     const tier = subscriptionTier ? String(subscriptionTier).toUpperCase() : null;
@@ -2884,12 +2860,14 @@ export function DataProvider({ children }) {
     const addCollection = async ({ vaultId, name, images = [], heroImage }) => {
       const normalizedImages = Array.isArray(images) ? images.filter(Boolean).slice(0, 4) : [];
       const vId = String(vaultId);
+      const createdAt = Date.now();
+      const collectionName = clampItemTitle((name || 'Untitled').trim());
       const resp = await apiFetch(`${API_URL}/vaults/${encodeURIComponent(vId)}/collections`, {
         requireAuth: true,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: clampItemTitle((name || 'Untitled').trim()),
+          name: collectionName,
           images: normalizedImages,
           heroImage: heroImage || normalizedImages[0] || null,
         }),
@@ -2904,9 +2882,35 @@ export function DataProvider({ children }) {
           payload: {
             vault_id: vId,
             collection_id: String(createdId),
-            name: clampItemTitle((name || 'Untitled').trim()),
+            name: collectionName,
           },
         }).catch(() => {});
+
+        const ownerId = (() => {
+          const v = (vaults || []).find((x) => String(x?.id) === vId);
+          if (v?.ownerId != null) return String(v.ownerId);
+          if (currentUser?.id != null) return String(currentUser.id);
+          return null;
+        })();
+
+        const localCollection = withMedia({
+          id: String(createdId),
+          vaultId: vId,
+          name: collectionName,
+          ownerId,
+          createdAt,
+          editedAt: createdAt,
+          images: normalizedImages,
+          heroImage: heroImage || normalizedImages[0] || null,
+        });
+
+        setCollections((prev) => {
+          const base = Array.isArray(prev) ? [...prev] : [];
+          const idx = base.findIndex((c) => String(c?.id) === String(createdId));
+          if (idx >= 0) base[idx] = { ...base[idx], ...localCollection };
+          else base.unshift(localCollection);
+          return base;
+        });
       }
       return { ok: true, collectionId: createdId };
     };
@@ -2920,6 +2924,8 @@ export function DataProvider({ children }) {
     const addAsset = async ({ vaultId, collectionId, title, type, category, images = [], heroImage }) => {
       const normalizedImages = Array.isArray(images) ? images.filter(Boolean).slice(0, 4) : [];
       const vId = String(vaultId);
+      const createdAt = Date.now();
+      const assetTitle = clampItemTitle((title || 'Untitled').trim());
       const resp = await apiFetch(`${API_URL}/vaults/${encodeURIComponent(vId)}/assets`, {
         requireAuth: true,
         method: 'POST',
@@ -2927,7 +2933,7 @@ export function DataProvider({ children }) {
         body: JSON.stringify({
           vaultId: vId,
           collectionId: String(collectionId),
-          title: clampItemTitle((title || 'Untitled').trim()),
+          title: assetTitle,
           type: type || '',
           category: category || '',
           images: normalizedImages,
@@ -2945,11 +2951,40 @@ export function DataProvider({ children }) {
             vault_id: vId,
             asset_id: String(createdId),
             collection_id: String(collectionId),
-            title: clampItemTitle((title || 'Untitled').trim()),
+            title: assetTitle,
             type: type || '',
             category: category || '',
           },
         }).catch(() => {});
+
+        const ownerId = (() => {
+          const v = (vaults || []).find((x) => String(x?.id) === vId);
+          if (v?.ownerId != null) return String(v.ownerId);
+          if (currentUser?.id != null) return String(currentUser.id);
+          return null;
+        })();
+
+        const localAsset = withMedia({
+          id: String(createdId),
+          vaultId: vId,
+          collectionId: String(collectionId),
+          title: assetTitle,
+          type: type || '',
+          category: category || '',
+          ownerId,
+          createdAt,
+          editedAt: createdAt,
+          images: normalizedImages,
+          heroImage: heroImage || normalizedImages[0] || null,
+        });
+
+        setAssets((prev) => {
+          const base = Array.isArray(prev) ? [...prev] : [];
+          const idx = base.findIndex((a) => String(a?.id) === String(createdId));
+          if (idx >= 0) base[idx] = { ...base[idx], ...localAsset };
+          else base.unshift(localAsset);
+          return base;
+        });
       }
       return { ok: true, assetId: createdId };
     };

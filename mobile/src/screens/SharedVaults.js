@@ -1088,18 +1088,16 @@ export default function SharedVaults({ navigation, route }) {
               </View>
             ) : null}
 
-            {sortedSharedVaults.length && !anyCreateOpen ? (
-              <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
-                <TextInput
-                  style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
-                  placeholder="Search vaults, collections, assets"
-                  placeholderTextColor={theme.placeholder}
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  {...noAutoCorrect}
-                />
-              </View>
-            ) : null}
+            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+              <TextInput
+                style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
+                placeholder="Search vaults, collections, assets"
+                placeholderTextColor={theme.placeholder}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                {...noAutoCorrect}
+              />
+            </View>
 
             <ShareModal
               visible={shareVisible}

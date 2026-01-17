@@ -255,6 +255,30 @@ export default function Home({ navigation, route }) {
           <Text style={[styles.welcome, { color: theme.textSecondary }]}>{welcomeText}</Text>
 
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}> 
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Membership required</Text>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Your membership isn’t active. You can manage your membership, update your profile, and revoke sharing.</Text>
+
+            {!currentUser?.subscription?.tier ? (
+              <TouchableOpacity
+                style={[
+                  styles.secondaryButton,
+                  {
+                    borderColor: theme.primary,
+                    backgroundColor: theme.primary,
+                    alignSelf: 'flex-start',
+                    marginTop: 10,
+                  },
+                  isOffline && styles.buttonDisabled,
+                ]}
+                onPress={() => navigation.navigate('ChooseSubscription', { mode: 'upgrade' })}
+                disabled={isOffline}
+              >
+                <Text style={[styles.secondaryText, { color: '#fff' }]}>Choose Membership</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}> 
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Invitations</Text>
             <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Review invitations to shared vaults.</Text>
             {invitesError ? <Text style={[styles.subtitle, { color: theme.danger }]}>{invitesError}</Text> : null}
@@ -334,30 +358,6 @@ export default function Home({ navigation, route }) {
             ) : (
               <Text style={[styles.subtitle, { color: theme.textSecondary, marginTop: 8 }]}>No recently accessed item yet.</Text>
             )}
-          </View>
-
-          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}> 
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Membership Required</Text>
-            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Your membership isn’t active. You can manage your membership, update your profile, and revoke sharing.</Text>
-
-            {!currentUser?.subscription?.tier ? (
-              <TouchableOpacity
-                style={[
-                  styles.secondaryButton,
-                  {
-                    borderColor: theme.primary,
-                    backgroundColor: theme.primary,
-                    alignSelf: 'flex-start',
-                    marginTop: 10,
-                  },
-                  isOffline && styles.buttonDisabled,
-                ]}
-                onPress={() => navigation.navigate('ChooseSubscription', { mode: 'upgrade' })}
-                disabled={isOffline}
-              >
-                <Text style={[styles.secondaryText, { color: '#fff' }]}>Choose Membership</Text>
-              </TouchableOpacity>
-            ) : null}
           </View>
 
           <View style={styles.quickRow} />

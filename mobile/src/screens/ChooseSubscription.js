@@ -19,6 +19,7 @@ export default function ChooseSubscription({ navigation, route }) {
   const isUpgrade = String(route?.params?.mode || '') === 'upgrade';
   const [selectedTier, setSelectedTier] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const continueInFlightRef = useRef(false);
   const skipInFlightRef = useRef(false);
   const [iapReady, setIapReady] = useState(false);
   const [iapInitError, setIapInitError] = useState(null);
@@ -81,6 +82,7 @@ export default function ChooseSubscription({ navigation, route }) {
   };
 
   const handleContinue = async () => {
+    if (continueInFlightRef.current) return;
     if (!selectedTier) {
       Alert.alert('Select Membership', 'Please choose a membership to continue');
       return;
@@ -99,27 +101,28 @@ export default function ChooseSubscription({ navigation, route }) {
       return;
     }
 
+    continueInFlightRef.current = true;
     setSubmitting(true);
 
-    if (!isUpgrade) {
-      // In production, backend membership endpoints require Firebase auth.
-      // Ensure we have a Firebase session so apiFetch can attach an ID token.
-      const authRes = await ensureFirebaseSignupAuth?.({ email, password, username });
-      if (authRes && authRes.ok === false) {
-        Alert.alert('Sign up failed', authRes.message || 'Unable to create account. Please try again.');
-        setSubmitting(false);
-        return;
+    try {
+
+      if (!isUpgrade) {
+        // In production, backend membership endpoints require Firebase auth.
+        // Ensure we have a Firebase session so apiFetch can attach an ID token.
+        const authRes = await ensureFirebaseSignupAuth?.({ email, password, username });
+        if (authRes && authRes.ok === false) {
+          Alert.alert('Sign up failed', authRes.message || 'Unable to create account. Please try again.');
+          return;
+        }
       }
-    }
 
     const tier = subscriptionTiers[selectedTier];
     const localPrice = convertPrice(tier.price);
     const productId = productIdForTier(selectedTier);
-    if (!productId) {
-      Alert.alert('Error', 'Invalid membership selection');
-      setSubmitting(false);
-      return;
-    }
+      if (!productId) {
+        Alert.alert('Error', 'Invalid membership selection');
+        return;
+      }
 
     let purchase = null;
     try {
@@ -204,6 +207,10 @@ export default function ChooseSubscription({ navigation, route }) {
       'Success!',
       `Your membership is active. You will be charged ${localPrice.symbol}${localPrice.amount}/${tier.period} by Apple unless you cancel in App Store Subscriptions.`
     );
+    } finally {
+      setSubmitting(false);
+      continueInFlightRef.current = false;
+    }
   };
 
   const handleRestorePurchases = async () => {
@@ -314,6 +321,12 @@ export default function ChooseSubscription({ navigation, route }) {
             setSubmitting(true);
 
             try {
+              const authRes = await ensureFirebaseSignupAuth?.({ email, password, username });
+              if (authRes && authRes.ok === false) {
+                Alert.alert('Sign up failed', authRes.message || 'Unable to create account. Please try again.');
+                return;
+              }
+
               const res = await register({
                 firstName,
                 lastName,
