@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert as NativeAlert, Image, Modal, RefreshControl, ScrollView, SectionList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert as NativeAlert, Animated, Image, Modal, RefreshControl, ScrollView, SectionList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import LambHeader from '../components/LambHeader';
 import ShareModal from '../components/ShareModal';
@@ -144,17 +144,101 @@ export default function SharedVaults({ navigation, route }) {
   const [vaultDropdownOpen, setVaultDropdownOpen] = useState(false);
   const [collectionDropdownOpen, setCollectionDropdownOpen] = useState(false);
 
+  const STEP = { vault: 'vault', collection: 'collection', assets: 'assets' };
+  const getDesiredStep = ({ vaultId, collectionId }) => {
+    if (collectionId) return STEP.assets;
+    if (vaultId) return STEP.collection;
+    return STEP.vault;
+  };
+  const [browseStep, setBrowseStep] = useState(() => getDesiredStep({ vaultId: selectedVaultId, collectionId: null }));
+  const browseStepRef = useRef(browseStep);
+  useEffect(() => {
+    browseStepRef.current = browseStep;
+  }, [browseStep]);
+
+  const [renderPanels, setRenderPanels] = useState(() => ({
+    vault: browseStep === STEP.vault,
+    collection: browseStep === STEP.collection,
+    assets: browseStep === STEP.assets,
+  }));
+
+  const vaultPanelAnim = useRef(new Animated.Value(browseStep === STEP.vault ? 0 : 1)).current;
+  const collectionPanelAnim = useRef(new Animated.Value(browseStep === STEP.collection ? 0 : 1)).current;
+  const assetsPanelAnim = useRef(new Animated.Value(browseStep === STEP.assets ? 0 : 1)).current;
+  const transitioningStepRef = useRef(false);
+
+  const panelStyle = (anim) => {
+    const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [0, -26] });
+    const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+    return { transform: [{ translateY }], opacity };
+  };
+
+  const snapToStep = (nextStep) => {
+    setBrowseStep(nextStep);
+    setRenderPanels({
+      vault: nextStep === STEP.vault,
+      collection: nextStep === STEP.collection,
+      assets: nextStep === STEP.assets,
+    });
+    vaultPanelAnim.setValue(nextStep === STEP.vault ? 0 : 1);
+    collectionPanelAnim.setValue(nextStep === STEP.collection ? 0 : 1);
+    assetsPanelAnim.setValue(nextStep === STEP.assets ? 0 : 1);
+  };
+
+  const transitionToStep = (nextStep, { after } = {}) => {
+    if (transitioningStepRef.current) return;
+    const from = browseStepRef.current;
+    if (from === nextStep) {
+      after?.();
+      return;
+    }
+    transitioningStepRef.current = true;
+
+    setRenderPanels((prev) => ({
+      ...prev,
+      [from]: true,
+      [nextStep]: true,
+    }));
+
+    if (nextStep === STEP.vault) vaultPanelAnim.setValue(1);
+    if (nextStep === STEP.collection) collectionPanelAnim.setValue(1);
+    if (nextStep === STEP.assets) assetsPanelAnim.setValue(1);
+
+    const animations = [];
+    if (from === STEP.vault) animations.push(Animated.timing(vaultPanelAnim, { toValue: 1, duration: 180, useNativeDriver: true }));
+    if (from === STEP.collection) animations.push(Animated.timing(collectionPanelAnim, { toValue: 1, duration: 180, useNativeDriver: true }));
+    if (from === STEP.assets) animations.push(Animated.timing(assetsPanelAnim, { toValue: 1, duration: 180, useNativeDriver: true }));
+
+    if (nextStep === STEP.vault) animations.push(Animated.timing(vaultPanelAnim, { toValue: 0, duration: 180, useNativeDriver: true }));
+    if (nextStep === STEP.collection) animations.push(Animated.timing(collectionPanelAnim, { toValue: 0, duration: 180, useNativeDriver: true }));
+    if (nextStep === STEP.assets) animations.push(Animated.timing(assetsPanelAnim, { toValue: 0, duration: 180, useNativeDriver: true }));
+
+    Animated.parallel(animations).start(() => {
+      transitioningStepRef.current = false;
+      setBrowseStep(nextStep);
+      setRenderPanels({
+        vault: nextStep === STEP.vault,
+        collection: nextStep === STEP.collection,
+        assets: nextStep === STEP.assets,
+      });
+      after?.();
+    });
+  };
+
   const [shareVisible, setShareVisible] = useState(false);
   const [shareTargetType, setShareTargetType] = useState(null);
   const [shareTargetId, setShareTargetId] = useState(null);
 
   const [vaultEditVisible, setVaultEditVisible] = useState(false);
   const [vaultEditName, setVaultEditName] = useState('');
+  const [vaultEditTargetId, setVaultEditTargetId] = useState(null);
 
   const [collectionEditVisible, setCollectionEditVisible] = useState(false);
   const [collectionEditName, setCollectionEditName] = useState('');
+  const [collectionEditTargetId, setCollectionEditTargetId] = useState(null);
 
   const [collectionMoveVisible, setCollectionMoveVisible] = useState(false);
+  const [collectionMoveTargetId, setCollectionMoveTargetId] = useState(null);
   const [moveVaultId, setMoveVaultId] = useState(null);
   const [moveVaultDropdownOpen, setMoveVaultDropdownOpen] = useState(false);
 
@@ -325,10 +409,11 @@ export default function SharedVaults({ navigation, route }) {
   }, [route?.params?.openEditToken]);
 
   useEffect(() => {
-    if (selectedVaultId) return;
-    if (!sortedSharedVaults.length) return;
-    setSelectedVaultId(String(sortedSharedVaults[0].id));
-  }, [selectedVaultId, sortedSharedVaults]);
+    const desired = getDesiredStep({ vaultId: selectedVaultId, collectionId: selectedCollectionId });
+    if (transitioningStepRef.current) return;
+    if (desired === browseStepRef.current) return;
+    snapToStep(desired);
+  }, [selectedVaultId, selectedCollectionId]);
 
   useEffect(() => {
     if (!selectedVaultId) return;
@@ -346,6 +431,12 @@ export default function SharedVaults({ navigation, route }) {
     [sharedVaults, selectedVaultId]
   );
 
+  const vaultForEdit = useMemo(() => {
+    const id = vaultEditTargetId != null ? String(vaultEditTargetId) : null;
+    if (!id) return null;
+    return (sharedVaults || []).find((v) => String(v?.id) === id) || null;
+  }, [sharedVaults, vaultEditTargetId]);
+
   const vaultCaps = useMemo(() => {
     if (!selectedVaultId || !currentUser?.id) return getVaultCapabilities({ role: null, canCreateCollections: false });
     const role = getRoleForVault?.(String(selectedVaultId), String(currentUser.id));
@@ -353,9 +444,21 @@ export default function SharedVaults({ navigation, route }) {
     return getVaultCapabilities({ role, canCreateCollections });
   }, [selectedVaultId, currentUser?.id, getRoleForVault, canCreateCollectionsInVault]);
 
+  const getVaultCapsForId = (vaultId) => {
+    if (!vaultId || !currentUser?.id) return getVaultCapabilities({ role: null, canCreateCollections: false });
+    const vId = String(vaultId);
+    const role = getRoleForVault?.(vId, String(currentUser.id));
+    const canCreateCollections = canCreateCollectionsInVault?.(vId, String(currentUser.id));
+    return getVaultCapabilities({ role, canCreateCollections });
+  };
+
   const canVaultEditOnline = vaultCaps.canEdit && !isOffline;
   const canVaultShareOnline = vaultCaps.canShare && !isOffline;
   const canCreateCollectionsOnline = vaultCaps.canCreateCollections && !isOffline;
+
+  const vaultEditIdResolved = vaultEditTargetId != null ? String(vaultEditTargetId) : (selectedVaultId != null ? String(selectedVaultId) : null);
+  const vaultForEditResolved = vaultForEdit || selectedVault;
+  const canVaultEditOnlineForEditModal = vaultEditIdResolved ? (getVaultCapsForId(vaultEditIdResolved).canEdit && !isOffline) : false;
 
   const vaultCollections = useMemo(() => {
     if (!selectedVaultId) return [];
@@ -378,8 +481,7 @@ export default function SharedVaults({ navigation, route }) {
     if (!selectedVaultId) return;
     const stillValid = vaultCollections.find((c) => String(c?.id) === String(selectedCollectionId));
     if (stillValid) return;
-    if (vaultCollections.length) setSelectedCollectionId(String(vaultCollections[0].id));
-    else setSelectedCollectionId(null);
+    setSelectedCollectionId(null);
   }, [selectedVaultId, vaultCollections, selectedCollectionId]);
 
   useEffect(() => {
@@ -417,13 +519,28 @@ export default function SharedVaults({ navigation, route }) {
     [collections, optimisticCollections, selectedCollectionId]
   );
 
+  const collectionForEdit = useMemo(() => {
+    const id = collectionEditTargetId != null ? String(collectionEditTargetId) : null;
+    if (!id) return null;
+    const all = dedupeById([...(optimisticCollections || []), ...(collections || [])]);
+    return all.find((c) => String(c?.id) === id) || null;
+  }, [collections, optimisticCollections, collectionEditTargetId]);
+
+  const collectionForMove = useMemo(() => {
+    const id = collectionMoveTargetId != null ? String(collectionMoveTargetId) : null;
+    if (!id) return null;
+    const all = dedupeById([...(optimisticCollections || []), ...(collections || [])]);
+    return all.find((c) => String(c?.id) === id) || null;
+  }, [collections, optimisticCollections, collectionMoveTargetId]);
+
   const ownerVaultsForMove = useMemo(() => {
-    const ownerId = selectedCollection?.ownerId != null ? String(selectedCollection.ownerId) : null;
+    const src = collectionForMove || selectedCollection;
+    const ownerId = src?.ownerId != null ? String(src.ownerId) : null;
     if (!ownerId) return [];
     const list = (vaults || []).filter((v) => v?.ownerId != null && String(v.ownerId) === ownerId);
     list.sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
     return list;
-  }, [vaults, selectedCollection?.ownerId]);
+  }, [vaults, selectedCollection?.ownerId, collectionForMove]);
 
   const collectionCaps = useMemo(() => {
     if (!selectedCollectionId || !currentUser?.id) return getCollectionCapabilities({ role: null, canCreateAssets: false });
@@ -432,11 +549,26 @@ export default function SharedVaults({ navigation, route }) {
     return getCollectionCapabilities({ role, canCreateAssets });
   }, [selectedCollectionId, currentUser?.id, getRoleForCollection, canCreateAssetsInCollection]);
 
+  const getCollectionCapsForId = (collectionId) => {
+    if (!collectionId || !currentUser?.id) return getCollectionCapabilities({ role: null, canCreateAssets: false });
+    const cId = String(collectionId);
+    const role = getRoleForCollection?.(cId, String(currentUser.id));
+    const canCreateAssets = canCreateAssetsInCollection?.(cId, String(currentUser.id));
+    return getCollectionCapabilities({ role, canCreateAssets });
+  };
+
   const canCollectionEditOnline = collectionCaps.canEdit && !isOffline;
   const canCollectionShareOnline = collectionCaps.canShare && !isOffline;
   const canCollectionMoveOnline = collectionCaps.canMove && !isOffline;
   const canCollectionCloneOnline = collectionCaps.canClone && !isOffline;
   const canCreateAssetsOnline = (collectionCaps.canCreateAssets || isTempId(selectedCollectionId)) && !isOffline;
+
+  const collectionEditIdResolved = collectionEditTargetId != null ? String(collectionEditTargetId) : (selectedCollectionId != null ? String(selectedCollectionId) : null);
+  const collectionForEditResolved = collectionForEdit || selectedCollection;
+  const canCollectionEditOnlineForEditModal = collectionEditIdResolved ? (getCollectionCapsForId(collectionEditIdResolved).canEdit && !isOffline) : false;
+
+  const collectionMoveIdResolved = collectionMoveTargetId != null ? String(collectionMoveTargetId) : (selectedCollectionId != null ? String(selectedCollectionId) : null);
+  const canCollectionMoveOnlineForMoveModal = collectionMoveIdResolved ? (getCollectionCapsForId(collectionMoveIdResolved).canMove && !isOffline) : false;
 
   const anyCreateOpen = collectionCreateOpen || assetCreateOpen;
 
@@ -657,11 +789,52 @@ export default function SharedVaults({ navigation, route }) {
     setCollectionTypeQuery('');
     setVaultDropdownOpen(false);
     setCollectionDropdownOpen(false);
+
+    // Keep Total Value + Search in view after selecting.
+    scrollToTop();
+
+    // Advance to collection selection after choosing a vault.
+    if (vId) transitionToStep(STEP.collection);
+    else transitionToStep(STEP.vault);
   };
 
   const onSelectCollection = (collectionId) => {
-    setSelectedCollectionId(collectionId ? String(collectionId) : null);
+    const cId = collectionId ? String(collectionId) : null;
+    setSelectedCollectionId(cId);
     setCollectionDropdownOpen(false);
+
+    // Keep Total Value + Search in view after selecting.
+    scrollToTop();
+
+    setNewCollectionName('');
+    setCollectionCreateOpen(false);
+    if (cId) transitionToStep(STEP.assets);
+  };
+
+  const goBackToVaultSelection = () => {
+    if (transitioningStepRef.current) return;
+    setVaultDropdownOpen(false);
+    setCollectionDropdownOpen(false);
+    setNewCollectionName('');
+    setCollectionCreateOpen(false);
+    transitionToStep(STEP.vault, {
+      after: () => {
+        setSelectedCollectionId(null);
+        setSelectedVaultId(null);
+        setCollectionTypeQuery('');
+      },
+    });
+  };
+
+  const goBackToCollectionSelection = () => {
+    if (transitioningStepRef.current) return;
+    setCollectionDropdownOpen(false);
+    transitionToStep(STEP.collection, {
+      after: () => {
+        setSelectedCollectionId(null);
+        setCollectionTypeQuery('');
+      },
+    });
   };
 
   const flushPendingAssetsForCollection = async (tempCollectionId, realCollectionId) => {
@@ -727,28 +900,6 @@ export default function SharedVaults({ navigation, route }) {
       >
         <View style={styles.cardRow}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Assets</Text>
-          <View style={styles.cardActions}>
-            <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }]}
-              onPress={() => setAssetSortMode((m) => (m === 'az' ? 'za' : 'az'))}
-            >
-              <Text style={[styles.actionButtonText, { color: theme.text }]}>{assetSortMode === 'az' ? 'A–Z' : 'Z–A'}</Text>
-            </TouchableOpacity>
-
-            {!assetCreateOpen ? (
-              <TouchableOpacity
-                style={[
-                  styles.addButton,
-                  { backgroundColor: theme.success, borderColor: theme.success },
-                  (!canCreateAssetsOnline || assetCreateBusy) && styles.buttonDisabled,
-                ]}
-                disabled={!canCreateAssetsOnline || assetCreateBusy}
-                onPress={() => setAssetCreateOpen(true)}
-              >
-                <Text style={[styles.addButtonText, { color: theme.onAccentText }]}>+</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
         </View>
 
         {assetCreateOpen ? (
@@ -1085,6 +1236,73 @@ export default function SharedVaults({ navigation, route }) {
               />
             </View>
 
+            {!loading ? (
+              <View style={styles.globalControlsRow}>
+                {browseStep !== STEP.vault ? (
+                  <TouchableOpacity
+                    style={[styles.stepBackButton, { borderColor: theme.border, backgroundColor: theme.surface }, anyCreateOpen && styles.buttonDisabled]}
+                    onPress={browseStep === STEP.collection ? goBackToVaultSelection : goBackToCollectionSelection}
+                    disabled={anyCreateOpen}
+                  >
+                    <Ionicons name="chevron-back" size={18} color={theme.text} />
+                    <Text style={[styles.secondaryText, { color: theme.text }]}>Back</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View />
+                )}
+
+                <View style={styles.globalControlsRight}>
+                  <TouchableOpacity
+                    style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }]}
+                    onPress={() => {
+                      if (browseStep === STEP.vault) setVaultSortMode((m) => (m === 'az' ? 'za' : 'az'));
+                      else if (browseStep === STEP.collection) setCollectionSortMode((m) => (m === 'az' ? 'za' : 'az'));
+                      else setAssetSortMode((m) => (m === 'az' ? 'za' : 'az'));
+                    }}
+                    disabled={(browseStep === STEP.collection && !selectedVaultId) || (browseStep === STEP.assets && !selectedCollectionId)}
+                  >
+                    <Text style={[styles.actionButtonText, { color: theme.text }]}>
+                      {browseStep === STEP.vault
+                        ? (vaultSortMode === 'az' ? 'A–Z' : 'Z–A')
+                        : browseStep === STEP.collection
+                          ? (collectionSortMode === 'az' ? 'A–Z' : 'Z–A')
+                          : (assetSortMode === 'az' ? 'A–Z' : 'Z–A')}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {browseStep === STEP.collection ? (
+                    !collectionCreateOpen ? (
+                      <TouchableOpacity
+                        style={[
+                          styles.addButton,
+                          { backgroundColor: theme.success, borderColor: theme.success },
+                          (!selectedVaultId || !canCreateCollectionsOnline || collectionCreateBusy) && styles.buttonDisabled,
+                        ]}
+                        disabled={!selectedVaultId || !canCreateCollectionsOnline || collectionCreateBusy}
+                        onPress={() => setCollectionCreateOpen(true)}
+                      >
+                        <Text style={[styles.addButtonText, { color: theme.onAccentText }]}>+</Text>
+                      </TouchableOpacity>
+                    ) : null
+                  ) : browseStep === STEP.assets ? (
+                    !assetCreateOpen ? (
+                      <TouchableOpacity
+                        style={[
+                          styles.addButton,
+                          { backgroundColor: theme.success, borderColor: theme.success },
+                          (!canCreateAssetsOnline || assetCreateBusy) && styles.buttonDisabled,
+                        ]}
+                        disabled={!canCreateAssetsOnline || assetCreateBusy}
+                        onPress={() => setAssetCreateOpen(true)}
+                      >
+                        <Text style={[styles.addButtonText, { color: theme.onAccentText }]}>+</Text>
+                      </TouchableOpacity>
+                    ) : null
+                  ) : null}
+                </View>
+              </View>
+            ) : null}
+
             <ShareModal
               visible={shareVisible}
               onClose={() => {
@@ -1345,22 +1563,37 @@ export default function SharedVaults({ navigation, route }) {
               />
 
               <View style={styles.modalActions}>
-                <TouchableOpacity style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface }]} onPress={() => setVaultEditVisible(false)}>
+                <TouchableOpacity
+                  style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface }]}
+                  onPress={() => {
+                    setVaultEditVisible(false);
+                    setVaultEditTargetId(null);
+                  }}
+                >
                   <Text style={[styles.secondaryText, { color: theme.text }]}>Close</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.primaryButton, { backgroundColor: theme.primary, borderColor: theme.primary }, (!selectedVaultId || !canVaultEditOnline) && styles.buttonDisabled]}
-                  disabled={!selectedVaultId || !canVaultEditOnline}
+                  style={[
+                    styles.primaryButton,
+                    { backgroundColor: theme.primary, borderColor: theme.primary },
+                    (!vaultEditIdResolved || !vaultForEditResolved || !canVaultEditOnlineForEditModal) && styles.buttonDisabled,
+                  ]}
+                  disabled={!vaultEditIdResolved || !vaultForEditResolved || !canVaultEditOnlineForEditModal}
                   onPress={() => {
-                    if (!selectedVaultId || !selectedVault) return;
-                    const expectedEditedAt = selectedVault?.editedAt ?? null;
+                    if (!vaultEditIdResolved || !vaultForEditResolved) return;
+                    const expectedEditedAt = vaultForEditResolved?.editedAt ?? null;
                     (async () => {
-                      const res = await updateVault?.(String(selectedVaultId), { name: String((vaultEditName || '')).trim().slice(0, 35) }, { expectedEditedAt });
+                      const res = await updateVault?.(
+                        String(vaultEditIdResolved),
+                        { name: String((vaultEditName || '')).trim().slice(0, 35) },
+                        { expectedEditedAt }
+                      );
                       if (!res || res.ok === false) {
                         Alert.alert('Save failed', res?.message || 'Unable to update vault');
                         return;
                       }
                       setVaultEditVisible(false);
+                      setVaultEditTargetId(null);
                     })();
                   }}
                 >
@@ -1386,22 +1619,37 @@ export default function SharedVaults({ navigation, route }) {
               />
 
               <View style={styles.modalActions}>
-                <TouchableOpacity style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface }]} onPress={() => setCollectionEditVisible(false)}>
+                <TouchableOpacity
+                  style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface }]}
+                  onPress={() => {
+                    setCollectionEditVisible(false);
+                    setCollectionEditTargetId(null);
+                  }}
+                >
                   <Text style={[styles.secondaryText, { color: theme.text }]}>Close</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.primaryButton, { backgroundColor: theme.primary, borderColor: theme.primary }, (!selectedCollectionId || !canCollectionEditOnline) && styles.buttonDisabled]}
-                  disabled={!selectedCollectionId || !canCollectionEditOnline}
+                  style={[
+                    styles.primaryButton,
+                    { backgroundColor: theme.primary, borderColor: theme.primary },
+                    (!collectionEditIdResolved || !collectionForEditResolved || !canCollectionEditOnlineForEditModal) && styles.buttonDisabled,
+                  ]}
+                  disabled={!collectionEditIdResolved || !collectionForEditResolved || !canCollectionEditOnlineForEditModal}
                   onPress={() => {
-                    if (!selectedCollectionId || !selectedCollection) return;
-                    const expectedEditedAt = selectedCollection?.editedAt ?? null;
+                    if (!collectionEditIdResolved || !collectionForEditResolved) return;
+                    const expectedEditedAt = collectionForEditResolved?.editedAt ?? null;
                     (async () => {
-                      const res = await updateCollection?.(String(selectedCollectionId), { name: String((collectionEditName || '')).trim().slice(0, 35) }, { expectedEditedAt });
+                      const res = await updateCollection?.(
+                        String(collectionEditIdResolved),
+                        { name: String((collectionEditName || '')).trim().slice(0, 35) },
+                        { expectedEditedAt }
+                      );
                       if (!res || res.ok === false) {
                         Alert.alert('Save failed', res?.message || 'Unable to update collection');
                         return;
                       }
                       setCollectionEditVisible(false);
+                      setCollectionEditTargetId(null);
                     })();
                   }}
                 >
@@ -1421,7 +1669,7 @@ export default function SharedVaults({ navigation, route }) {
               <TouchableOpacity
                 style={[styles.dropdownButton, { backgroundColor: theme.inputBg, borderColor: theme.border }]}
                 onPress={() => setMoveVaultDropdownOpen((v) => !v)}
-                disabled={!canCollectionMoveOnline}
+                disabled={!canCollectionMoveOnlineForMoveModal}
               >
                 <Text style={[styles.dropdownButtonText, { color: theme.text }]}>
                   {moveVaultId ? (ownerVaultsForMove.find((v) => String(v.id) === String(moveVaultId))?.name || 'Select vault…') : 'Select vault…'}
@@ -1451,21 +1699,32 @@ export default function SharedVaults({ navigation, route }) {
               )}
 
               <View style={styles.modalActions}>
-                <TouchableOpacity style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface }]} onPress={() => setCollectionMoveVisible(false)}>
+                <TouchableOpacity
+                  style={[styles.secondaryButton, { borderColor: theme.border, backgroundColor: theme.surface }]}
+                  onPress={() => {
+                    setCollectionMoveVisible(false);
+                    setCollectionMoveTargetId(null);
+                  }}
+                >
                   <Text style={[styles.secondaryText, { color: theme.text }]}>Close</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.primaryButton, { backgroundColor: theme.primary, borderColor: theme.primary }, (!selectedCollectionId || !moveVaultId || !canCollectionMoveOnline) && styles.buttonDisabled]}
-                  disabled={!selectedCollectionId || !moveVaultId || !canCollectionMoveOnline}
+                  style={[
+                    styles.primaryButton,
+                    { backgroundColor: theme.primary, borderColor: theme.primary },
+                    (!collectionMoveIdResolved || !moveVaultId || !canCollectionMoveOnlineForMoveModal) && styles.buttonDisabled,
+                  ]}
+                  disabled={!collectionMoveIdResolved || !moveVaultId || !canCollectionMoveOnlineForMoveModal}
                   onPress={() => {
-                    if (!selectedCollectionId || !moveVaultId) return;
+                    if (!collectionMoveIdResolved || !moveVaultId) return;
                     (async () => {
-                      const res = await moveCollection?.({ collectionId: String(selectedCollectionId), targetVaultId: String(moveVaultId) });
+                      const res = await moveCollection?.({ collectionId: String(collectionMoveIdResolved), targetVaultId: String(moveVaultId) });
                       if (!res || res.ok === false) {
                         Alert.alert('Move failed', res?.message || 'Unable to move collection');
                         return;
                       }
                       setCollectionMoveVisible(false);
+                      setCollectionMoveTargetId(null);
                       setSelectedVaultId(String(moveVaultId));
                       await refreshData?.();
                     })();
@@ -1539,122 +1798,84 @@ export default function SharedVaults({ navigation, route }) {
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>No shared vaults.</Text>
         ) : (
           <>
+            {renderPanels.vault ? (
+            <Animated.View style={panelStyle(vaultPanelAnim)}>
             <View style={[styles.card, styles.vaultAccent, { backgroundColor: theme.surface, borderColor: theme.border, borderLeftColor: theme.primary }]}>
               <View style={styles.cardRow}>
                 <Text style={[styles.sectionTitle, { color: theme.text }]}>Vaults</Text>
-                <View style={styles.cardActions}>
-                  <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }]}
-                    onPress={() => setVaultSortMode((m) => (m === 'az' ? 'za' : 'az'))}
-                  >
-                    <Text style={[styles.actionButtonText, { color: theme.text }]}>{vaultSortMode === 'az' ? 'A–Z' : 'Z–A'}</Text>
-                  </TouchableOpacity>
-                </View>
               </View>
-              <TouchableOpacity
-                style={[styles.dropdownButton, { backgroundColor: theme.inputBg, borderColor: theme.border }]}
-                onPress={() => {
-                  if (anyCreateOpen) return;
-                  setVaultDropdownOpen((v) => !v);
-                }}
-                disabled={anyCreateOpen}
+
+              <ScrollView
+                style={[styles.selectorList, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }]}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator
               >
-                <Text style={[styles.dropdownButtonText, { color: theme.text }]}>{selectedVault?.name || 'Select vault…'}</Text>
-                <Text style={[styles.dropdownArrow, { color: theme.textMuted }]}>{vaultDropdownOpen ? '▲' : '▼'}</Text>
-              </TouchableOpacity>
+                {filteredSharedVaults.map((v) => {
+                  const active = selectedVaultId != null && String(v?.id) === String(selectedVaultId);
+                  const caps = getVaultCapsForId(v?.id);
+                  const canEditOnlineForRow = caps.canEdit && !isOffline;
+                  const canShareOnlineForRow = caps.canShare && !isOffline;
+                  return (
+                    <TouchableOpacity
+                      key={String(v?.id)}
+                      style={[styles.selectorRow, { borderBottomColor: theme.border }, active && styles.selectorRowActive]}
+                      onPress={() => {
+                        if (anyCreateOpen) return;
+                        onSelectVault(v.id);
+                      }}
+                      disabled={anyCreateOpen}
+                    >
+                      <View style={styles.selectorTitleWrap}>
+                        <Text style={[styles.selectorTitle, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
+                          {v?.name || v?.id}
+                        </Text>
+                        <Text style={[styles.selectorMeta, { color: theme.textMuted }]}>Vault</Text>
+                      </View>
 
-              {vaultDropdownOpen && !anyCreateOpen && (
-                <ScrollView
-                  style={[styles.dropdownList, { backgroundColor: theme.inputBg, borderColor: theme.border }]}
-                  nestedScrollEnabled={true}
-                  showsVerticalScrollIndicator={true}
-                >
-                  <View style={{ padding: 10, paddingBottom: 0 }}>
-                    <TextInput
-                      style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text, flex: 0 }]}
-                      placeholder="Type to search vaults"
-                      placeholderTextColor={theme.placeholder}
-                      value={vaultTypeQuery}
-                      onChangeText={setVaultTypeQuery}
-                      autoFocus
-                      {...noAutoCorrect}
-                    />
-                  </View>
-                  {filteredSharedVaults.map((v) => {
-                    const active = selectedVaultId != null && String(v?.id) === String(selectedVaultId);
-                    return (
-                      <TouchableOpacity
-                        key={v.id}
-                        style={[styles.dropdownItem, { borderBottomColor: theme.border }, active && styles.dropdownItemActive]}
-                        onPress={() => onSelectVault(v.id)}
-                      >
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.dropdownItemText, { color: theme.text }]}>{v.name || v.id}</Text>
-                          <Text style={[styles.dropdownItemMeta, { color: theme.textMuted }]}>Vault • {new Date(v.createdAt).toLocaleDateString()}</Text>
-                        </View>
-                        {active && <Text style={styles.checkmark}>✓</Text>}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              )}
+                      <View style={styles.selectorRowActions}>
+                        <TouchableOpacity
+                          style={[styles.actionButton, { backgroundColor: theme.surface, borderColor: theme.border }, !canEditOnlineForRow && styles.buttonDisabled]}
+                          disabled={!canEditOnlineForRow}
+                          onPress={() => {
+                            if (!v?.id) return;
+                            markRecentVaultById(String(v.id), { titleOverride: v?.name || 'Vault' });
+                            setVaultEditTargetId(String(v.id));
+                            setVaultEditName(String(v?.name || '').slice(0, 35));
+                            setVaultEditVisible(true);
+                          }}
+                        >
+                          <Text style={[styles.actionButtonText, { color: theme.text }]}>Edit</Text>
+                        </TouchableOpacity>
 
-              {!vaultDropdownOpen ? (
-                <View style={styles.actionRow}>
-                  <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, (!selectedVaultId || !canVaultEditOnline) && styles.buttonDisabled]}
-                    disabled={!selectedVaultId || !canVaultEditOnline}
-                    onPress={() => {
-                      if (!selectedVaultId) return;
-                      markRecentVaultById(String(selectedVaultId), { titleOverride: selectedVault?.name || 'Vault' });
-                      setVaultEditName(String(selectedVault?.name || '').slice(0, 35));
-                      setVaultEditVisible(true);
-                    }}
-                  >
-                    <Text style={[styles.actionButtonText, { color: theme.text }]}>Edit</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, (!selectedVaultId || !canVaultShareOnline) && styles.buttonDisabled]}
-                    disabled={!selectedVaultId || !canVaultShareOnline}
-                    onPress={() => {
-                      if (!selectedVaultId) return;
-                      markRecentVaultById(String(selectedVaultId), { titleOverride: selectedVault?.name || 'Vault' });
-                      setShareTargetType('vault');
-                      setShareTargetId(String(selectedVaultId));
-                      setShareVisible(true);
-                    }}
-                  >
-                    <Text style={[styles.actionButtonText, { color: theme.text }]}>Delegate</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : null}
+                        <TouchableOpacity
+                          style={[styles.actionButton, { backgroundColor: theme.surface, borderColor: theme.border }, !canShareOnlineForRow && styles.buttonDisabled]}
+                          disabled={!canShareOnlineForRow}
+                          onPress={() => {
+                            if (!v?.id) return;
+                            markRecentVaultById(String(v.id), { titleOverride: v?.name || 'Vault' });
+                            setShareTargetType('vault');
+                            setShareTargetId(String(v.id));
+                            setShareVisible(true);
+                          }}
+                        >
+                          <Text style={[styles.actionButtonText, { color: theme.text }]}>Delegate</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             </View>
+
+            </Animated.View>
+            ) : null}
+
+            {renderPanels.collection ? (
+            <Animated.View style={panelStyle(collectionPanelAnim)}>
 
             <View style={[styles.card, styles.collectionAccent, { backgroundColor: theme.surface, borderColor: theme.border, borderLeftColor: theme.clone }]}>
               <View style={styles.cardRow}>
                 <Text style={[styles.sectionTitle, { color: theme.text }]}>Collections</Text>
-                <View style={styles.cardActions}>
-                  <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }]}
-                    onPress={() => setCollectionSortMode((m) => (m === 'az' ? 'za' : 'az'))}
-                  >
-                    <Text style={[styles.actionButtonText, { color: theme.text }]}>{collectionSortMode === 'az' ? 'A–Z' : 'Z–A'}</Text>
-                  </TouchableOpacity>
-
-                  {!collectionCreateOpen ? (
-                    <TouchableOpacity
-                      style={[
-                        styles.addButton,
-                        { backgroundColor: theme.success, borderColor: theme.success },
-                        (!selectedVaultId || !canCreateCollectionsOnline || collectionCreateBusy) && styles.buttonDisabled,
-                      ]}
-                      disabled={!selectedVaultId || !canCreateCollectionsOnline || collectionCreateBusy}
-                      onPress={() => setCollectionCreateOpen(true)}
-                    >
-                      <Text style={[styles.addButtonText, { color: theme.onAccentText }]}>+</Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
               </View>
 
               {collectionCreateOpen ? (
@@ -1757,129 +1978,129 @@ export default function SharedVaults({ navigation, route }) {
                   </TouchableOpacity>
                 </View>
               ) : null}
-              <TouchableOpacity
-                style={[styles.dropdownButton, { backgroundColor: theme.inputBg, borderColor: theme.border }, (!selectedVaultId || vaultCollections.length === 0) && styles.buttonDisabled]}
-                onPress={() => {
-                  if (anyCreateOpen) return;
-                  if (selectedVaultId && vaultCollections.length > 0) setCollectionDropdownOpen((v) => !v);
-                }}
-                disabled={!selectedVaultId || vaultCollections.length === 0 || anyCreateOpen}
+
+              <ScrollView
+                style={[styles.selectorList, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, !selectedVaultId && styles.buttonDisabled]}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator
               >
-                <Text style={[styles.dropdownButtonText, { color: theme.text }]}>
-                  {selectedVaultId ? (vaultCollections.length === 0 ? 'None' : (selectedCollection?.name || 'Select collection…')) : 'Select a vault first…'}
-                </Text>
-                <Text style={[styles.dropdownArrow, { color: theme.textMuted }]}>{collectionDropdownOpen ? '▲' : '▼'}</Text>
-              </TouchableOpacity>
+                {!selectedVaultId ? (
+                  <Text style={[styles.subtitle, { color: theme.textSecondary, paddingVertical: 10 }]}>Select a vault first.</Text>
+                ) : filteredVaultCollections.length === 0 ? (
+                  <Text style={[styles.subtitle, { color: theme.textSecondary, paddingVertical: 10 }]}>No collections in this vault.</Text>
+                ) : (
+                  filteredVaultCollections.map((c) => {
+                    const active = selectedCollectionId != null && String(c?.id) === String(selectedCollectionId);
+                    const caps = getCollectionCapsForId(c?.id);
+                    const canEditOnlineForRow = caps.canEdit && !isOffline;
+                    const canShareOnlineForRow = caps.canShare && !isOffline;
+                    const canMoveOnlineForRow = caps.canMove && !isOffline;
+                    const canCloneOnlineForRow = caps.canClone && !isOffline;
+                    return (
+                      <TouchableOpacity
+                        key={String(c?.id)}
+                        style={[styles.selectorRow, { borderBottomColor: theme.border }, active && styles.selectorRowActive]}
+                        onPress={() => {
+                          if (anyCreateOpen) return;
+                          onSelectCollection(c.id);
+                        }}
+                        disabled={anyCreateOpen}
+                      >
+                        <View style={styles.selectorTitleWrap}>
+                          <Text style={[styles.selectorTitle, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
+                            {c?.name || c?.id}
+                          </Text>
+                          <Text style={[styles.selectorMeta, { color: theme.textMuted }]}>Collection</Text>
+                        </View>
 
-              {collectionDropdownOpen && !anyCreateOpen && (
-                <ScrollView
-                  style={[styles.dropdownList, { backgroundColor: theme.inputBg, borderColor: theme.border }]}
-                  nestedScrollEnabled={true}
-                  showsVerticalScrollIndicator={true}
-                >
-                  <View style={{ padding: 10, paddingBottom: 0 }}>
-                    <TextInput
-                      style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text, flex: 0 }]}
-                      placeholder="Type to search collections"
-                      placeholderTextColor={theme.placeholder}
-                      value={collectionTypeQuery}
-                      onChangeText={setCollectionTypeQuery}
-                      autoFocus
-                      {...noAutoCorrect}
-                    />
-                  </View>
-                  {filteredVaultCollections.length === 0 ? (
-                    <Text style={[styles.subtitle, { color: theme.textSecondary, padding: 12 }]}>None</Text>
-                  ) : (
-                    filteredVaultCollections.map((c) => {
-                      const active = selectedCollectionId != null && String(c?.id) === String(selectedCollectionId);
-                      return (
-                        <TouchableOpacity
-                          key={c.id}
-                          style={[styles.dropdownItem, { borderBottomColor: theme.border }, active && styles.dropdownItemActive]}
-                          onPress={() => onSelectCollection(c.id)}
-                        >
-                          <Text style={[styles.dropdownItemText, { color: theme.text }]}>{c.name || c.id}</Text>
-                          {active && <Text style={styles.checkmark}>✓</Text>}
-                        </TouchableOpacity>
-                      );
-                    })
-                  )}
-                </ScrollView>
-              )}
+                        <View style={styles.selectorRowActions}>
+                          <TouchableOpacity
+                            style={[styles.actionButton, { backgroundColor: theme.surface, borderColor: theme.border }, !canEditOnlineForRow && styles.buttonDisabled]}
+                            disabled={!canEditOnlineForRow}
+                            onPress={() => {
+                              if (!c?.id) return;
+                              markRecentCollectionById(String(c.id), { titleOverride: c?.name || 'Collection' });
+                              setCollectionEditTargetId(String(c.id));
+                              setCollectionEditName(String(c?.name || '').slice(0, 35));
+                              setCollectionEditVisible(true);
+                            }}
+                          >
+                            <Text style={[styles.actionButtonText, { color: theme.text }]}>Edit</Text>
+                          </TouchableOpacity>
 
-              {!collectionDropdownOpen ? (
-                <View style={styles.actionRow}>
-                <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, (!selectedCollectionId || !canCollectionEditOnline) && styles.buttonDisabled]}
-                  disabled={!selectedCollectionId || !canCollectionEditOnline}
-                  onPress={() => {
-                    if (!selectedCollectionId) return;
-                    markRecentCollectionById(String(selectedCollectionId), { titleOverride: selectedCollection?.name || 'Collection' });
-                    setCollectionEditName(String(selectedCollection?.name || '').slice(0, 35));
-                    setCollectionEditVisible(true);
-                  }}
-                >
-                  <Text style={[styles.actionButtonText, { color: theme.text }]}>Edit</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, (!selectedCollectionId || !canCollectionShareOnline) && styles.buttonDisabled]}
-                  disabled={!selectedCollectionId || !canCollectionShareOnline}
-                  onPress={() => {
-                    if (!selectedCollectionId) return;
-                    markRecentCollectionById(String(selectedCollectionId), { titleOverride: selectedCollection?.name || 'Collection' });
-                    setShareTargetType('collection');
-                    setShareTargetId(String(selectedCollectionId));
-                    setShareVisible(true);
-                  }}
-                >
-                  <Text style={[styles.actionButtonText, { color: theme.text }]}>Delegate</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, (!selectedCollectionId || !canCollectionMoveOnline) && styles.buttonDisabled]}
-                  disabled={!selectedCollectionId || !canCollectionMoveOnline}
-                  onPress={() => {
-                    if (!selectedCollectionId) return;
-                    markRecentCollectionById(String(selectedCollectionId), { titleOverride: selectedCollection?.name || 'Collection' });
-                    setMoveVaultId(String(selectedCollection?.vaultId || selectedVaultId || ''));
-                    setMoveVaultDropdownOpen(false);
-                    setCollectionMoveVisible(true);
-                  }}
-                >
-                  <Text style={[styles.actionButtonText, { color: theme.text }]}>Move</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, (!selectedCollectionId || !canCollectionCloneOnline) && styles.buttonDisabled]}
-                  disabled={!selectedCollectionId || !canCollectionCloneOnline}
-                  onPress={() => {
-                    if (!selectedVaultId || !selectedCollectionId) return;
-                    markRecentCollectionById(String(selectedCollectionId), { titleOverride: selectedCollection?.name || 'Collection' });
-                    const baseName = selectedCollection?.name ? String(selectedCollection.name) : 'Collection';
-                    const copyName = String(`${baseName} (Copy)`).slice(0, 35);
-                    (async () => {
-                      const res = await addCollection?.({
-                        vaultId: String(selectedVaultId),
-                        name: copyName,
-                        images: Array.isArray(selectedCollection?.images) ? selectedCollection.images : [],
-                        heroImage: selectedCollection?.heroImage || null,
-                      });
-                      if (!res || res.ok === false) {
-                        Alert.alert('Clone failed', res?.message || 'Unable to clone collection');
-                        return;
-                      }
-                      if (res.collectionId) {
-                        const realId = String(res.collectionId);
-                        markRecentCollectionById(realId, { titleOverride: copyName });
-                        onSelectCollection(realId);
-                      }
-                    })();
-                  }}
-                >
-                  <Text style={[styles.actionButtonText, { color: theme.text }]}>Clone</Text>
-                </TouchableOpacity>
-                </View>
-              ) : null}
+                          <TouchableOpacity
+                            style={[styles.actionButton, { backgroundColor: theme.surface, borderColor: theme.border }, !canShareOnlineForRow && styles.buttonDisabled]}
+                            disabled={!canShareOnlineForRow}
+                            onPress={() => {
+                              if (!c?.id) return;
+                              markRecentCollectionById(String(c.id), { titleOverride: c?.name || 'Collection' });
+                              setShareTargetType('collection');
+                              setShareTargetId(String(c.id));
+                              setShareVisible(true);
+                            }}
+                          >
+                            <Text style={[styles.actionButtonText, { color: theme.text }]}>Delegate</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={[styles.actionButton, { backgroundColor: theme.surface, borderColor: theme.border }, !canMoveOnlineForRow && styles.buttonDisabled]}
+                            disabled={!canMoveOnlineForRow}
+                            onPress={() => {
+                              if (!c?.id) return;
+                              markRecentCollectionById(String(c.id), { titleOverride: c?.name || 'Collection' });
+                              setCollectionMoveTargetId(String(c.id));
+                              setMoveVaultId(String(c?.vaultId || selectedVaultId || ''));
+                              setMoveVaultDropdownOpen(false);
+                              setCollectionMoveVisible(true);
+                            }}
+                          >
+                            <Text style={[styles.actionButtonText, { color: theme.text }]}>Move</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={[styles.actionButton, { backgroundColor: theme.surface, borderColor: theme.border }, !canCloneOnlineForRow && styles.buttonDisabled]}
+                            disabled={!canCloneOnlineForRow}
+                            onPress={() => {
+                              if (!selectedVaultId || !c?.id) return;
+                              markRecentCollectionById(String(c.id), { titleOverride: c?.name || 'Collection' });
+                              const baseName = c?.name ? String(c.name) : 'Collection';
+                              const copyName = String(`${baseName} (Copy)`).slice(0, 35);
+                              (async () => {
+                                const res = await addCollection?.({
+                                  vaultId: String(selectedVaultId),
+                                  name: copyName,
+                                  images: Array.isArray(c?.images) ? c.images : [],
+                                  heroImage: c?.heroImage || null,
+                                });
+                                if (!res || res.ok === false) {
+                                  Alert.alert('Clone failed', res?.message || 'Unable to clone collection');
+                                  return;
+                                }
+                                if (res.collectionId) {
+                                  const realId = String(res.collectionId);
+                                  markRecentCollectionById(realId, { titleOverride: copyName });
+                                  onSelectCollection(realId);
+                                }
+                              })();
+                            }}
+                          >
+                            <Text style={[styles.actionButtonText, { color: theme.text }]}>Clone</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </ScrollView>
             </View>
+
+            </Animated.View>
+            ) : null}
+
+            {renderPanels.assets ? (
+              <Animated.View style={panelStyle(assetsPanelAnim)}>
+              </Animated.View>
+            ) : null}
           </>
         )}
 
@@ -1911,11 +2132,15 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   avatar: { width: 36, height: 36, borderRadius: 18 },
   avatarFallbackText: { fontWeight: '800', fontSize: 12 },
+  stepBackButton: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderRadius: 12 },
   totalValueRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   totalValueLabel: { fontWeight: '700' },
   totalValueAmount: { fontWeight: '800', fontSize: 16 },
   title: { fontSize: 24, fontWeight: '700', color: '#fff' },
   subtitle: { color: '#c5c5d0' },
+
+  globalControlsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  globalControlsRight: { flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-end' },
 
   sectionHeader: { marginTop: 8, marginBottom: 8 },
   sectionTitle: { color: '#e5e7f0', fontSize: 18, fontWeight: '700' },
@@ -1945,6 +2170,27 @@ const styles = StyleSheet.create({
   cardTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
   cardSubtitle: { color: '#9aa1b5', marginTop: 4, fontSize: 13 },
   chevron: { color: '#9aa1b5', fontSize: 20, fontWeight: '700' },
+
+  selectorList: {
+    marginTop: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    maxHeight: 260,
+  },
+  selectorRow: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  selectorRowActive: { opacity: 0.92 },
+  selectorTitleWrap: { flex: 1, minWidth: 0 },
+  selectorTitle: { fontWeight: '800' },
+  selectorMeta: { fontSize: 12, marginTop: 3 },
+  selectorRowActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' },
 
   dropdownButton: {
     marginTop: 8,

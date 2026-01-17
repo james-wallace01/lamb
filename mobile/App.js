@@ -75,33 +75,6 @@ const MainStack = () => {
   );
 };
 
-const LimitedStack = () => {
-  const { theme } = useData();
-  return (
-    <Stack.Navigator
-      initialRouteName="Home"
-      screenOptions={{
-        headerStyle: { backgroundColor: theme.background },
-        headerTintColor: theme.text,
-        headerTitleStyle: { fontWeight: '700' },
-        contentStyle: { backgroundColor: theme.background },
-        animation: Platform.OS === 'ios' ? 'slide_from_right' : 'default',
-        gestureEnabled: true,
-      }}
-    >
-      <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="PrivateVaults" component={PrivateVaultsScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="SharedVaults" component={SharedVaultsScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Tracking" component={TrackingScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Membership" component={MembershipScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="ChooseSubscription" component={ChooseSubscriptionScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="EmailNotifications" component={EmailNotificationsScreen} options={{ headerShown: false }} />
-    </Stack.Navigator>
-  );
-};
-
 function RootNavigator() {
   const { currentUser, loading } = useData();
   if (loading) return null;
