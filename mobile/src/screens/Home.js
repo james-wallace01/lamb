@@ -6,7 +6,7 @@ import { getInitials } from '../utils/user';
 import { runWithMinimumDuration } from '../utils/timing';
 
 export default function Home({ navigation }) {
-  const { currentUser, refreshData, theme, membershipAccess, acceptInvitationCode, denyInvitationCode, listMyInvitations, backendReachable, showAlert } = useData();
+  const { currentUser, refreshData, theme, membershipAccess, acceptInvitationCode, denyInvitationCode, listMyInvitations, backendReachable, showAlert, t } = useData();
   const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
   const [invitations, setInvitations] = useState([]);
@@ -72,6 +72,13 @@ export default function Home({ navigation }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const displayName =
+    currentUser?.firstName ||
+    currentUser?.username ||
+    (currentUser?.email ? String(currentUser.email).split('@')[0] : '') ||
+    '';
+  const welcomeText = `${t?.('welcome') || 'Welcome'}${displayName ? `, ${displayName}` : ''}`;
+
   const handleAcceptInvitation = async (code) => {
     const raw = typeof code === 'string' ? code.trim() : '';
     if (!raw) return;
@@ -130,6 +137,8 @@ export default function Home({ navigation }) {
               )}
             </View>
           </View>
+
+          <Text style={[styles.welcome, { color: theme.textSecondary }]}>{welcomeText}</Text>
 
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}> 
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Invitations</Text>
@@ -245,6 +254,8 @@ export default function Home({ navigation }) {
           </View>
         </View>
 
+        <Text style={[styles.welcome, { color: theme.textSecondary }]}>{welcomeText}</Text>
+
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}> 
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Invitations</Text>
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Review invitations to shared vaults.</Text>
@@ -306,6 +317,7 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   title: { fontSize: 24, fontWeight: '700', color: '#fff' },
+  welcome: { marginTop: 2, marginBottom: 6, fontSize: 14, fontWeight: '600' },
   subtitle: { color: '#c5c5d0' },
   avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#1f2738' },
   avatarFallback: { alignItems: 'center', justifyContent: 'center' },

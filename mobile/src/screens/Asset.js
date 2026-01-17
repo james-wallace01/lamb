@@ -18,17 +18,10 @@ import BackButton from '../components/BackButton';
 import { getAssetCapabilities } from '../policies/capabilities';
 import { runWithMinimumDuration } from '../utils/timing';
 
-function formatCurrency(val) {
+const unformatCurrency = (val) => {
   if (!val) return '';
-  const num = parseFloat(val.toString().replace(/[^\d.]/g, ''));
-  if (Number.isNaN(num)) return '';
-  return `$${num.toLocaleString()}`;
-}
-
-function unformatCurrency(val) {
-  if (!val) return '';
-  return val.replace(/[^\d.]/g, '');
-}
+  return String(val).replace(/[^\d.]/g, '');
+};
 
 export default function Asset({ route, navigation }) {
   const { assetId, vaultId: routeVaultId } = route.params || {};
@@ -54,8 +47,16 @@ export default function Asset({ route, navigation }) {
     backendReachable,
     showAlert,
     createAuditEvent,
+    formatCurrencyValue,
   } = useData();
   const Alert = { alert: showAlert };
+
+  const formatCurrency = (val) => {
+    if (val == null || val === '') return '';
+    const n = typeof val === 'number' ? val : Number(String(val).replace(/[^0-9.-]/g, ''));
+    if (!Number.isFinite(n)) return '';
+    return formatCurrencyValue ? formatCurrencyValue(n) : String(n);
+  };
 
   const isOffline = backendReachable === false;
 

@@ -47,6 +47,8 @@ const DATA_KEY = 'lamb-mobile-data-v6';
 const LAST_ACTIVITY_KEY = 'lamb-mobile-last-activity-v1';
 const BIOMETRIC_SECURE_USER_ID_KEY = 'lamb-mobile-biometric-userid-secure-v1';
 const BIOMETRIC_ENABLED_USER_ID_KEY = 'lamb-mobile-biometric-userid-enabled-v1';
+const LANGUAGE_PREF_KEY = 'lamb-mobile-language-pref-v1';
+const CURRENCY_PREF_KEY = 'lamb-mobile-currency-pref-v1';
 const STORAGE_VERSION = 6;
 // Do not hardcode a remote default avatar URL.
 // Avatar fallback is rendered in the UI when profileImage is missing or fails to load.
@@ -56,6 +58,74 @@ const DEFAULT_HERO_IMAGE = require('../../assets/default-hero.jpg');
 
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 const TRIAL_DAYS = 14;
+
+const getDeviceLocale = () => {
+  try {
+    const locale = Intl?.DateTimeFormat?.().resolvedOptions?.().locale;
+    return typeof locale === 'string' && locale ? locale : 'en-US';
+  } catch {
+    return 'en-US';
+  }
+};
+
+const inferLanguageFromLocale = (locale) => {
+  const raw = typeof locale === 'string' ? locale : '';
+  const first = raw.split(/[-_]/)[0];
+  const lang = first ? first.toLowerCase() : 'en';
+  return /^[a-z]{2,3}$/.test(lang) ? lang : 'en';
+};
+
+const inferRegionFromLocale = (locale) => {
+  const raw = typeof locale === 'string' ? locale : '';
+  const parts = raw.split(/[-_]/);
+  const region = parts.length >= 2 ? String(parts[1] || '').toUpperCase() : '';
+  return /^[A-Z]{2}$/.test(region) ? region : '';
+};
+
+const inferCurrencyFromRegion = (region) => {
+  const r = typeof region === 'string' ? region.toUpperCase() : '';
+  const EUR = new Set([
+    'AT', 'BE', 'CY', 'DE', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PT', 'SI', 'SK',
+  ]);
+  if (EUR.has(r)) return 'EUR';
+  if (r === 'US') return 'USD';
+  if (r === 'GB') return 'GBP';
+  if (r === 'AU') return 'AUD';
+  if (r === 'CA') return 'CAD';
+  if (r === 'NZ') return 'NZD';
+  if (r === 'CH') return 'CHF';
+  if (r === 'JP') return 'JPY';
+  if (r === 'CN') return 'CNY';
+  if (r === 'HK') return 'HKD';
+  if (r === 'SG') return 'SGD';
+  if (r === 'SE') return 'SEK';
+  if (r === 'NO') return 'NOK';
+  if (r === 'DK') return 'DKK';
+  if (r === 'IN') return 'INR';
+  return 'USD';
+};
+
+const normalizeLanguageCode = (input) => {
+  const raw = typeof input === 'string' ? input.trim().toLowerCase() : '';
+  if (!raw) return null;
+  if (!/^[a-z]{2,3}$/.test(raw)) return null;
+  return raw;
+};
+
+const normalizeCurrencyCode = (input) => {
+  const raw = typeof input === 'string' ? input.trim().toUpperCase() : '';
+  if (!raw) return null;
+  if (!/^[A-Z]{3}$/.test(raw)) return null;
+  return raw;
+};
+
+const TRANSLATIONS = {
+  en: { welcome: 'Welcome' },
+  es: { welcome: 'Bienvenido' },
+  fr: { welcome: 'Bienvenue' },
+  de: { welcome: 'Willkommen' },
+  it: { welcome: 'Benvenuto' },
+};
 
 const PASSWORD_MIN_LENGTH = 12;
 const PASSWORD_MAX_LENGTH = 128;
@@ -687,6 +757,14 @@ export function DataProvider({ children }) {
   const [auditEvents, setAuditEvents] = useState([]);
   const [alertState, setAlertState] = useState({ visible: false, title: '', message: '', buttons: null });
   const [lastActivityAt, setLastActivityAt] = useState(Date.now());
+  const deviceLocale = useMemo(() => getDeviceLocale(), []);
+  const deviceRegion = useMemo(() => inferRegionFromLocale(deviceLocale), [deviceLocale]);
+  const [language, setLanguage] = useState(() => inferLanguageFromLocale(deviceLocale));
+  const [currency, setCurrency] = useState(() => inferCurrencyFromRegion(deviceRegion));
+  const effectiveLocale = useMemo(() => {
+    const lang = normalizeLanguageCode(language) || inferLanguageFromLocale(deviceLocale);
+    return deviceRegion ? `${lang}-${deviceRegion}` : (lang || deviceLocale);
+  }, [language, deviceLocale, deviceRegion]);
   const lastActivityWriteAtRef = useRef(0);
   const lastSubscriptionSyncAtRef = useRef(0);
   const ownerMembershipUnsubsRef = useRef([]);
@@ -728,6 +806,46 @@ export function DataProvider({ children }) {
 
     setAlertState({ visible: true, title: effectiveTitle, message: effectiveMessage, buttons: btns });
   }, []);
+
+  const t = useCallback(
+    (key) => {
+      const lang = normalizeLanguageCode(language) || 'en';
+      const dict = TRANSLATIONS[lang] || TRANSLATIONS.en;
+      return dict?.[key] || TRANSLATIONS.en?.[key] || String(key);
+    },
+    [language]
+  );
+
+  const setLanguagePreference = useCallback(async (nextLanguage) => {
+    const normalized = normalizeLanguageCode(nextLanguage);
+    if (!normalized) return { ok: false, message: 'Language must be a 2–3 letter code (e.g., en, fr).' };
+    setLanguage(normalized);
+    await setItem(LANGUAGE_PREF_KEY, normalized);
+    return { ok: true };
+  }, []);
+
+  const setCurrencyPreference = useCallback(async (nextCurrency) => {
+    const normalized = normalizeCurrencyCode(nextCurrency);
+    if (!normalized) return { ok: false, message: 'Currency must be a 3-letter code (e.g., USD, EUR).' };
+    setCurrency(normalized);
+    await setItem(CURRENCY_PREF_KEY, normalized);
+    return { ok: true };
+  }, []);
+
+  const formatCurrencyValue = useCallback(
+    (value) => {
+      const n = typeof value === 'number' ? value : Number(String(value || '').replace(/[^0-9.-]/g, ''));
+      if (!Number.isFinite(n)) return '';
+      try {
+        return new Intl.NumberFormat(effectiveLocale, { style: 'currency', currency: currency || 'USD' }).format(n);
+      } catch {
+        // Fallback if Intl currency formatting is unavailable.
+        const fixed = Math.round(n * 100) / 100;
+        return `${currency || 'USD'} ${fixed.toLocaleString()}`;
+      }
+    },
+    [effectiveLocale, currency]
+  );
 
   const dismissAlert = useCallback(() => {
     setAlertState((prev) => ({ ...prev, visible: false }));
@@ -1000,6 +1118,14 @@ export function DataProvider({ children }) {
           lastActivityWriteAtRef.current = now;
           await setItem(LAST_ACTIVITY_KEY, now);
         }
+        // Localization defaults: device-detected on first run, but always overrideable.
+        const storedLang = await getItem(LANGUAGE_PREF_KEY, null);
+        const storedCurrency = await getItem(CURRENCY_PREF_KEY, null);
+        const normalizedLang = normalizeLanguageCode(storedLang);
+        const normalizedCurrency = normalizeCurrencyCode(storedCurrency);
+        if (normalizedLang) setLanguage(normalizedLang);
+        if (normalizedCurrency) setCurrency(normalizedCurrency);
+
         const stored = await getItem(DATA_KEY, null);
         if (stored && stored.version === STORAGE_VERSION) {
           const migrated = migrateData(stored);
@@ -3449,6 +3575,13 @@ export function DataProvider({ children }) {
     loading,
     backendReachable,
     checkBackend,
+    language,
+    currency,
+    locale: effectiveLocale,
+    setLanguagePreference,
+    setCurrencyPreference,
+    formatCurrencyValue,
+    t,
     users,
     currentUser,
     setCurrentUser,
