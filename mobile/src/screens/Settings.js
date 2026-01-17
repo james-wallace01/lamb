@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { ActionSheetIOS, StyleSheet, View, Text, ScrollView, RefreshControl, TouchableOpacity, Linking, Platform, Switch } from 'react-native';
+import { ActionSheetIOS, Image, StyleSheet, View, Text, ScrollView, RefreshControl, TouchableOpacity, Linking, Platform, Switch } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import LambHeader from '../components/LambHeader';
 import { useData } from '../context/DataContext';
 import { runWithMinimumDuration } from '../utils/timing';
+import { getInitials } from '../utils/user';
 
 const FEEDBACK_EMAIL = 'support@lamb.app';
 
-export default function Settings({ navigation }) {
+export default function Settings({ navigation, route }) {
   const {
     refreshData,
     theme,
@@ -32,6 +33,13 @@ export default function Settings({ navigation }) {
   const [languageDraft, setLanguageDraft] = useState(languagePreferenceMode === 'auto' ? '__auto__' : String(language || ''));
   const [currencyDraft, setCurrencyDraft] = useState(currencyPreferenceMode === 'auto' ? '__auto__' : String(currency || ''));
   const [updatingBiometric, setUpdatingBiometric] = useState(false);
+  const [avatarFailed, setAvatarFailed] = useState(false);
+
+  const isOnProfile = route?.name === 'Profile';
+  const goProfile = () => {
+    if (isOnProfile) return;
+    navigation?.navigate?.('Profile');
+  };
 
   const Alert = { alert: showAlert };
 
@@ -157,7 +165,36 @@ export default function Settings({ navigation }) {
         <View style={styles.headerRow}>
           <LambHeader />
         </View>
-        <Text style={[styles.title, { color: theme.text }]}>Settings</Text>
+        <View style={styles.headerTitleRow}>
+          <Text style={[styles.title, { color: theme.text }]}>Settings</Text>
+          {currentUser ? (
+            <TouchableOpacity
+              onPress={goProfile}
+              disabled={isOnProfile}
+              accessibilityRole="button"
+              accessibilityLabel="Profile"
+            >
+              {!avatarFailed && currentUser?.profileImage ? (
+                <Image source={{ uri: currentUser.profileImage }} style={styles.avatar} onError={() => setAvatarFailed(true)} />
+              ) : (
+                <View
+                  style={[
+                    styles.avatar,
+                    {
+                      backgroundColor: theme.primary,
+                      borderColor: theme.primary,
+                      borderWidth: 1,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    },
+                  ]}
+                >
+                  <Text style={[styles.avatarFallbackText, { color: theme.onAccentText || '#fff' }]}>{getInitials(currentUser)}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          ) : null}
+        </View>
 
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
           <Text style={[styles.sectionTitle, { color: theme.text }]}>App</Text>
@@ -345,6 +382,9 @@ const styles = StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: '#0b0b0f' },
   container: { padding: 20, backgroundColor: '#0b0b0f', gap: 12, paddingBottom: 100 },
   headerRow: { position: 'relative', width: '100%' },
+  headerTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  avatar: { width: 36, height: 36, borderRadius: 18 },
+  avatarFallbackText: { fontWeight: '800', fontSize: 12 },
   title: { fontSize: 24, fontWeight: '700', color: '#fff' },
   subtitle: { color: '#c5c5d0' },
   card: { borderWidth: 1, borderColor: '#1f2738', borderRadius: 12, padding: 16, gap: 8, marginTop: 8 },

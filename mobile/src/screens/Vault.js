@@ -7,12 +7,19 @@ import LambHeader from '../components/LambHeader';
 import BackButton from '../components/BackButton';
 import { getVaultCapabilities } from '../policies/capabilities';
 import { runWithMinimumDuration } from '../utils/timing';
+import { getInitials } from '../utils/user';
 
 export default function Vault({ navigation, route }) {
   const { vaultId } = route.params || {};
   const { loading, vaults, collections, addCollection, currentUser, getRoleForVault, canCreateCollectionsInVault, users, deleteVault, updateVault, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultCollections, releaseVaultCollections, backendReachable, showAlert, createAuditEvent } = useData();
   const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
+  const isOnProfile = route?.name === 'Profile';
+  const goProfile = () => {
+    if (isOnProfile) return;
+    navigation?.navigate?.('Profile');
+  };
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const [newName, setNewName] = useState('');
   const [shareVisible, setShareVisible] = useState(false);
   const [shareTargetType, setShareTargetType] = useState(null);
@@ -529,14 +536,43 @@ export default function Vault({ navigation, route }) {
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.title, { color: theme.text }]}>{vault?.name || 'Vault'}</Text>
                       </View>
-                      <TouchableOpacity
-                        style={styles.infoButton}
-                        onPress={() => setInfoVisible(true)}
-                        accessibilityRole="button"
-                        accessibilityLabel="Vault info"
-                      >
-                        <Text style={styles.infoButtonText}>ℹ</Text>
-                      </TouchableOpacity>
+                      <View style={styles.headerActions}>
+                        <TouchableOpacity
+                          style={styles.infoButton}
+                          onPress={() => setInfoVisible(true)}
+                          accessibilityRole="button"
+                          accessibilityLabel="Vault info"
+                        >
+                          <Text style={styles.infoButtonText}>ℹ</Text>
+                        </TouchableOpacity>
+                        {currentUser ? (
+                          <TouchableOpacity
+                            onPress={goProfile}
+                            disabled={isOnProfile}
+                            accessibilityRole="button"
+                            accessibilityLabel="Profile"
+                          >
+                            {!avatarFailed && currentUser?.profileImage ? (
+                              <Image source={{ uri: currentUser.profileImage }} style={styles.avatar} onError={() => setAvatarFailed(true)} />
+                            ) : (
+                              <View
+                                style={[
+                                  styles.avatar,
+                                  {
+                                    backgroundColor: theme.primary,
+                                    borderColor: theme.primary,
+                                    borderWidth: 1,
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  },
+                                ]}
+                              >
+                                <Text style={[styles.avatarFallbackText, { color: theme.onAccentText || '#fff' }]}>{getInitials(currentUser)}</Text>
+                              </View>
+                            )}
+                          </TouchableOpacity>
+                        ) : null}
+                      </View>
                     </View>
                     <Text style={[styles.subtitleDim, { color: theme.textMuted }]}>Access Type: {accessType}</Text>
 
@@ -686,6 +722,9 @@ const styles = StyleSheet.create({
   listHeader: { paddingBottom: 0 },
   headerArea: { gap: 12 },
   headerSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  avatar: { width: 32, height: 32, borderRadius: 16 },
+  avatarFallbackText: { fontWeight: '800', fontSize: 12 },
   title: { fontSize: 24, fontWeight: '700', color: '#fff', lineHeight: 32, flexShrink: 1 },
   metadataSection: { backgroundColor: '#11121a', borderWidth: 1, borderColor: '#1f2738', borderRadius: 10, padding: 12, gap: 8 },
   metadataRow: { color: '#e5e7f0', fontSize: 13 },

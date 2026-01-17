@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { collection, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 import { useIsFocused } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -7,6 +7,7 @@ import LambHeader from '../components/LambHeader';
 import { useData } from '../context/DataContext';
 import { firestore } from '../firebase';
 import { runWithMinimumDuration } from '../utils/timing';
+import { getInitials } from '../utils/user';
 
 const titleize = (raw) => {
   const s = typeof raw === 'string' ? raw : '';
@@ -235,10 +236,17 @@ const getActionStyles = (action, theme) => {
 
 const EMAIL_SENT_MARKER_TYPE = 'NOTIFICATION_EMAIL_SENT';
 
-export default function Tracking({ navigation }) {
+export default function Tracking({ navigation, route }) {
   const { theme, currentUser, vaults, vaultMemberships, users, backendReachable } = useData();
   const isOffline = backendReachable === false;
   const isFocused = useIsFocused();
+
+  const isOnProfile = route?.name === 'Profile';
+  const goProfile = () => {
+    if (isOnProfile) return;
+    navigation?.navigate?.('Profile');
+  };
+  const [avatarFailed, setAvatarFailed] = useState(false);
 
   const uid = currentUser?.id ? String(currentUser.id) : null;
   const hasProMembership = String(currentUser?.subscription?.tier || '').toUpperCase() === 'PRO';
@@ -428,6 +436,33 @@ export default function Tracking({ navigation }) {
         <LambHeader />
         <View style={styles.headerRow}>
           <Text style={[styles.title, { color: theme.text }]}>Tracking</Text>
+          {currentUser ? (
+            <TouchableOpacity
+              onPress={goProfile}
+              disabled={isOnProfile}
+              accessibilityRole="button"
+              accessibilityLabel="Profile"
+            >
+              {!avatarFailed && currentUser?.profileImage ? (
+                <Image source={{ uri: currentUser.profileImage }} style={styles.avatar} onError={() => setAvatarFailed(true)} />
+              ) : (
+                <View
+                  style={[
+                    styles.avatar,
+                    {
+                      backgroundColor: theme.primary,
+                      borderColor: theme.primary,
+                      borderWidth: 1,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    },
+                  ]}
+                >
+                  <Text style={[styles.avatarFallbackText, { color: theme.onAccentText || '#fff' }]}>{getInitials(currentUser)}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         {!hasProMembership ? (
@@ -625,6 +660,8 @@ const styles = StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: '#0b0b0f' },
   container: { padding: 20, paddingBottom: 160, backgroundColor: '#0b0b0f', gap: 12 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  avatar: { width: 36, height: 36, borderRadius: 18 },
+  avatarFallbackText: { fontWeight: '800', fontSize: 12 },
   title: { fontSize: 24, fontWeight: '700', color: '#fff' },
   subtitle: { color: '#c5c5d0' },
 

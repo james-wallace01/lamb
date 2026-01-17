@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert as NativeAlert, Modal, RefreshControl, ScrollView, SectionList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert as NativeAlert, Image, Modal, RefreshControl, ScrollView, SectionList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import LambHeader from '../components/LambHeader';
@@ -8,6 +8,7 @@ import { useData } from '../context/DataContext';
 import { firestore } from '../firebase';
 import { getAssetCapabilities, getCollectionCapabilities, getVaultCapabilities } from '../policies/capabilities';
 import { runWithMinimumDuration } from '../utils/timing';
+import { getInitials } from '../utils/user';
 
 export default function PrivateVaults({ navigation, route }) {
   const {
@@ -47,6 +48,12 @@ export default function PrivateVaults({ navigation, route }) {
   } = useData();
   const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
+  const isOnProfile = route?.name === 'Profile';
+  const goProfile = () => {
+    if (isOnProfile) return;
+    navigation?.navigate?.('Profile');
+  };
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const [newVaultName, setNewVaultName] = useState('');
   const [newCollectionName, setNewCollectionName] = useState('');
   const [newAssetTitle, setNewAssetTitle] = useState('');
@@ -935,6 +942,33 @@ export default function PrivateVaults({ navigation, route }) {
             <LambHeader />
             <View style={styles.headerRow}>
               <Text style={[styles.title, { color: theme.text }]}>Private Vaults</Text>
+              {currentUser ? (
+                <TouchableOpacity
+                  onPress={goProfile}
+                  disabled={isOnProfile}
+                  accessibilityRole="button"
+                  accessibilityLabel="Profile"
+                >
+                  {!avatarFailed && currentUser?.profileImage ? (
+                    <Image source={{ uri: currentUser.profileImage }} style={styles.avatar} onError={() => setAvatarFailed(true)} />
+                  ) : (
+                    <View
+                      style={[
+                        styles.avatar,
+                        {
+                          backgroundColor: theme.primary,
+                          borderColor: theme.primary,
+                          borderWidth: 1,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.avatarFallbackText, { color: theme.onAccentText || '#fff' }]}>{getInitials(currentUser)}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ) : null}
             </View>
 
             {showVaultTotalValue !== false && selectedVaultId ? (
@@ -1935,6 +1969,8 @@ const styles = StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: '#0b0b0f' },
   container: { padding: 20, paddingBottom: 140, backgroundColor: '#0b0b0f' },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  avatar: { width: 36, height: 36, borderRadius: 18 },
+  avatarFallbackText: { fontWeight: '800', fontSize: 12 },
   totalValueRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   totalValueLabel: { fontWeight: '700' },
   totalValueAmount: { fontWeight: '800', fontSize: 16 },

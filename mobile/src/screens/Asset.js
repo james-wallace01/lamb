@@ -17,6 +17,7 @@ import LambHeader from '../components/LambHeader';
 import BackButton from '../components/BackButton';
 import { getAssetCapabilities } from '../policies/capabilities';
 import { runWithMinimumDuration } from '../utils/timing';
+import { getInitials } from '../utils/user';
 
 const unformatCurrency = (val) => {
   if (!val) return '';
@@ -59,6 +60,12 @@ export default function Asset({ route, navigation }) {
   };
 
   const isOffline = backendReachable === false;
+  const isOnProfile = route?.name === 'Profile';
+  const goProfile = () => {
+    if (isOnProfile) return;
+    navigation?.navigate?.('Profile');
+  };
+  const [avatarFailed, setAvatarFailed] = useState(false);
 
   const asset = useMemo(() => assets.find((a) => a.id === assetId), [assetId, assets]);
   const owner = useMemo(() => users.find((u) => u.id === asset?.ownerId), [users, asset]);
@@ -637,14 +644,43 @@ export default function Asset({ route, navigation }) {
           <View style={{ flex: 1 }}>
             <Text style={[styles.title, { color: theme.text }]}>{asset.title}</Text>
           </View>
-          <TouchableOpacity
-            style={styles.infoButton}
-            onPress={() => setInfoVisible(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Asset info"
-          >
-            <Text style={styles.infoButtonText}>ℹ</Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.infoButton}
+              onPress={() => setInfoVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Asset info"
+            >
+              <Text style={styles.infoButtonText}>ℹ</Text>
+            </TouchableOpacity>
+            {currentUser ? (
+              <TouchableOpacity
+                onPress={goProfile}
+                disabled={isOnProfile}
+                accessibilityRole="button"
+                accessibilityLabel="Profile"
+              >
+                {!avatarFailed && currentUser?.profileImage ? (
+                  <Image source={{ uri: currentUser.profileImage }} style={styles.avatarSmall} onError={() => setAvatarFailed(true)} />
+                ) : (
+                  <View
+                    style={[
+                      styles.avatarSmall,
+                      {
+                        backgroundColor: theme.primary,
+                        borderColor: theme.primary,
+                        borderWidth: 1,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.avatarFallbackText, { color: theme.onAccentText || '#fff' }]}>{getInitials(currentUser)}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            ) : null}
+          </View>
         </View>
 
         <Text style={[styles.roleBadge, { color: theme.textMuted }]}>Access Type: {accessType}</Text>
@@ -861,6 +897,9 @@ const styles = StyleSheet.create({
   container: { flexGrow: 1, padding: 20, backgroundColor: '#0b0b0f', gap: 12 },
   headerRow: { position: 'relative', width: '100%' },
   headerSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  avatarSmall: { width: 32, height: 32, borderRadius: 16 },
+  avatarFallbackText: { fontWeight: '800', fontSize: 12 },
   title: { fontSize: 24, fontWeight: '700', color: '#fff', flex: 1, lineHeight: 32 },
   subtitle: { color: '#c5c5d0' },
   roleBadge: { color: '#9aa1b5', fontSize: 13 },

@@ -5,9 +5,14 @@ import LambHeader from '../components/LambHeader';
 import { getInitials } from '../utils/user';
 import { runWithMinimumDuration } from '../utils/timing';
 
-export default function Home({ navigation }) {
+export default function Home({ navigation, route }) {
   const { currentUser, refreshData, theme, membershipAccess, acceptInvitationCode, denyInvitationCode, listMyInvitations, backendReachable, showNotice, t } = useData();
   const isOffline = backendReachable === false;
+  const isOnProfile = route?.name === 'Profile';
+  const goProfile = () => {
+    if (isOnProfile) return;
+    navigation?.navigate?.('Profile');
+  };
 
   const notifyError = (message) => showNotice?.(message, { variant: 'error', durationMs: 2600 });
   const [invitations, setInvitations] = useState([]);
@@ -118,24 +123,33 @@ export default function Home({ navigation }) {
           <View style={styles.headerRow}>
             <Text style={[styles.title, { color: theme.text }]}>Home</Text>
             <View style={styles.headerActions}>
-              {!avatarFailed && currentUser?.profileImage ? (
-                <Image source={{ uri: currentUser.profileImage }} style={styles.avatar} onError={() => setAvatarFailed(true)} />
-              ) : (
-                <View
-                  style={[
-                    styles.avatar,
-                    {
-                      backgroundColor: theme.primary,
-                      borderColor: theme.primary,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderWidth: 1,
-                    },
-                  ]}
+              {currentUser ? (
+                <TouchableOpacity
+                  onPress={goProfile}
+                  disabled={isOnProfile}
+                  accessibilityRole="button"
+                  accessibilityLabel="Profile"
                 >
-                  <Text style={[styles.avatarFallbackText, { color: '#fff' }]}>{getInitials(currentUser)}</Text>
-                </View>
-              )}
+                  {!avatarFailed && currentUser?.profileImage ? (
+                    <Image source={{ uri: currentUser.profileImage }} style={styles.avatar} onError={() => setAvatarFailed(true)} />
+                  ) : (
+                    <View
+                      style={[
+                        styles.avatar,
+                        {
+                          backgroundColor: theme.primary,
+                          borderColor: theme.primary,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderWidth: 1,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.avatarFallbackText, { color: '#fff' }]}>{getInitials(currentUser)}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ) : null}
             </View>
           </View>
 
@@ -235,23 +249,32 @@ export default function Home({ navigation }) {
         <View style={styles.headerRow}>
           <Text style={[styles.title, { color: theme.text }]}>Home</Text>
           <View style={styles.headerActions}>
-            {!avatarFailed && currentUser?.profileImage ? (
-              <Image source={{ uri: currentUser.profileImage }} style={styles.avatar} onError={() => setAvatarFailed(true)} />
-            ) : (
-              <View
-                style={[
-                  styles.avatar,
-                  {
-                    backgroundColor: theme.primary,
-                    borderColor: theme.primary,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  },
-                ]}
+            {currentUser ? (
+              <TouchableOpacity
+                onPress={goProfile}
+                disabled={isOnProfile}
+                accessibilityRole="button"
+                accessibilityLabel="Profile"
               >
-                <Text style={[styles.avatarFallbackText, { color: '#fff' }]}>{getInitials(currentUser)}</Text>
-              </View>
-            )}
+                {!avatarFailed && currentUser?.profileImage ? (
+                  <Image source={{ uri: currentUser.profileImage }} style={styles.avatar} onError={() => setAvatarFailed(true)} />
+                ) : (
+                  <View
+                    style={[
+                      styles.avatar,
+                      {
+                        backgroundColor: theme.primary,
+                        borderColor: theme.primary,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.avatarFallbackText, { color: '#fff' }]}>{getInitials(currentUser)}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
 

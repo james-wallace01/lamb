@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Linking, Platform, NativeModules } from 'react-native';
+import { ActivityIndicator, Image, Linking, NativeModules, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
@@ -9,9 +9,10 @@ import { apiFetch } from '../utils/apiFetch';
 import { safeIapCall } from '../utils/iap';
 import * as RNIap from 'react-native-iap';
 import { IAP_PRODUCTS } from '../config/iap';
+import { getInitials } from '../utils/user';
 
 export default function ChooseSubscription({ navigation, route }) {
-  const { subscriptionTiers, convertPrice, theme, register, loading, ensureFirebaseSignupAuth, refreshData, showAlert } = useData();
+  const { subscriptionTiers, convertPrice, theme, register, loading, ensureFirebaseSignupAuth, refreshData, showAlert, currentUser } = useData();
   const Alert = { alert: showAlert };
   const insets = useSafeAreaInsets();
   const { firstName, lastName, email, username, password } = route.params || {};
@@ -21,6 +22,13 @@ export default function ChooseSubscription({ navigation, route }) {
   const skipInFlightRef = useRef(false);
   const [iapReady, setIapReady] = useState(false);
   const [iapInitError, setIapInitError] = useState(null);
+  const [avatarFailed, setAvatarFailed] = useState(false);
+
+  const isOnProfile = route?.name === 'Profile';
+  const goProfile = () => {
+    if (isOnProfile) return;
+    navigation?.navigate?.('Profile');
+  };
 
   const iapNativeAvailable =
     Platform.OS === 'ios' &&
@@ -343,7 +351,36 @@ export default function ChooseSubscription({ navigation, route }) {
       contentContainerStyle={[styles.container, { backgroundColor: theme.background, paddingBottom: 24 + footerSpacer }]}
     >
       <LambHeader />
-      <Text style={[styles.title, { color: theme.text }]}>Choose Your Membership</Text>
+      <View style={styles.headerRow}>
+        <Text style={[styles.title, { color: theme.text }]}>Choose Your Membership</Text>
+        {currentUser ? (
+          <TouchableOpacity
+            onPress={goProfile}
+            disabled={isOnProfile}
+            accessibilityRole="button"
+            accessibilityLabel="Profile"
+          >
+            {!avatarFailed && currentUser?.profileImage ? (
+              <Image source={{ uri: currentUser.profileImage }} style={styles.avatar} onError={() => setAvatarFailed(true)} />
+            ) : (
+              <View
+                style={[
+                  styles.avatar,
+                  {
+                    backgroundColor: theme.primary,
+                    borderColor: theme.primary,
+                    borderWidth: 1,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  },
+                ]}
+              >
+                <Text style={[styles.avatarFallbackText, { color: theme.onAccentText || '#fff' }]}>{getInitials(currentUser)}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        ) : null}
+      </View>
       <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Subscriptions are billed by Apple and can be managed in App Store Subscriptions.</Text>
       <Text style={[styles.subtitle, { color: theme.textMuted }]}>Auto-renews until canceled. Cancel anytime in App Store Subscriptions.</Text>
 
@@ -440,15 +477,31 @@ const styles = StyleSheet.create({
     backgroundColor: '#0b0b0f',
     gap: 20,
   },
+  headerRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   title: {
     fontSize: 28,
     fontWeight: '800',
     color: '#fff',
     marginTop: 12,
+    flex: 1,
   },
   subtitle: {
     color: '#c5c5d0',
     marginBottom: 8,
+  },
+  avatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+  },
+  avatarFallbackText: {
+    fontSize: 12,
+    fontWeight: '800',
   },
   plansContainer: {
     gap: 12,

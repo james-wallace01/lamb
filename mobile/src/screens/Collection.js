@@ -7,12 +7,19 @@ import LambHeader from '../components/LambHeader';
 import BackButton from '../components/BackButton';
 import { getCollectionCapabilities } from '../policies/capabilities';
 import { runWithMinimumDuration } from '../utils/timing';
+import { getInitials } from '../utils/user';
 
 export default function Collection({ navigation, route }) {
   const { collectionId } = route.params || {};
   const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultAssets, releaseVaultAssets, retainVaultCollections, releaseVaultCollections, backendReachable, showAlert, createAuditEvent } = useData();
   const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
+  const isOnProfile = route?.name === 'Profile';
+  const goProfile = () => {
+    if (isOnProfile) return;
+    navigation?.navigate?.('Profile');
+  };
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [shareVisible, setShareVisible] = useState(false);
   const [shareTargetType, setShareTargetType] = useState(null);
@@ -427,14 +434,43 @@ export default function Collection({ navigation, route }) {
         <View style={{ flex: 1 }}>
           <Text style={[styles.title, { color: theme.text }]}>{collection?.name || 'Collection'}</Text>
         </View>
-        <TouchableOpacity
-          style={styles.infoButton}
-          onPress={() => setInfoVisible(true)}
-          accessibilityRole="button"
-          accessibilityLabel="Collection info"
-        >
-          <Text style={styles.infoButtonText}>ℹ</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.infoButton}
+            onPress={() => setInfoVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Collection info"
+          >
+            <Text style={styles.infoButtonText}>ℹ</Text>
+          </TouchableOpacity>
+          {currentUser ? (
+            <TouchableOpacity
+              onPress={goProfile}
+              disabled={isOnProfile}
+              accessibilityRole="button"
+              accessibilityLabel="Profile"
+            >
+              {!avatarFailed && currentUser?.profileImage ? (
+                <Image source={{ uri: currentUser.profileImage }} style={styles.avatarSmall} onError={() => setAvatarFailed(true)} />
+              ) : (
+                <View
+                  style={[
+                    styles.avatarSmall,
+                    {
+                      backgroundColor: theme.primary,
+                      borderColor: theme.primary,
+                      borderWidth: 1,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    },
+                  ]}
+                >
+                  <Text style={[styles.avatarFallbackText, { color: theme.onAccentText || '#fff' }]}>{getInitials(currentUser)}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
       <Text style={[styles.subtitleDim, { color: theme.textMuted }]}>Access Type: {accessType}</Text>
       {(canEdit || canShare || canMove) && (
@@ -802,6 +838,9 @@ const styles = StyleSheet.create({
   headerRow: { position: 'relative', width: '100%' },
   headerArea: { gap: 12 },
   headerSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  avatarSmall: { width: 32, height: 32, borderRadius: 16 },
+  avatarFallbackText: { fontWeight: '800', fontSize: 12 },
   title: { fontSize: 24, fontWeight: '700', color: '#fff', lineHeight: 32 },
   infoButton: { padding: 8, marginLeft: 8 },
   infoButtonText: { color: '#e5e7f0', fontSize: 20, fontWeight: '700' },

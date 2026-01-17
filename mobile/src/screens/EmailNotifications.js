@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import LambHeader from '../components/LambHeader';
 import { useData } from '../context/DataContext';
 import { apiFetch } from '../utils/apiFetch';
 import { API_URL } from '../config/api';
+import { getInitials } from '../utils/user';
 
 const CATEGORIES = {
   billing: 'billing',
@@ -42,9 +43,15 @@ const ToggleRow = ({ label, helper, value, disabled, onPress, theme }) => {
   );
 };
 
-export default function EmailNotifications() {
+export default function EmailNotifications({ navigation, route }) {
   const { theme, vaults, currentUser, showNotice } = useData();
   const notifyError = (message) => showNotice?.(message, { variant: 'error', durationMs: 2600 });
+  const isOnProfile = route?.name === 'Profile';
+  const goProfile = () => {
+    if (isOnProfile) return;
+    navigation?.navigate?.('Profile');
+  };
+  const [avatarFailed, setAvatarFailed] = useState(false);
 
   const ownsAnyVault = useMemo(() => {
     if (!currentUser?.id) return false;
@@ -150,11 +157,37 @@ export default function EmailNotifications() {
   return (
     <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
       <ScrollView contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}>
+        <LambHeader />
         <View style={styles.headerRow}>
-          <LambHeader />
+          <Text style={[styles.title, { color: theme.text }]}>Email Notifications</Text>
+          {currentUser ? (
+            <TouchableOpacity
+              onPress={goProfile}
+              disabled={isOnProfile}
+              accessibilityRole="button"
+              accessibilityLabel="Profile"
+            >
+              {!avatarFailed && currentUser?.profileImage ? (
+                <Image source={{ uri: currentUser.profileImage }} style={styles.avatar} onError={() => setAvatarFailed(true)} />
+              ) : (
+                <View
+                  style={[
+                    styles.avatar,
+                    {
+                      backgroundColor: theme.primary,
+                      borderColor: theme.primary,
+                      borderWidth: 1,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    },
+                  ]}
+                >
+                  <Text style={[styles.avatarFallbackText, { color: theme.onAccentText || '#fff' }]}>{getInitials(currentUser)}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          ) : null}
         </View>
-
-        <Text style={[styles.title, { color: theme.text }]}>Email Notifications</Text>
 
         <ToggleRow
           theme={theme}
@@ -260,7 +293,9 @@ export default function EmailNotifications() {
 const styles = StyleSheet.create({
   wrapper: { flex: 1 },
   container: { padding: 20, gap: 12, paddingBottom: 100 },
-  headerRow: { position: 'relative', width: '100%' },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  avatar: { width: 36, height: 36, borderRadius: 18 },
+  avatarFallbackText: { fontWeight: '800', fontSize: 12 },
   title: { fontSize: 24, fontWeight: '700' },
   sectionCard: { borderWidth: 1, borderRadius: 12, padding: 14, gap: 8, marginTop: 8 },
   sectionTitle: { fontWeight: '800', fontSize: 16, marginBottom: 2 },
