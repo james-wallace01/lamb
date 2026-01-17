@@ -111,7 +111,6 @@ export default function PrivateVaults({ navigation, route }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [vaultTypeQuery, setVaultTypeQuery] = useState('');
   const [collectionTypeQuery, setCollectionTypeQuery] = useState('');
-  const [assetTypeQuery, setAssetTypeQuery] = useState('');
   const [vaultSortMode, setVaultSortMode] = useState('az');
   const [collectionSortMode, setCollectionSortMode] = useState('az');
   const [assetSortMode, setAssetSortMode] = useState('az');
@@ -555,7 +554,7 @@ export default function PrivateVaults({ navigation, route }) {
     });
 
     const allAssets = dedupeById([...(prunedOptimistic || []), ...(assets || [])]);
-    const queries = [searchQuery, assetTypeQuery].map((x) => String(x || '').trim().toLowerCase()).filter(Boolean);
+    const queries = [searchQuery].map((x) => String(x || '').trim().toLowerCase()).filter(Boolean);
     let list = allAssets.filter((a) => String(a?.collectionId) === selectedIdStr);
     const deletedMap = optimisticDeletedAssetIds || {};
     list = list.filter((a) => !deletedMap[String(a?.id)]);
@@ -569,7 +568,7 @@ export default function PrivateVaults({ navigation, route }) {
     const dir = assetSortMode === 'za' ? -1 : 1;
     list.sort((a, b) => dir * String(a?.title || '').localeCompare(String(b?.title || '')));
     return list;
-  }, [assets, optimisticAssets, optimisticDeletedAssetIds, selectedCollectionId, searchQuery, assetTypeQuery, assetSortMode]);
+  }, [assets, optimisticAssets, optimisticDeletedAssetIds, selectedCollectionId, searchQuery, assetSortMode]);
 
   const selectedAsset = useMemo(
     () => {
@@ -685,14 +684,12 @@ export default function PrivateVaults({ navigation, route }) {
     setSelectedVaultId(vId);
     setSelectedCollectionId(null);
     setCollectionTypeQuery('');
-    setAssetTypeQuery('');
     setVaultDropdownOpen(false);
     setCollectionDropdownOpen(false);
   };
 
   const onSelectCollection = (collectionId) => {
     setSelectedCollectionId(collectionId ? String(collectionId) : null);
-    setAssetTypeQuery('');
     setCollectionDropdownOpen(false);
   };
 
@@ -778,17 +775,6 @@ export default function PrivateVaults({ navigation, route }) {
             ) : null}
           </View>
         </View>
-
-        {!anyCreateOpen ? (
-          <TextInput
-            style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, marginTop: 8 }]}
-            placeholder="Type to search assets"
-            placeholderTextColor={theme.placeholder}
-            value={assetTypeQuery}
-            onChangeText={setAssetTypeQuery}
-            {...noAutoCorrect}
-          />
-        ) : null}
 
         {assetCreateOpen ? (
           <View style={styles.createRow}>

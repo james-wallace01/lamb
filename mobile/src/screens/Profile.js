@@ -625,6 +625,24 @@ export default function Profile({ navigation, route }) {
 
               <TouchableOpacity
                 style={[styles.secondaryButton, { flex: undefined, backgroundColor: theme.surface, borderColor: theme.border }]}
+                onPress={() => navigation?.navigate?.('Membership')}
+                accessibilityRole="button"
+                accessibilityLabel="Manage Membership"
+              >
+                <Text style={[styles.secondaryButtonText, { color: theme.text }]}>Manage Membership</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.secondaryButton, { flex: undefined, backgroundColor: theme.surface, borderColor: theme.border }]}
+                onPress={() => navigation?.navigate?.('Settings')}
+                accessibilityRole="button"
+                accessibilityLabel="Manage Settings"
+              >
+                <Text style={[styles.secondaryButtonText, { color: theme.text }]}>Manage Settings</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.secondaryButton, { flex: undefined, backgroundColor: theme.surface, borderColor: theme.border }]}
                 onPress={logout}
               >
                 <Text style={[styles.secondaryButtonText, { color: theme.textSecondary }]}>Sign out</Text>

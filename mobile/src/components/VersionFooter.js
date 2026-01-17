@@ -91,8 +91,8 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
   const activeTab = (() => {
     const r = currentRouteName;
     if (!r) return null;
-    if (r === 'Membership' || r === 'ChooseSubscription') return 'Membership';
-    if (r === 'Settings' || r === 'EmailNotifications') return 'Settings';
+    if (r === 'Membership' || r === 'ChooseSubscription') return 'Profile';
+    if (r === 'Settings' || r === 'EmailNotifications') return 'Profile';
     if (r === 'Profile') return 'Profile';
     if (r === 'PrivateVaults') return 'PrivateVaults';
     if (r === 'SharedVaults') return 'SharedVaults';
@@ -123,8 +123,8 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
 
   const tabForRouteName = (routeName) => {
     const r = String(routeName || '');
-    if (r === 'Membership' || r === 'ChooseSubscription') return 'Membership';
-    if (r === 'Settings' || r === 'EmailNotifications') return 'Settings';
+    if (r === 'Membership' || r === 'ChooseSubscription') return 'Profile';
+    if (r === 'Settings' || r === 'EmailNotifications') return 'Profile';
     if (r === 'Profile') return 'Profile';
     if (r === 'PrivateVaults') return 'PrivateVaults';
     if (r === 'SharedVaults') return 'SharedVaults';
@@ -216,32 +216,6 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
               name={activeTab === 'Tracking' ? 'time' : 'time-outline'}
               size={22}
               color={activeTab === 'Tracking' ? activeColor : inactiveColor}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.navButton}
-            onPress={() => safeNavigate('Membership')}
-            accessibilityRole="button"
-            accessibilityLabel="Go to Membership"
-          >
-            <Ionicons
-              name={activeTab === 'Membership' ? 'card' : 'card-outline'}
-              size={22}
-              color={activeTab === 'Membership' ? activeColor : inactiveColor}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.navButton}
-            onPress={() => safeNavigate('Settings')}
-            accessibilityRole="button"
-            accessibilityLabel="Go to Settings"
-          >
-            <Ionicons
-              name={activeTab === 'Settings' ? 'settings' : 'settings-outline'}
-              size={22}
-              color={activeTab === 'Settings' ? activeColor : inactiveColor}
             />
           </TouchableOpacity>
 
