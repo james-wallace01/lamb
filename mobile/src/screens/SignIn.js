@@ -4,18 +4,40 @@ import { AntDesign, FontAwesome } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
 import { useData } from '../context/DataContext';
+import { getItem, setItem, removeItem } from '../storage';
 import LambHeader from '../components/LambHeader';
 import { GOOGLE_ANDROID_CLIENT_ID, GOOGLE_IOS_CLIENT_ID, GOOGLE_WEB_CLIENT_ID, isGoogleOAuthConfigured } from '../config/oauth';
 
 WebBrowser.maybeCompleteAuthSession();
+
+const REMEMBER_ME_ENABLED_KEY = 'lamb-mobile-remember-me-enabled-v1';
+const REMEMBERED_IDENTIFIER_KEY = 'lamb-mobile-remembered-identifier-v1';
 
 export default function SignIn({ navigation }) {
   const { login, loginWithApple, loginWithGoogleIdToken, loading, biometricUserId, biometricLogin, users, theme, backendReachable, showAlert } = useData();
   const Alert = { alert: showAlert };
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const isOffline = backendReachable === false;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const enabled = await getItem(REMEMBER_ME_ENABLED_KEY, null);
+      const savedIdentifier = await getItem(REMEMBERED_IDENTIFIER_KEY, '');
+      if (cancelled) return;
+
+      const nextRememberMe = enabled == null ? !!savedIdentifier : !!enabled;
+      setRememberMe(nextRememberMe);
+      if (nextRememberMe && savedIdentifier) setIdentifier(String(savedIdentifier));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const googleDiscovery = AuthSession.useAutoDiscovery('https://accounts.google.com');
   const googleClientId = Platform.OS === 'ios'
@@ -85,9 +107,28 @@ export default function SignIn({ navigation }) {
         Alert.alert('Sign in failed', res.message || 'Check your credentials');
         return;
       }
+
+       await setItem(REMEMBER_ME_ENABLED_KEY, rememberMe);
+       if (rememberMe) {
+         await setItem(REMEMBERED_IDENTIFIER_KEY, identifier.trim());
+       } else {
+         await removeItem(REMEMBERED_IDENTIFIER_KEY);
+       }
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const toggleRememberMe = async () => {
+    const next = !rememberMe;
+    setRememberMe(next);
+    await setItem(REMEMBER_ME_ENABLED_KEY, next);
+    if (!next) {
+      await removeItem(REMEMBERED_IDENTIFIER_KEY);
+      return;
+    }
+    const trimmed = identifier.trim();
+    if (trimmed) await setItem(REMEMBERED_IDENTIFIER_KEY, trimmed);
   };
 
   return (
@@ -206,6 +247,28 @@ export default function SignIn({ navigation }) {
         value={password}
         onChangeText={setPassword}
       />
+
+      <TouchableOpacity
+        style={styles.rememberRow}
+        onPress={toggleRememberMe}
+        disabled={submitting || loading}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: rememberMe }}
+      >
+        <View
+          style={[
+            styles.rememberBox,
+            {
+              borderColor: theme.border,
+              backgroundColor: rememberMe ? theme.surface : 'transparent',
+            },
+          ]}
+        >
+          {rememberMe && <FontAwesome name="check" size={12} color={theme.text} />}
+        </View>
+        <Text style={[styles.rememberText, { color: theme.textSecondary }]}>Remember me</Text>
+      </TouchableOpacity>
+
       <TouchableOpacity
         style={[styles.button, (submitting || loading || isOffline) && styles.buttonDisabled]}
         onPress={handleSubmit}
@@ -259,5 +322,8 @@ const styles = StyleSheet.create({
   appleButtonText: { color: '#ffffff' },
   googleButton: { backgroundColor: '#ffffff', borderColor: '#e5e7eb' },
   googleButtonText: { color: '#111827' },
+  rememberRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 2 },
+  rememberBox: { width: 20, height: 20, borderWidth: 1, borderRadius: 5, alignItems: 'center', justifyContent: 'center' },
+  rememberText: { fontWeight: '600' },
   link: { color: '#9ab6ff', marginTop: 12, fontWeight: '600' },
 });
