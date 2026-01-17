@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fetchSignInMethodsForEmail } from 'firebase/auth';
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
+import { AntDesign, FontAwesome } from '@expo/vector-icons';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
@@ -369,7 +370,7 @@ export default function SignUp({ navigation }) {
 
       {Platform.OS === 'ios' && (
         <TouchableOpacity
-          style={[styles.secondaryButton, { backgroundColor: theme.surface, borderColor: theme.border }, (loading || isOffline) && styles.buttonDisabled]}
+          style={[styles.socialButton, styles.appleButton, (loading || isOffline) && styles.buttonDisabled]}
           onPress={async () => {
             if (loading || isOffline) return;
             try {
@@ -383,12 +384,16 @@ export default function SignUp({ navigation }) {
           }}
           disabled={loading || isOffline}
         >
-          <Text style={styles.secondaryButtonText}>Continue with Apple</Text>
+          <View style={styles.socialButtonIconWrap}>
+            <FontAwesome name="apple" size={18} color="#ffffff" />
+          </View>
+          <Text style={[styles.socialButtonText, styles.appleButtonText]}>Continue with Apple</Text>
+          <View style={styles.socialButtonSpacer} />
         </TouchableOpacity>
       )}
 
       <TouchableOpacity
-        style={[styles.secondaryButton, { backgroundColor: theme.surface, borderColor: theme.border }, (loading || isOffline) && styles.buttonDisabled]}
+        style={[styles.socialButton, styles.googleButton, (loading || isOffline) && styles.buttonDisabled]}
         onPress={async () => {
           if (loading || isOffline) return;
           if (!isGoogleOAuthConfigured()) {
@@ -407,7 +412,11 @@ export default function SignUp({ navigation }) {
         }}
         disabled={loading || isOffline || !googleRequest || !googleDiscovery}
       >
-        <Text style={styles.secondaryButtonText}>Continue with Google</Text>
+        <View style={styles.socialButtonIconWrap}>
+          <AntDesign name="google" size={18} color="#111827" />
+        </View>
+        <Text style={[styles.socialButtonText, styles.googleButtonText]}>Continue with Google</Text>
+        <View style={styles.socialButtonSpacer} />
       </TouchableOpacity>
       
       <TextInput style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]} placeholder="First name" placeholderTextColor={theme.placeholder} value={firstName} onChangeText={setFirstName} />
@@ -521,6 +530,22 @@ const styles = StyleSheet.create({
   buttonText: { color: '#fff', fontWeight: '700' },
   secondaryButton: { backgroundColor: '#11121a', borderColor: '#1f2738', borderWidth: 1, padding: 14, borderRadius: 10, alignItems: 'center' },
   secondaryButtonText: { color: '#e5e7f0', fontWeight: '700' },
+  socialButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  socialButtonIconWrap: { width: 22, alignItems: 'center' },
+  socialButtonSpacer: { width: 22 },
+  socialButtonText: { flex: 1, textAlign: 'center', fontWeight: '700' },
+  appleButton: { backgroundColor: '#000000', borderColor: '#ffffff' },
+  appleButtonText: { color: '#ffffff' },
+  googleButton: { backgroundColor: '#ffffff', borderColor: '#e5e7eb' },
+  googleButtonText: { color: '#111827' },
   link: { color: '#9ab6ff', marginTop: 12, fontWeight: '600', textAlign: 'center', marginBottom: 32 },
   legalCard: { borderWidth: 1, borderColor: '#1f2738', borderRadius: 12, padding: 16, gap: 8 },
   legalTitle: { color: '#e5e7f0', fontWeight: '700', fontSize: 14, marginBottom: 2 },

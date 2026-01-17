@@ -325,8 +325,6 @@ export default function ChooseSubscription({ navigation, route }) {
                 Alert.alert('Sign up failed', res.message || 'Try again');
                 return;
               }
-
-              Alert.alert('Account created', 'You can join a vault from Home via Invitations.');
             } finally {
               setSubmitting(false);
               skipInFlightRef.current = false;
