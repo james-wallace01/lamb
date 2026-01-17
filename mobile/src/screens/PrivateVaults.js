@@ -1019,20 +1019,28 @@ export default function PrivateVaults({ navigation, route }) {
               </View>
             ) : null}
 
-            <ShareModal
-              visible={shareVisible}
-              onClose={() => {
-                setShareVisible(false);
-                setShareTargetType(null);
-                setShareTargetId(null);
-              }}
-              targetType={shareTargetType || 'vault'}
-              targetId={shareTargetId || selectedVaultId}
-            />
+            {shareVisible ? (
+              <ShareModal
+                visible
+                onClose={() => {
+                  setShareVisible(false);
+                  setShareTargetType(null);
+                  setShareTargetId(null);
+                }}
+                targetType={shareTargetType || 'vault'}
+                targetId={shareTargetId || selectedVaultId}
+              />
+            ) : null}
 
-            <Modal visible={assetEditVisible} transparent animationType="fade" onRequestClose={() => setAssetEditVisible(false)}>
-          <View style={styles.modalBackdrop}>
-            <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            {assetEditVisible ? (
+              <Modal
+                visible
+                transparent
+                animationType="fade"
+                onRequestClose={() => setAssetEditVisible(false)}
+              >
+                <View style={styles.modalBackdrop}>
+                  <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               <Text style={[styles.modalTitle, { color: theme.text }]}>Edit Asset</Text>
 
               <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Title</Text>
@@ -1131,8 +1139,10 @@ export default function PrivateVaults({ navigation, route }) {
                 </TouchableOpacity>
               </View>
             </View>
-          </View>
-          </Modal>
+                  </View>
+                </View>
+              </Modal>
+            ) : null}
 
             {vaultEditVisible ? (
               <Modal
@@ -1193,7 +1203,9 @@ export default function PrivateVaults({ navigation, route }) {
                           return;
                         }
                         setVaultEditVisible(false);
-                        showNotice?.('Vault saved.', { durationMs: 1200 });
+                        setTimeout(() => {
+                          showNotice?.('Vault saved.', { durationMs: 1200 });
+                        }, 0);
                       } catch (e) {
                         Alert.alert('Save failed', e?.message || 'Unable to update vault');
                       } finally {
@@ -1247,9 +1259,10 @@ export default function PrivateVaults({ navigation, route }) {
               </Modal>
             ) : null}
 
-        <Modal visible={assetMoveVisible} transparent animationType="fade" onRequestClose={() => setAssetMoveVisible(false)}>
-          <View style={styles.modalBackdrop}>
-            <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        {assetMoveVisible ? (
+          <Modal visible transparent animationType="fade" onRequestClose={() => setAssetMoveVisible(false)}>
+            <View style={styles.modalBackdrop}>
+              <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               <Text style={[styles.modalTitle, { color: theme.text }]}>Move Asset</Text>
 
               <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Destination Vault</Text>
@@ -1374,13 +1387,15 @@ export default function PrivateVaults({ navigation, route }) {
                   <Text style={[styles.primaryButtonText, { color: theme.onAccentText }]}>Move</Text>
                 </TouchableOpacity>
               </View>
+              </View>
             </View>
-          </View>
-        </Modal>
+          </Modal>
+        ) : null}
 
-        <Modal visible={collectionEditVisible} transparent animationType="fade" onRequestClose={() => setCollectionEditVisible(false)}>
-          <View style={styles.modalBackdrop}>
-            <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        {collectionEditVisible ? (
+          <Modal visible transparent animationType="fade" onRequestClose={() => setCollectionEditVisible(false)}>
+            <View style={styles.modalBackdrop}>
+              <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               <Text style={[styles.modalTitle, { color: theme.text }]}>Edit Collection</Text>
               <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Name</Text>
               <TextInput
@@ -1442,13 +1457,15 @@ export default function PrivateVaults({ navigation, route }) {
                   <Text style={[styles.dangerButtonText, { color: theme.dangerText }]}>Delete</Text>
                 </TouchableOpacity>
               </View>
+              </View>
             </View>
-          </View>
-        </Modal>
+          </Modal>
+        ) : null}
 
-        <Modal visible={collectionMoveVisible} transparent animationType="fade" onRequestClose={() => setCollectionMoveVisible(false)}>
-          <View style={styles.modalBackdrop}>
-            <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        {collectionMoveVisible ? (
+          <Modal visible transparent animationType="fade" onRequestClose={() => setCollectionMoveVisible(false)}>
+            <View style={styles.modalBackdrop}>
+              <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               <Text style={[styles.modalTitle, { color: theme.text }]}>Move Collection</Text>
               <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Destination Vault</Text>
 
@@ -1511,9 +1528,10 @@ export default function PrivateVaults({ navigation, route }) {
                   <Text style={[styles.primaryButtonText, { color: theme.onAccentText }]}>Move</Text>
                 </TouchableOpacity>
               </View>
+              </View>
             </View>
-          </View>
-        </Modal>
+          </Modal>
+        ) : null}
 
         {!loading ? (
           <>
