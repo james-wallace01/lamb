@@ -2406,22 +2406,9 @@ export function DataProvider({ children }) {
     if (!uid) return { ok: false, message: 'Authentication failed' };
 
     // Idempotency: allow register() to be called multiple times for the same authenticated uid.
-    // Only block if a *different known uid* already claims the same email/username.
-    // (Local cache can contain legacy/incomplete users without uid/email; don't let that block signup.)
-    // Only block if a *different firebase uid* already claims the email.
-    // Legacy cached records may have `id`/`user_id` that are not Firebase UIDs.
-    const existingLocal = (users || []).find((u) => u?.email && normalizeEmail(u.email) === em.value);
-    if (existingLocal) {
-      const existingFirebaseUid =
-        existingLocal?.firebaseUid != null
-          ? String(existingLocal.firebaseUid)
-          : existingLocal?.firebase_uid != null
-            ? String(existingLocal.firebase_uid)
-            : null;
-      if (existingFirebaseUid && existingFirebaseUid !== uid) {
-        return { ok: false, message: 'Email is already in use' };
-      }
-    }
+    // Do not block here based on local cached user lists; those can be stale and can falsely
+    // fail immediately after successful Firebase Auth creation (e.g., during testing).
+    // The signup UI already checks availability, and Firestore writes are keyed by uid.
 
     const tier = subscriptionTier ? String(subscriptionTier).toUpperCase() : null;
     const trialEndsAt = tier ? (now + (TRIAL_DAYS * 24 * 60 * 60 * 1000)) : null;
