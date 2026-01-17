@@ -7,12 +7,19 @@ import { getInitials } from '../utils/user';
 import { runWithMinimumDuration } from '../utils/timing';
 
 export default function Home({ navigation, route }) {
-  const { currentUser, refreshData, theme, membershipAccess, acceptInvitationCode, denyInvitationCode, listMyInvitations, backendReachable, showNotice, t } = useData();
+  const { currentUser, refreshData, theme, membershipAccess, acceptInvitationCode, denyInvitationCode, listMyInvitations, backendReachable, showNotice, t, recentlyAccessed } = useData();
   const isOffline = backendReachable === false;
   const isOnProfile = route?.name === 'Profile';
   const goProfile = () => {
     if (isOnProfile) return;
     navigation?.navigate?.('Profile');
+  };
+
+  const openRecentlyAccessed = () => {
+    const screen = recentlyAccessed?.screen ? String(recentlyAccessed.screen) : '';
+    const params = recentlyAccessed?.params && typeof recentlyAccessed.params === 'object' ? recentlyAccessed.params : {};
+    if (!screen) return;
+    navigation?.navigate?.(screen, params);
   };
 
   const notifyError = (message) => showNotice?.(message, { variant: 'error', durationMs: 2600 });
@@ -221,6 +228,30 @@ export default function Home({ navigation, route }) {
             )}
           </View>
 
+          {recentlyAccessed ? (
+            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Recently Accessed</Text>
+              <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Jump back to your last viewed item.</Text>
+              <TouchableOpacity
+                style={[styles.card, { backgroundColor: theme.surfaceAlt, borderColor: theme.border, marginTop: 10 }]}
+                onPress={openRecentlyAccessed}
+                accessibilityRole="button"
+                accessibilityLabel="Open recently accessed"
+              >
+                <View style={styles.cardRow}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
+                      {recentlyAccessed?.title || recentlyAccessed?.kind || 'Recently Accessed'}
+                    </Text>
+                    <Text style={[styles.subtitle, { color: theme.textSecondary, marginTop: 4 }]} numberOfLines={1} ellipsizeMode="tail">
+                      {recentlyAccessed?.kind ? String(recentlyAccessed.kind) : 'Item'}
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}> 
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Membership Required</Text>
             <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Your membership isn’t active. You can manage your membership, update your profile, and revoke sharing.</Text>
@@ -348,6 +379,30 @@ export default function Home({ navigation, route }) {
             </View>
           )}
         </View>
+
+        {recentlyAccessed ? (
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Recently Accessed</Text>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Jump back to your last viewed item.</Text>
+            <TouchableOpacity
+              style={[styles.card, { backgroundColor: theme.surfaceAlt, borderColor: theme.border, marginTop: 10 }]}
+              onPress={openRecentlyAccessed}
+              accessibilityRole="button"
+              accessibilityLabel="Open recently accessed"
+            >
+              <View style={styles.cardRow}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
+                    {recentlyAccessed?.title || recentlyAccessed?.kind || 'Recently Accessed'}
+                  </Text>
+                  <Text style={[styles.subtitle, { color: theme.textSecondary, marginTop: 4 }]} numberOfLines={1} ellipsizeMode="tail">
+                    {recentlyAccessed?.kind ? String(recentlyAccessed.kind) : 'Item'}
+                  </Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </ScrollView>
     </View>
   );

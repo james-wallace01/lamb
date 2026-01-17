@@ -51,6 +51,7 @@ const BIOMETRIC_ENABLED_USER_ID_KEY = 'lamb-mobile-biometric-userid-enabled-v1';
 const LANGUAGE_PREF_KEY = 'lamb-mobile-language-pref-v1';
 const CURRENCY_PREF_KEY = 'lamb-mobile-currency-pref-v1';
 const SHOW_VAULT_TOTAL_VALUE_KEY = 'lamb-mobile-show-vault-total-value-v1';
+const RECENTLY_ACCESSED_KEY = 'lamb-mobile-recently-accessed-v1';
 const STORAGE_VERSION = 6;
 // Do not hardcode a remote default avatar URL.
 // Avatar fallback is rendered in the UI when profileImage is missing or fails to load.
@@ -768,6 +769,7 @@ export function DataProvider({ children }) {
   const [currency, setCurrency] = useState(() => inferCurrencyFromRegion(deviceRegion));
   const [currencyOverrideEnabled, setCurrencyOverrideEnabled] = useState(false);
   const [showVaultTotalValue, setShowVaultTotalValue] = useState(true);
+  const [recentlyAccessed, setRecentlyAccessed] = useState(null);
   const effectiveLocale = useMemo(() => {
     const lang = normalizeLanguageCode(language) || inferLanguageFromLocale(deviceLocale);
     return deviceRegion ? `${lang}-${deviceRegion}` : (lang || deviceLocale);
@@ -897,6 +899,79 @@ export function DataProvider({ children }) {
     await setItem(SHOW_VAULT_TOTAL_VALUE_KEY, value);
     return { ok: true };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const uid = currentUser?.id != null ? String(currentUser.id) : null;
+    if (!uid) {
+      setRecentlyAccessed(null);
+      return;
+    }
+
+    (async () => {
+      const stored = await getItem(RECENTLY_ACCESSED_KEY, null);
+      if (cancelled) return;
+      const map = stored && typeof stored === 'object' ? stored : null;
+      const entry = map && map[uid] && typeof map[uid] === 'object' ? map[uid] : null;
+      setRecentlyAccessed(entry || null);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id]);
+
+  const setRecentlyAccessedEntry = useCallback(
+    async (next) => {
+      const uid = currentUser?.id != null ? String(currentUser.id) : null;
+      if (!uid) return { ok: false, message: 'Not signed in.' };
+
+      const screen = next?.screen ? String(next.screen) : '';
+      if (!['Vault', 'Collection', 'Asset'].includes(screen)) return { ok: false, message: 'Invalid recent screen.' };
+
+      const rawParams = next?.params && typeof next.params === 'object' ? next.params : {};
+      const params = { ...rawParams };
+
+      if (screen === 'Vault') {
+        const vaultId = params?.vaultId != null ? String(params.vaultId) : '';
+        if (!vaultId) return { ok: false, message: 'Missing vaultId.' };
+        params.vaultId = vaultId;
+      }
+
+      if (screen === 'Collection') {
+        const collectionId = params?.collectionId != null ? String(params.collectionId) : '';
+        if (!collectionId) return { ok: false, message: 'Missing collectionId.' };
+        params.collectionId = collectionId;
+      }
+
+      if (screen === 'Asset') {
+        const assetId = params?.assetId != null ? String(params.assetId) : '';
+        if (!assetId) return { ok: false, message: 'Missing assetId.' };
+        params.assetId = assetId;
+        if (params?.vaultId != null && params.vaultId !== '') params.vaultId = String(params.vaultId);
+        else delete params.vaultId;
+      }
+
+      const title = next?.title != null ? String(next.title) : '';
+      const kind = next?.kind != null ? String(next.kind) : '';
+
+      const entry = {
+        screen,
+        params,
+        title,
+        kind,
+        updatedAt: Date.now(),
+      };
+
+      setRecentlyAccessed(entry);
+
+      const stored = await getItem(RECENTLY_ACCESSED_KEY, {});
+      const map = stored && typeof stored === 'object' ? stored : {};
+      await setItem(RECENTLY_ACCESSED_KEY, { ...map, [uid]: entry });
+      return { ok: true };
+    },
+    [currentUser?.id]
+  );
 
   const formatCurrencyValue = useCallback(
     (value) => {
@@ -3662,12 +3737,14 @@ export function DataProvider({ children }) {
     language,
     currency,
     showVaultTotalValue,
+    recentlyAccessed,
     languagePreferenceMode: languageOverrideEnabled ? 'manual' : 'auto',
     currencyPreferenceMode: currencyOverrideEnabled ? 'manual' : 'auto',
     locale: effectiveLocale,
     setLanguagePreference,
     setCurrencyPreference,
     setShowVaultTotalValueEnabled,
+    setRecentlyAccessedEntry,
     formatCurrencyValue,
     t,
     users,
@@ -3764,9 +3841,11 @@ export function DataProvider({ children }) {
     language,
     currency,
     showVaultTotalValue,
+    recentlyAccessed,
     languageOverrideEnabled,
     currencyOverrideEnabled,
     effectiveLocale,
+    setRecentlyAccessedEntry,
     membershipActive,
     membershipAccess,
     users,

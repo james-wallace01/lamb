@@ -12,7 +12,7 @@ import { getInitials } from '../utils/user';
 
 export default function Vault({ navigation, route }) {
   const { vaultId } = route.params || {};
-  const { loading, vaults, collections, addCollection, currentUser, getRoleForVault, canCreateCollectionsInVault, users, deleteVault, updateVault, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultCollections, releaseVaultCollections, backendReachable, showAlert, showNotice, createAuditEvent } = useData();
+  const { loading, vaults, collections, addCollection, currentUser, getRoleForVault, canCreateCollectionsInVault, users, deleteVault, updateVault, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultCollections, releaseVaultCollections, backendReachable, showAlert, showNotice, createAuditEvent, setRecentlyAccessedEntry } = useData();
   const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
   const isOnProfile = route?.name === 'Profile';
@@ -88,6 +88,23 @@ export default function Vault({ navigation, route }) {
   const previewImages = heroImage ? [heroImage, ...vaultImages.filter((img) => img !== storedHeroImage)] : vaultImages;
 
   const didLogViewRef = useRef(false);
+  const didSetRecentRef = useRef(false);
+
+  useEffect(() => {
+    if (didSetRecentRef.current) return;
+    if (!currentUser?.id) return;
+    const vId = vaultId ? String(vaultId) : null;
+    if (!vId) return;
+    didSetRecentRef.current = true;
+    Promise.resolve(
+      setRecentlyAccessedEntry?.({
+        screen: 'Vault',
+        params: { vaultId: vId },
+        title: vault?.name || 'Vault',
+        kind: 'Vault',
+      })
+    ).catch(() => {});
+  }, [vaultId, currentUser?.id, setRecentlyAccessedEntry, vault?.name]);
 
   useEffect(() => {
     if (didLogViewRef.current) return;

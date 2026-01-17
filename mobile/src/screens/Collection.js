@@ -12,7 +12,7 @@ import { getInitials } from '../utils/user';
 
 export default function Collection({ navigation, route }) {
   const { collectionId } = route.params || {};
-  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultAssets, releaseVaultAssets, retainVaultCollections, releaseVaultCollections, backendReachable, showAlert, showNotice, createAuditEvent } = useData();
+  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultAssets, releaseVaultAssets, retainVaultCollections, releaseVaultCollections, backendReachable, showAlert, showNotice, createAuditEvent, setRecentlyAccessedEntry } = useData();
   const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
   const isOnProfile = route?.name === 'Profile';
@@ -66,6 +66,23 @@ export default function Collection({ navigation, route }) {
   const collection = useMemo(() => collections.find((c) => c.id === collectionId), [collectionId, collections]);
 
   const didLogViewRef = useRef(false);
+  const didSetRecentRef = useRef(false);
+
+  useEffect(() => {
+    if (didSetRecentRef.current) return;
+    if (!currentUser?.id) return;
+    const cId = collectionId ? String(collectionId) : null;
+    if (!cId) return;
+    didSetRecentRef.current = true;
+    Promise.resolve(
+      setRecentlyAccessedEntry?.({
+        screen: 'Collection',
+        params: { collectionId: cId },
+        title: collection?.name || 'Collection',
+        kind: 'Collection',
+      })
+    ).catch(() => {});
+  }, [collectionId, currentUser?.id, setRecentlyAccessedEntry, collection?.name]);
 
   useEffect(() => {
     if (didLogViewRef.current) return;

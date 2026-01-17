@@ -51,6 +51,7 @@ export default function Asset({ route, navigation }) {
     showNotice,
     createAuditEvent,
     formatCurrencyValue,
+    setRecentlyAccessedEntry,
   } = useData();
   const Alert = { alert: showAlert };
 
@@ -73,6 +74,25 @@ export default function Asset({ route, navigation }) {
   const owner = useMemo(() => users.find((u) => u.id === asset?.ownerId), [users, asset]);
 
   const didLogViewRef = useRef(false);
+  const didSetRecentRef = useRef(false);
+
+  useEffect(() => {
+    if (didSetRecentRef.current) return;
+    if (!currentUser?.id) return;
+    const aId = assetId ? String(assetId) : null;
+    if (!aId) return;
+    const vId = routeVaultId ? String(routeVaultId) : (asset?.vaultId ? String(asset.vaultId) : null);
+    didSetRecentRef.current = true;
+    const params = vId ? { assetId: aId, vaultId: vId } : { assetId: aId };
+    Promise.resolve(
+      setRecentlyAccessedEntry?.({
+        screen: 'Asset',
+        params,
+        title: asset?.title || 'Asset',
+        kind: 'Asset',
+      })
+    ).catch(() => {});
+  }, [assetId, asset?.title, asset?.vaultId, currentUser?.id, routeVaultId, setRecentlyAccessedEntry]);
 
   useEffect(() => {
     if (didLogViewRef.current) return;
