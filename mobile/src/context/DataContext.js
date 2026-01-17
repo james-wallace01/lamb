@@ -769,7 +769,7 @@ export function DataProvider({ children }) {
   const [currency, setCurrency] = useState(() => inferCurrencyFromRegion(deviceRegion));
   const [currencyOverrideEnabled, setCurrencyOverrideEnabled] = useState(false);
   const [showVaultTotalValue, setShowVaultTotalValue] = useState(true);
-  const [recentlyAccessed, setRecentlyAccessed] = useState(null);
+  const [recentlyAccessed, setRecentlyAccessed] = useState([]);
   const effectiveLocale = useMemo(() => {
     const lang = normalizeLanguageCode(language) || inferLanguageFromLocale(deviceLocale);
     return deviceRegion ? `${lang}-${deviceRegion}` : (lang || deviceLocale);
@@ -900,11 +900,38 @@ export function DataProvider({ children }) {
     return { ok: true };
   }, []);
 
+  const getLocalUserKeys = useCallback((user) => {
+    const keys = [];
+    const fb = user?.firebaseUid != null ? String(user.firebaseUid) : '';
+    const id = user?.id != null ? String(user.id) : '';
+    if (fb) keys.push(fb);
+    if (id && id !== fb) keys.push(id);
+    return keys;
+  }, []);
+
+  const normalizeRecentlyAccessedList = useCallback((value) => {
+    if (!value) return [];
+    const list = Array.isArray(value) ? value : [value];
+    const cleaned = [];
+    for (const raw of list) {
+      if (!raw || typeof raw !== 'object') continue;
+      const screen = raw?.screen ? String(raw.screen) : '';
+      if (!['Vault', 'Collection', 'Asset'].includes(screen)) continue;
+      const params = raw?.params && typeof raw.params === 'object' ? raw.params : {};
+      const title = raw?.title != null ? String(raw.title) : '';
+      const kind = raw?.kind != null ? String(raw.kind) : '';
+      const updatedAt = Number.isFinite(Number(raw?.updatedAt)) ? Number(raw.updatedAt) : Date.now();
+      cleaned.push({ screen, params, title, kind, updatedAt });
+    }
+    cleaned.sort((a, b) => (Number(b.updatedAt || 0) || 0) - (Number(a.updatedAt || 0) || 0));
+    return cleaned.slice(0, 4);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
-    const uid = currentUser?.id != null ? String(currentUser.id) : null;
-    if (!uid) {
-      setRecentlyAccessed(null);
+    const keys = getLocalUserKeys(currentUser);
+    if (!keys.length) {
+      setRecentlyAccessed([]);
       return;
     }
 
@@ -912,19 +939,21 @@ export function DataProvider({ children }) {
       const stored = await getItem(RECENTLY_ACCESSED_KEY, null);
       if (cancelled) return;
       const map = stored && typeof stored === 'object' ? stored : null;
-      const entry = map && map[uid] && typeof map[uid] === 'object' ? map[uid] : null;
-      setRecentlyAccessed(entry || null);
+      const foundKey = map && keys.find((k) => map[k] != null);
+      const rawValue = foundKey ? map[foundKey] : null;
+      const list = normalizeRecentlyAccessedList(rawValue);
+      setRecentlyAccessed(list);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [currentUser?.id]);
+  }, [currentUser?.id, currentUser?.firebaseUid, getLocalUserKeys, normalizeRecentlyAccessedList]);
 
   const setRecentlyAccessedEntry = useCallback(
     async (next) => {
-      const uid = currentUser?.id != null ? String(currentUser.id) : null;
-      if (!uid) return { ok: false, message: 'Not signed in.' };
+      const keys = getLocalUserKeys(currentUser);
+      if (!keys.length) return { ok: false, message: 'Not signed in.' };
 
       const screen = next?.screen ? String(next.screen) : '';
       if (!['Vault', 'Collection', 'Asset'].includes(screen)) return { ok: false, message: 'Invalid recent screen.' };
@@ -963,14 +992,24 @@ export function DataProvider({ children }) {
         updatedAt: Date.now(),
       };
 
-      setRecentlyAccessed(entry);
+      setRecentlyAccessed((prev) => {
+        const existing = normalizeRecentlyAccessedList(prev);
+        return [entry, ...existing].slice(0, 4);
+      });
 
       const stored = await getItem(RECENTLY_ACCESSED_KEY, {});
       const map = stored && typeof stored === 'object' ? stored : {};
-      await setItem(RECENTLY_ACCESSED_KEY, { ...map, [uid]: entry });
+      const nextMap = { ...map };
+
+      const baseRaw = keys.find((k) => nextMap[k] != null) ? nextMap[keys.find((k) => nextMap[k] != null)] : null;
+      const baseList = normalizeRecentlyAccessedList(baseRaw);
+      const nextList = [entry, ...baseList].slice(0, 4);
+
+      for (const k of keys) nextMap[k] = nextList;
+      await setItem(RECENTLY_ACCESSED_KEY, nextMap);
       return { ok: true };
     },
-    [currentUser?.id]
+    [currentUser?.id, currentUser?.firebaseUid, getLocalUserKeys, normalizeRecentlyAccessedList]
   );
 
   const formatCurrencyValue = useCallback(

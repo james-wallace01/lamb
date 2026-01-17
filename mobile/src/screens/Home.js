@@ -7,7 +7,23 @@ import { getInitials } from '../utils/user';
 import { runWithMinimumDuration } from '../utils/timing';
 
 export default function Home({ navigation, route }) {
-  const { currentUser, refreshData, theme, membershipAccess, acceptInvitationCode, denyInvitationCode, listMyInvitations, backendReachable, showNotice, t, recentlyAccessed } = useData();
+  const {
+    currentUser,
+    refreshData,
+    theme,
+    membershipAccess,
+    acceptInvitationCode,
+    denyInvitationCode,
+    listMyInvitations,
+    backendReachable,
+    showNotice,
+    t,
+    recentlyAccessed,
+    vaults,
+    collections,
+    assets,
+    vaultMemberships,
+  } = useData();
   const isOffline = backendReachable === false;
   const isOnProfile = route?.name === 'Profile';
   const goProfile = () => {
@@ -15,12 +31,73 @@ export default function Home({ navigation, route }) {
     navigation?.navigate?.('Profile');
   };
 
-  const openRecentlyAccessed = () => {
-    const screen = recentlyAccessed?.screen ? String(recentlyAccessed.screen) : '';
-    const params = recentlyAccessed?.params && typeof recentlyAccessed.params === 'object' ? recentlyAccessed.params : {};
+  const openRecentlyAccessed = (item) => {
+    const screen = item?.screen ? String(item.screen) : '';
+    const params = item?.params && typeof item.params === 'object' ? item.params : {};
+
+    const kind = item?.kind ? String(item.kind) : screen;
+    const rawVaultId = params?.vaultId != null ? String(params.vaultId) : null;
+    const rawCollectionId = params?.collectionId != null ? String(params.collectionId) : null;
+    const rawAssetId = params?.assetId != null ? String(params.assetId) : null;
+
+    const resolveVaultId = () => {
+      if (kind === 'Vault') return rawVaultId;
+      if (kind === 'Collection' && rawCollectionId) {
+        const c = (collections || []).find((x) => String(x?.id) === String(rawCollectionId));
+        return c?.vaultId != null ? String(c.vaultId) : null;
+      }
+      if (kind === 'Asset' && rawAssetId) {
+        const a = (assets || []).find((x) => String(x?.id) === String(rawAssetId));
+        if (a?.vaultId != null) return String(a.vaultId);
+        return rawVaultId;
+      }
+      return rawVaultId;
+    };
+
+    const vId = resolveVaultId();
+    const uid = currentUser?.id != null ? String(currentUser.id) : null;
+    const vault = vId ? (vaults || []).find((v) => String(v?.id) === String(vId)) : null;
+    const hasActiveMembership =
+      !!(uid && vId && (vaultMemberships || []).some((m) => m?.user_id === uid && m?.status === 'ACTIVE' && String(m?.vault_id) === String(vId)));
+    // Prefer ownerId when available; fall back to membership if vault record isn't present yet.
+    const isSharedVault = !!(
+      uid &&
+      vId &&
+      ((vault && vault?.ownerId != null && String(vault.ownerId) !== uid) || (!vault && hasActiveMembership))
+    );
+    const target = isSharedVault ? 'SharedVaults' : 'PrivateVaults';
+
+    if (vId && (kind === 'Vault' || kind === 'Collection' || kind === 'Asset')) {
+      let openEdit = null;
+      if (kind === 'Vault') openEdit = { kind: 'Vault', vaultId: String(vId) };
+      if (kind === 'Collection' && rawCollectionId) openEdit = { kind: 'Collection', vaultId: String(vId), collectionId: String(rawCollectionId) };
+      if (kind === 'Asset' && rawAssetId) {
+        const a = (assets || []).find((x) => String(x?.id) === String(rawAssetId)) || null;
+        const collectionId = a?.collectionId != null ? String(a.collectionId) : (rawCollectionId ? String(rawCollectionId) : null);
+        openEdit = {
+          kind: 'Asset',
+          vaultId: String(vId),
+          collectionId: collectionId || undefined,
+          assetId: String(rawAssetId),
+        };
+      }
+
+      if (openEdit) {
+        navigation?.navigate?.(target, {
+          selectedVaultId: String(vId),
+          openEdit,
+          openEditToken: Date.now(),
+        });
+        return;
+      }
+    }
+
+    // Fallback: keep older behavior if we can't resolve the vault/IDs.
     if (!screen) return;
     navigation?.navigate?.(screen, params);
   };
+
+  const recentList = Array.isArray(recentlyAccessed) ? recentlyAccessed : (recentlyAccessed ? [recentlyAccessed] : []);
 
   const notifyError = (message) => showNotice?.(message, { variant: 'error', durationMs: 2600 });
   const [invitations, setInvitations] = useState([]);
@@ -228,29 +305,36 @@ export default function Home({ navigation, route }) {
             )}
           </View>
 
-          {recentlyAccessed ? (
-            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Recently Accessed</Text>
-              <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Jump back to your last viewed item.</Text>
-              <TouchableOpacity
-                style={[styles.card, { backgroundColor: theme.surfaceAlt, borderColor: theme.border, marginTop: 10 }]}
-                onPress={openRecentlyAccessed}
-                accessibilityRole="button"
-                accessibilityLabel="Open recently accessed"
-              >
-                <View style={styles.cardRow}>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
-                      {recentlyAccessed?.title || recentlyAccessed?.kind || 'Recently Accessed'}
-                    </Text>
-                    <Text style={[styles.subtitle, { color: theme.textSecondary, marginTop: 4 }]} numberOfLines={1} ellipsizeMode="tail">
-                      {recentlyAccessed?.kind ? String(recentlyAccessed.kind) : 'Item'}
-                    </Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            </View>
-          ) : null}
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Recently accessed</Text>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Jump back to your last viewed item.</Text>
+            {recentList.length ? (
+              <View style={{ gap: 10, marginTop: 10 }}>
+                {recentList.slice(0, 4).map((item, idx) => (
+                  <TouchableOpacity
+                    key={String(item?.updatedAt || idx)}
+                    style={[styles.card, { backgroundColor: theme.surfaceAlt, borderColor: theme.border, marginTop: 0 }]}
+                    onPress={() => openRecentlyAccessed(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Open recently accessed"
+                  >
+                    <View style={styles.cardRow}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
+                          {item?.title || item?.kind || 'Recently Accessed'}
+                        </Text>
+                        <Text style={[styles.subtitle, { color: theme.textSecondary, marginTop: 4 }]} numberOfLines={1} ellipsizeMode="tail">
+                          {item?.kind ? String(item.kind) : 'Item'}
+                        </Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : (
+              <Text style={[styles.subtitle, { color: theme.textSecondary, marginTop: 8 }]}>No recently accessed item yet.</Text>
+            )}
+          </View>
 
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}> 
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Membership Required</Text>
@@ -380,29 +464,36 @@ export default function Home({ navigation, route }) {
           )}
         </View>
 
-        {recentlyAccessed ? (
-          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Recently Accessed</Text>
-            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Jump back to your last viewed item.</Text>
-            <TouchableOpacity
-              style={[styles.card, { backgroundColor: theme.surfaceAlt, borderColor: theme.border, marginTop: 10 }]}
-              onPress={openRecentlyAccessed}
-              accessibilityRole="button"
-              accessibilityLabel="Open recently accessed"
-            >
-              <View style={styles.cardRow}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
-                    {recentlyAccessed?.title || recentlyAccessed?.kind || 'Recently Accessed'}
-                  </Text>
-                  <Text style={[styles.subtitle, { color: theme.textSecondary, marginTop: 4 }]} numberOfLines={1} ellipsizeMode="tail">
-                    {recentlyAccessed?.kind ? String(recentlyAccessed.kind) : 'Item'}
-                  </Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          </View>
-        ) : null}
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 8 }]}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Recently accessed</Text>
+          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Jump back to your last viewed item.</Text>
+          {recentList.length ? (
+            <View style={{ gap: 10, marginTop: 10 }}>
+              {recentList.slice(0, 4).map((item, idx) => (
+                <TouchableOpacity
+                  key={String(item?.updatedAt || idx)}
+                  style={[styles.card, { backgroundColor: theme.surfaceAlt, borderColor: theme.border, marginTop: 0 }]}
+                  onPress={() => openRecentlyAccessed(item)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open recently accessed"
+                >
+                  <View style={styles.cardRow}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
+                        {item?.title || item?.kind || 'Recently Accessed'}
+                      </Text>
+                      <Text style={[styles.subtitle, { color: theme.textSecondary, marginTop: 4 }]} numberOfLines={1} ellipsizeMode="tail">
+                        {item?.kind ? String(item.kind) : 'Item'}
+                      </Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : (
+            <Text style={[styles.subtitle, { color: theme.textSecondary, marginTop: 8 }]}>No recently accessed item yet.</Text>
+          )}
+        </View>
       </ScrollView>
     </View>
   );

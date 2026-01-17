@@ -47,6 +47,7 @@ export default function PrivateVaults({ navigation, route }) {
     showNotice,
     showVaultTotalValue,
     formatCurrencyValue,
+    setRecentlyAccessedEntry,
   } = useData();
   const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
@@ -171,6 +172,63 @@ export default function PrivateVaults({ navigation, route }) {
 
   const uid = currentUser?.id ? String(currentUser.id) : null;
 
+  const markRecentVaultById = (vaultId, { titleOverride } = {}) => {
+    const vId = vaultId != null ? String(vaultId) : '';
+    if (!vId) return;
+    const title = titleOverride != null ? String(titleOverride) : 'Vault';
+    Promise.resolve(
+      setRecentlyAccessedEntry?.({
+        screen: 'Vault',
+        params: { vaultId: vId },
+        title,
+        kind: 'Vault',
+      })
+    ).catch(() => {});
+  };
+
+  const markRecentVault = (vault) => {
+    const vId = vault?.id != null ? String(vault.id) : '';
+    if (!vId) return;
+    const title = vault?.name ? String(vault.name) : 'Vault';
+    markRecentVaultById(vId, { titleOverride: title });
+  };
+
+  const markRecentCollectionById = (collectionId, { titleOverride } = {}) => {
+    const cId = collectionId != null ? String(collectionId) : '';
+    if (!cId) return;
+    const title = titleOverride != null ? String(titleOverride) : 'Collection';
+    Promise.resolve(
+      setRecentlyAccessedEntry?.({
+        screen: 'Collection',
+        params: { collectionId: cId },
+        title,
+        kind: 'Collection',
+      })
+    ).catch(() => {});
+  };
+
+  const markRecentCollection = (collectionItem) => {
+    const cId = collectionItem?.id != null ? String(collectionItem.id) : '';
+    if (!cId) return;
+    const title = collectionItem?.name ? String(collectionItem.name) : 'Collection';
+    markRecentCollectionById(cId, { titleOverride: title });
+  };
+
+  const markRecentAsset = (assetItem, { titleOverride } = {}) => {
+    const aId = assetItem?.id != null ? String(assetItem.id) : '';
+    if (!aId) return;
+    const vId = assetItem?.vaultId != null ? String(assetItem.vaultId) : (selectedVaultId ? String(selectedVaultId) : '');
+    const title = titleOverride != null ? String(titleOverride) : (assetItem?.title ? String(assetItem.title) : 'Asset');
+    Promise.resolve(
+      setRecentlyAccessedEntry?.({
+        screen: 'Asset',
+        params: vId ? { assetId: aId, vaultId: vId } : { assetId: aId },
+        title,
+        kind: 'Asset',
+      })
+    ).catch(() => {});
+  };
+
   const closeVaultEditModal = () => {
     if (vaultEditSavingRef.current) return;
     Keyboard.dismiss();
@@ -292,6 +350,53 @@ export default function PrivateVaults({ navigation, route }) {
     setVaultDropdownOpen(false);
     setCollectionDropdownOpen(false);
   }, [route?.params?.selectedVaultId]);
+
+  useEffect(() => {
+    const token = route?.params?.openEditToken;
+    const openEdit = route?.params?.openEdit;
+    if (!token) return;
+    if (!openEdit || typeof openEdit !== 'object') return;
+
+    const kind = openEdit?.kind ? String(openEdit.kind) : '';
+    const vId = openEdit?.vaultId != null ? String(openEdit.vaultId) : null;
+    const cId = openEdit?.collectionId != null ? String(openEdit.collectionId) : null;
+    const aId = openEdit?.assetId != null ? String(openEdit.assetId) : null;
+
+    if (vId) {
+      setSelectedVaultId(String(vId));
+      setVaultDropdownOpen(false);
+      setCollectionDropdownOpen(false);
+    }
+
+    if (kind === 'Vault' && vId) {
+      setSelectedCollectionId(null);
+      const v = (myVaults || []).find((x) => String(x?.id) === String(vId)) || (vaults || []).find((x) => String(x?.id) === String(vId)) || null;
+      setVaultEditName(limit35(v?.name || ''));
+      setTimeout(() => setVaultEditVisible(true), 0);
+      return;
+    }
+
+    if (kind === 'Collection' && vId && cId) {
+      setSelectedCollectionId(String(cId));
+      const all = dedupeById([...(optimisticCollections || []), ...(collections || [])]);
+      const c = all.find((x) => String(x?.id) === String(cId)) || null;
+      setCollectionEditName(String(c?.name || '').slice(0, 35));
+      setTimeout(() => setCollectionEditVisible(true), 0);
+      return;
+    }
+
+    if (kind === 'Asset' && vId && aId) {
+      if (cId) setSelectedCollectionId(String(cId));
+      setTimeout(() => {
+        setSelectedAssetId(String(aId));
+        const all = dedupeById([...(optimisticAssets || []), ...(assets || [])]);
+        const a = all.find((x) => String(x?.id) === String(aId)) || null;
+        setAssetEditTitle(limit35(a?.title || ''));
+        setAssetEditCategory(limit35(a?.category || ''));
+        setAssetEditVisible(true);
+      }, 0);
+    }
+  }, [route?.params?.openEditToken]);
 
   useEffect(() => {
     if (selectedVaultId) return;
@@ -761,6 +866,14 @@ export default function PrivateVaults({ navigation, route }) {
                           return { ...a, id: realId };
                         })
                       );
+                      Promise.resolve(
+                        setRecentlyAccessedEntry?.({
+                          screen: 'Asset',
+                          params: { assetId: realId, vaultId: String(selectedVaultId) },
+                          title,
+                          kind: 'Asset',
+                        })
+                      ).catch(() => {});
                     }
                     // Let realtime listeners update global state; optimistic UI already shows instantly.
                   } finally {
@@ -813,6 +926,7 @@ export default function PrivateVaults({ navigation, route }) {
           style={[styles.assetRow, { borderBottomWidth: 0 }]}
           onPress={() => {
             if (isTempId(a?.id)) return;
+            markRecentAsset(a);
             setSelectedAssetId(String(a.id));
             setAssetEditTitle(limit35(a?.title || ''));
             setAssetEditCategory(limit35(a?.category || ''));
@@ -843,6 +957,7 @@ export default function PrivateVaults({ navigation, route }) {
               style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, !canAssetEditOnlineForRow && styles.buttonDisabled]}
               disabled={!canAssetEditOnlineForRow}
               onPress={() => {
+                markRecentAsset(a);
                 setSelectedAssetId(String(a.id));
                 setAssetEditTitle(limit35(a?.title || ''));
                 setAssetEditCategory(limit35(a?.category || ''));
@@ -856,6 +971,7 @@ export default function PrivateVaults({ navigation, route }) {
               style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, !canAssetMoveOnlineForRow && styles.buttonDisabled]}
               disabled={!canAssetMoveOnlineForRow}
               onPress={() => {
+                markRecentAsset(a);
                 setAssetMoveAssetId(String(a.id));
                 setAssetMoveVaultId(String(a?.vaultId || selectedVaultId || ''));
                 setAssetMoveCollectionId(String(a?.collectionId || selectedCollectionId || ''));
@@ -874,6 +990,7 @@ export default function PrivateVaults({ navigation, route }) {
                 const baseTitle = a?.title ? String(a.title) : 'Untitled';
                 const copyTitle = limit35(`${baseTitle} (Copy)`);
                 const tempId = makeTempId();
+                markRecentAsset({ ...a, id: tempId }, { titleOverride: copyTitle });
                 const optimistic = {
                   id: tempId,
                   title: copyTitle,
@@ -901,6 +1018,7 @@ export default function PrivateVaults({ navigation, route }) {
                   }
                   if (res.assetId) {
                     const realId = String(res.assetId);
+                    markRecentAsset({ ...a, id: realId }, { titleOverride: copyTitle });
                     setOptimisticAssets((prev) =>
                       (prev || []).map((x) => (String(x?.id) === String(tempId) ? { ...x, id: realId } : x))
                     );
@@ -1628,6 +1746,7 @@ export default function PrivateVaults({ navigation, route }) {
                               return { ...v, id: realId };
                             })
                           );
+                          markRecentVaultById(realId, { titleOverride: name });
                           onSelectVault(realId);
                         }
                         setVaultCreateBusy(false);
@@ -1723,7 +1842,8 @@ export default function PrivateVaults({ navigation, route }) {
                     style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, (!selectedVaultId || !canVaultEditOnline) && styles.buttonDisabled]}
                     disabled={!selectedVaultId || !canVaultEditOnline}
                     onPress={() => {
-                      if (!selectedVaultId || !selectedVault) return;
+                      if (!selectedVaultId) return;
+                      markRecentVaultById(String(selectedVaultId), { titleOverride: selectedVault?.name || 'Vault' });
                       setVaultEditName(limit35(selectedVault?.name || ''));
                       setVaultEditVisible(true);
                     }}
@@ -1735,6 +1855,7 @@ export default function PrivateVaults({ navigation, route }) {
                     disabled={!selectedVaultId || !canVaultShareOnline}
                     onPress={() => {
                       if (!selectedVaultId) return;
+                      markRecentVaultById(String(selectedVaultId), { titleOverride: selectedVault?.name || 'Vault' });
                       setShareTargetType('vault');
                       setShareTargetId(String(selectedVaultId));
                       setShareVisible(true);
@@ -1746,7 +1867,8 @@ export default function PrivateVaults({ navigation, route }) {
                     style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, (!selectedVaultId || !canVaultCloneOnline) && styles.buttonDisabled]}
                     disabled={!selectedVaultId || !canVaultCloneOnline}
                     onPress={() => {
-                      if (!selectedVault) return;
+                      if (!selectedVaultId) return;
+                      markRecentVaultById(String(selectedVaultId), { titleOverride: selectedVault?.name || 'Vault' });
                       const baseName = selectedVault?.name ? String(selectedVault.name) : 'Vault';
                       const copyName = limit35(`${baseName} (Copy)`);
                       (async () => {
@@ -1760,7 +1882,9 @@ export default function PrivateVaults({ navigation, route }) {
                           return;
                         }
                         if (res.vaultId) {
-                          onSelectVault(String(res.vaultId));
+                          const realId = String(res.vaultId);
+                          markRecentVaultById(realId, { titleOverride: copyName });
+                          onSelectVault(realId);
                         }
                       })();
                     }}
@@ -1877,6 +2001,7 @@ export default function PrivateVaults({ navigation, route }) {
                           );
 
                           onSelectCollection(realId);
+                          markRecentCollectionById(realId, { titleOverride: name });
                           await flushPendingAssetsForCollection(tempId, realId);
                         }
                         setCollectionCreateBusy(false);
@@ -1972,7 +2097,8 @@ export default function PrivateVaults({ navigation, route }) {
                     style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, (!selectedCollectionId || !canCollectionEditOnline) && styles.buttonDisabled]}
                     disabled={!selectedCollectionId || !canCollectionEditOnline}
                     onPress={() => {
-                      if (!selectedCollectionId || !selectedCollection) return;
+                      if (!selectedCollectionId) return;
+                      markRecentCollectionById(String(selectedCollectionId), { titleOverride: selectedCollection?.name || 'Collection' });
                       setCollectionEditName(limit35(selectedCollection?.name || ''));
                       setCollectionEditVisible(true);
                     }}
@@ -1984,6 +2110,7 @@ export default function PrivateVaults({ navigation, route }) {
                     disabled={!selectedCollectionId || !canCollectionShareOnline}
                     onPress={() => {
                       if (!selectedCollectionId) return;
+                      markRecentCollectionById(String(selectedCollectionId), { titleOverride: selectedCollection?.name || 'Collection' });
                       setShareTargetType('collection');
                       setShareTargetId(String(selectedCollectionId));
                       setShareVisible(true);
@@ -1995,7 +2122,8 @@ export default function PrivateVaults({ navigation, route }) {
                     style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, (!selectedCollectionId || !canCollectionMoveOnline) && styles.buttonDisabled]}
                     disabled={!selectedCollectionId || !canCollectionMoveOnline}
                     onPress={() => {
-                      if (!selectedCollectionId || !selectedCollection) return;
+                      if (!selectedCollectionId) return;
+                      markRecentCollectionById(String(selectedCollectionId), { titleOverride: selectedCollection?.name || 'Collection' });
                       setMoveVaultId(String(selectedCollection?.vaultId || selectedVaultId || ''));
                       setMoveVaultDropdownOpen(false);
                       setCollectionMoveVisible(true);
@@ -2007,7 +2135,8 @@ export default function PrivateVaults({ navigation, route }) {
                     style={[styles.actionButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }, (!selectedCollectionId || !canCollectionCloneOnline) && styles.buttonDisabled]}
                     disabled={!selectedCollectionId || !canCollectionCloneOnline}
                     onPress={() => {
-                      if (!selectedVaultId || !selectedCollection) return;
+                      if (!selectedVaultId || !selectedCollectionId) return;
+                      markRecentCollectionById(String(selectedCollectionId), { titleOverride: selectedCollection?.name || 'Collection' });
                       const baseName = selectedCollection?.name ? String(selectedCollection.name) : 'Collection';
                       const copyName = limit35(`${baseName} (Copy)`);
                       (async () => {
@@ -2022,7 +2151,9 @@ export default function PrivateVaults({ navigation, route }) {
                           return;
                         }
                         if (res.collectionId) {
-                          onSelectCollection(String(res.collectionId));
+                          const realId = String(res.collectionId);
+                          markRecentCollectionById(realId, { titleOverride: copyName });
+                          onSelectCollection(realId);
                         }
                       })();
                     }}
