@@ -4,6 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
+import PullToRefreshIndicator from '../components/PullToRefreshIndicator';
 import { getInitials } from '../utils/user';
 
 export default function Profile({ navigation, route }) {
@@ -19,6 +20,7 @@ export default function Profile({ navigation, route }) {
     theme,
     membershipAccess,
     showAlert,
+    showNotice,
   } = useData();
   const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
@@ -39,6 +41,16 @@ export default function Profile({ navigation, route }) {
   const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
   const scrollRef = useRef(null);
+  const [pullDistance, setPullDistance] = useState(0);
+
+  const handleScroll = (e) => {
+    const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+    if (y < 0) {
+      setPullDistance(Math.min(60, -y));
+      return;
+    }
+    setPullDistance(0);
+  };
 
   useEffect(() => {
     setDraft(currentUser || {});
@@ -324,12 +336,15 @@ export default function Profile({ navigation, route }) {
   return (
     <>
     <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
+      <PullToRefreshIndicator pullDistance={pullDistance} refreshing={refreshing} theme={theme} />
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
         showsVerticalScrollIndicator={false}
         bounces
         alwaysBounceVertical
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -346,6 +361,7 @@ export default function Profile({ navigation, route }) {
                   await new Promise((r) => setTimeout(r, minMs - elapsed));
                 }
                 setRefreshing(false);
+                showNotice?.('Refresh complete.', { durationMs: 1200 });
               }
             }}
             tintColor="#fff"

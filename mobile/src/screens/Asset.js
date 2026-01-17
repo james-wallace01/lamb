@@ -14,6 +14,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useData } from '../context/DataContext';
 import ShareModal from '../components/ShareModal';
 import LambHeader from '../components/LambHeader';
+import PullToRefreshIndicator from '../components/PullToRefreshIndicator';
 import BackButton from '../components/BackButton';
 import { getAssetCapabilities } from '../policies/capabilities';
 import { runWithMinimumDuration } from '../utils/timing';
@@ -47,6 +48,7 @@ export default function Asset({ route, navigation }) {
     releaseVaultCollections,
     backendReachable,
     showAlert,
+    showNotice,
     createAuditEvent,
     formatCurrencyValue,
   } = useData();
@@ -97,6 +99,16 @@ export default function Asset({ route, navigation }) {
   const [pendingReloadEditedAt, setPendingReloadEditedAt] = useState(null);
   const [infoVisible, setInfoVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+
+  const handleScroll = (e) => {
+    const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+    if (y < 0) {
+      setPullDistance(Math.min(60, -y));
+      return;
+    }
+    setPullDistance(0);
+  };
 
   const handleRefresh = async () => {
     if (refreshing) return;
@@ -105,6 +117,7 @@ export default function Asset({ route, navigation }) {
       await runWithMinimumDuration(async () => {
         await refreshData?.();
       }, 800);
+      showNotice?.('Refresh complete.', { durationMs: 1200 });
     } finally {
       setRefreshing(false);
     }
@@ -398,6 +411,7 @@ export default function Asset({ route, navigation }) {
 
   return (
     <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
+      <PullToRefreshIndicator pullDistance={pullDistance} refreshing={refreshing} theme={theme} />
       <Modal visible={editVisible} transparent animationType="fade" onRequestClose={() => setEditVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -633,6 +647,8 @@ export default function Asset({ route, navigation }) {
         contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
         bounces
         alwaysBounceVertical
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.isDark ? '#fff' : '#111827'} progressViewOffset={24} />}
       >
         <View style={styles.headerRow}>

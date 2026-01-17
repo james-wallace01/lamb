@@ -4,6 +4,7 @@ import { collection, getDocs, limit, orderBy, query, where } from 'firebase/fire
 import { useIsFocused } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import LambHeader from '../components/LambHeader';
+import PullToRefreshIndicator from '../components/PullToRefreshIndicator';
 import { useData } from '../context/DataContext';
 import { firestore } from '../firebase';
 import { runWithMinimumDuration } from '../utils/timing';
@@ -237,7 +238,7 @@ const getActionStyles = (action, theme) => {
 const EMAIL_SENT_MARKER_TYPE = 'NOTIFICATION_EMAIL_SENT';
 
 export default function Tracking({ navigation, route }) {
-  const { theme, currentUser, vaults, vaultMemberships, users, backendReachable } = useData();
+  const { theme, currentUser, vaults, vaultMemberships, users, backendReachable, showNotice } = useData();
   const isOffline = backendReachable === false;
   const isFocused = useIsFocused();
 
@@ -297,9 +298,19 @@ export default function Tracking({ navigation, route }) {
 
   const [events, setEvents] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const mountedRef = useRef(true);
+
+  const handleScroll = (e) => {
+    const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+    if (y < 0) {
+      setPullDistance(Math.min(60, -y));
+      return;
+    }
+    setPullDistance(0);
+  };
 
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -413,6 +424,7 @@ export default function Tracking({ navigation, route }) {
       await runWithMinimumDuration(async () => {
         await load();
       }, 800);
+      showNotice?.('Refresh complete.', { durationMs: 1200 });
     } finally {
       setRefreshing(false);
     }
@@ -420,8 +432,11 @@ export default function Tracking({ navigation, route }) {
 
   return (
     <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
+      <PullToRefreshIndicator pullDistance={pullDistance} refreshing={refreshing} theme={theme} />
       <ScrollView
         contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         refreshControl={
           hasProMembership ? (
             <RefreshControl

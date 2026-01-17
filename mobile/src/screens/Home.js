@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View, Text, ScrollView, TextInput, Image, RefreshControl, TouchableOpacity } from 'react-native';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
+import PullToRefreshIndicator from '../components/PullToRefreshIndicator';
 import { getInitials } from '../utils/user';
 import { runWithMinimumDuration } from '../utils/timing';
 
@@ -22,6 +23,16 @@ export default function Home({ navigation, route }) {
   const [avatarFailed, setAvatarFailed] = useState(false);
   const scrollRef = useRef(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+
+  const handleScroll = (e) => {
+    const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+    if (y < 0) {
+      setPullDistance(Math.min(60, -y));
+      return;
+    }
+    setPullDistance(0);
+  };
 
   const getInviteStatusPresentation = (rawStatus) => {
     const status = String(rawStatus || '').toUpperCase();
@@ -68,6 +79,7 @@ export default function Home({ navigation, route }) {
         await refreshData?.();
         await loadInvitations();
       }, 800);
+      showNotice?.('Refresh complete.', { durationMs: 1200 });
     } finally {
       setRefreshing(false);
     }
@@ -113,10 +125,13 @@ export default function Home({ navigation, route }) {
   if (!membershipAccess) {
     return (
       <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
+        <PullToRefreshIndicator pullDistance={pullDistance} refreshing={refreshing} theme={theme} />
         <ScrollView
           contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
           bounces
           alwaysBounceVertical
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.isDark ? '#fff' : '#111827'} progressViewOffset={24} />}
         >
           <LambHeader />
@@ -238,11 +253,14 @@ export default function Home({ navigation, route }) {
 
   return (
     <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
+      <PullToRefreshIndicator pullDistance={pullDistance} refreshing={refreshing} theme={theme} />
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
         bounces
         alwaysBounceVertical
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.isDark ? '#fff' : '#111827'} progressViewOffset={24} />}
       >
         <LambHeader />

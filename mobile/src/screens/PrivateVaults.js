@@ -4,6 +4,7 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import LambHeader from '../components/LambHeader';
 import ShareModal from '../components/ShareModal';
+import PullToRefreshIndicator from '../components/PullToRefreshIndicator';
 import { useData } from '../context/DataContext';
 import { firestore } from '../firebase';
 import { getAssetCapabilities, getCollectionCapabilities, getVaultCapabilities } from '../policies/capabilities';
@@ -43,6 +44,7 @@ export default function PrivateVaults({ navigation, route }) {
     releaseVaultAssets,
     backendReachable,
     showAlert,
+    showNotice,
     showVaultTotalValue,
     formatCurrencyValue,
   } = useData();
@@ -64,6 +66,7 @@ export default function PrivateVaults({ navigation, route }) {
   const [collectionCreateBusy, setCollectionCreateBusy] = useState(false);
   const [assetCreateBusy, setAssetCreateBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
   const [remoteOwnedVaults, setRemoteOwnedVaults] = useState([]);
   const [optimisticVaults, setOptimisticVaults] = useState([]);
   const [optimisticCollections, setOptimisticCollections] = useState([]);
@@ -551,6 +554,7 @@ export default function PrivateVaults({ navigation, route }) {
         await loadOwnedVaults();
         await refreshData?.();
       }, 800);
+      showNotice?.('Refresh complete.', { durationMs: 1200 });
     } finally {
       setRefreshing(false);
     }
@@ -903,6 +907,7 @@ export default function PrivateVaults({ navigation, route }) {
 
   return (
     <View style={[styles.wrapper, { backgroundColor: theme.background }]}> 
+      <PullToRefreshIndicator pullDistance={pullDistance} refreshing={refreshing} theme={theme} />
       <SectionList
         ref={listRef}
         contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
@@ -911,7 +916,12 @@ export default function PrivateVaults({ navigation, route }) {
         stickySectionHeadersEnabled={false}
         scrollEventThrottle={16}
         onScroll={(e) => {
-          const y = e?.nativeEvent?.contentOffset?.y || 0;
+          const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+          if (y < 0) {
+            setPullDistance(Math.min(60, -y));
+          } else {
+            setPullDistance(0);
+          }
           // Use a ref so we only set state when crossing thresholds.
           const shouldShow = y > 300;
           if (shouldShow !== showJumpToTopRef.current) {

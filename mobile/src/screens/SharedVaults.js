@@ -3,6 +3,7 @@ import { Alert as NativeAlert, Image, Modal, RefreshControl, ScrollView, Section
 import { Ionicons } from '@expo/vector-icons';
 import LambHeader from '../components/LambHeader';
 import ShareModal from '../components/ShareModal';
+import PullToRefreshIndicator from '../components/PullToRefreshIndicator';
 import { useData } from '../context/DataContext';
 import { getAssetCapabilities, getCollectionCapabilities, getVaultCapabilities } from '../policies/capabilities';
 import { runWithMinimumDuration } from '../utils/timing';
@@ -40,6 +41,7 @@ export default function SharedVaults({ navigation, route }) {
     releaseVaultAssets,
     backendReachable,
     showAlert,
+    showNotice,
     showVaultTotalValue,
     formatCurrencyValue,
   } = useData();
@@ -64,6 +66,7 @@ export default function SharedVaults({ navigation, route }) {
   const [optimisticAssets, setOptimisticAssets] = useState([]);
   const [optimisticDeletedAssetIds, setOptimisticDeletedAssetIds] = useState({});
   const [refreshing, setRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
 
   const listRef = useRef(null);
   const [showJumpToTop, setShowJumpToTop] = useState(false);
@@ -464,6 +467,7 @@ export default function SharedVaults({ navigation, route }) {
         await refreshData?.();
         await loadInvitations();
       }, 800);
+      showNotice?.('Refresh complete.', { durationMs: 1200 });
     } finally {
       setRefreshing(false);
     }
@@ -884,6 +888,7 @@ export default function SharedVaults({ navigation, route }) {
 
   return (
     <View style={[styles.wrapper, { backgroundColor: theme.background }]}> 
+      <PullToRefreshIndicator pullDistance={pullDistance} refreshing={refreshing} theme={theme} />
       <SectionList
         ref={listRef}
         contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
@@ -892,7 +897,12 @@ export default function SharedVaults({ navigation, route }) {
         stickySectionHeadersEnabled={false}
         scrollEventThrottle={16}
         onScroll={(e) => {
-          const y = e?.nativeEvent?.contentOffset?.y || 0;
+          const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+          if (y < 0) {
+            setPullDistance(Math.min(60, -y));
+          } else {
+            setPullDistance(0);
+          }
           const shouldShow = y > 300;
           if (shouldShow !== showJumpToTopRef.current) {
             showJumpToTopRef.current = shouldShow;

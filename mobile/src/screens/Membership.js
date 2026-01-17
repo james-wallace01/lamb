@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Image, StyleSheet, View, Text, ScrollView, RefreshControl, TouchableOpacity, Linking } from 'react-native';
 import LambHeader from '../components/LambHeader';
+import PullToRefreshIndicator from '../components/PullToRefreshIndicator';
 import SubscriptionManager from '../components/SubscriptionManager';
 import { useData } from '../context/DataContext';
 import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
@@ -16,6 +17,16 @@ export default function Membership({ navigation, route }) {
     navigation?.navigate?.('Profile');
   };
   const [avatarFailed, setAvatarFailed] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+
+  const handleScroll = (e) => {
+    const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+    if (y < 0) {
+      setPullDistance(Math.min(60, -y));
+      return;
+    }
+    setPullDistance(0);
+  };
 
   const notifyError = (message) => showNotice?.(message, { variant: 'error', durationMs: 2600 });
   const notifyInfo = (message) => showNotice?.(message, { durationMs: 1800 });
@@ -33,6 +44,7 @@ export default function Membership({ navigation, route }) {
       await runWithMinimumDuration(async () => {
         await refreshData?.();
       }, 800);
+      showNotice?.('Refresh complete.', { durationMs: 1200 });
     } finally {
       setRefreshing(false);
     }
@@ -40,10 +52,13 @@ export default function Membership({ navigation, route }) {
 
   return (
     <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
+      <PullToRefreshIndicator pullDistance={pullDistance} refreshing={refreshing} theme={theme} />
       <ScrollView
         contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
         bounces
         alwaysBounceVertical
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.isDark ? '#fff' : '#111827'} progressViewOffset={24} />}
       >
         <LambHeader />

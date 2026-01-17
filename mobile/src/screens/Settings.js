@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ActionSheetIOS, Image, StyleSheet, View, Text, ScrollView, RefreshControl, TouchableOpacity, Linking, Platform, Switch } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import LambHeader from '../components/LambHeader';
+import PullToRefreshIndicator from '../components/PullToRefreshIndicator';
 import { useData } from '../context/DataContext';
 import { runWithMinimumDuration } from '../utils/timing';
 import { getInitials } from '../utils/user';
@@ -34,6 +35,16 @@ export default function Settings({ navigation, route }) {
   const [currencyDraft, setCurrencyDraft] = useState(currencyPreferenceMode === 'auto' ? '__auto__' : String(currency || ''));
   const [updatingBiometric, setUpdatingBiometric] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+
+  const handleScroll = (e) => {
+    const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+    if (y < 0) {
+      setPullDistance(Math.min(60, -y));
+      return;
+    }
+    setPullDistance(0);
+  };
 
   const isOnProfile = route?.name === 'Profile';
   const goProfile = () => {
@@ -149,6 +160,7 @@ export default function Settings({ navigation, route }) {
       await runWithMinimumDuration(async () => {
         await refreshData?.();
       }, 800);
+      showNotice?.('Refresh complete.', { durationMs: 1200 });
     } finally {
       setRefreshing(false);
     }
@@ -156,10 +168,13 @@ export default function Settings({ navigation, route }) {
 
   return (
     <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
+      <PullToRefreshIndicator pullDistance={pullDistance} refreshing={refreshing} theme={theme} />
       <ScrollView
         contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
         bounces
         alwaysBounceVertical
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.isDark ? '#fff' : '#111827'} progressViewOffset={24} />}
       >
         <View style={styles.headerRow}>

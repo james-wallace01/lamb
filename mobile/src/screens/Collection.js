@@ -4,6 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useData } from '../context/DataContext';
 import ShareModal from '../components/ShareModal';
 import LambHeader from '../components/LambHeader';
+import PullToRefreshIndicator from '../components/PullToRefreshIndicator';
 import BackButton from '../components/BackButton';
 import { getCollectionCapabilities } from '../policies/capabilities';
 import { runWithMinimumDuration } from '../utils/timing';
@@ -11,7 +12,7 @@ import { getInitials } from '../utils/user';
 
 export default function Collection({ navigation, route }) {
   const { collectionId } = route.params || {};
-  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultAssets, releaseVaultAssets, retainVaultCollections, releaseVaultCollections, backendReachable, showAlert, createAuditEvent } = useData();
+  const { loading, collections, assets, addAsset, currentUser, getRoleForCollection, canCreateAssetsInCollection, vaults, moveCollection, users, deleteCollection, updateCollection, refreshData, theme, defaultHeroImage, permissionGrants, retainVaultAssets, releaseVaultAssets, retainVaultCollections, releaseVaultCollections, backendReachable, showAlert, showNotice, createAuditEvent } = useData();
   const Alert = { alert: showAlert };
   const isOffline = backendReachable === false;
   const isOnProfile = route?.name === 'Profile';
@@ -33,6 +34,16 @@ export default function Collection({ navigation, route }) {
   const [editDraft, setEditDraft] = useState({ name: '', description: '', manager: '', images: [], heroImage: '' });
   const [previewImage, setPreviewImage] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+
+  const handleScroll = (e) => {
+    const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+    if (y < 0) {
+      setPullDistance(Math.min(60, -y));
+      return;
+    }
+    setPullDistance(0);
+  };
 
   const handleRefresh = async () => {
     if (refreshing) return;
@@ -41,6 +52,7 @@ export default function Collection({ navigation, route }) {
       await runWithMinimumDuration(async () => {
         await refreshData?.();
       }, 800);
+      showNotice?.('Refresh complete.', { durationMs: 1200 });
     } finally {
       setRefreshing(false);
     }
@@ -635,6 +647,7 @@ export default function Collection({ navigation, route }) {
 
   return (
     <View style={[styles.wrapper, { backgroundColor: theme.background }]}>
+      <PullToRefreshIndicator pullDistance={pullDistance} refreshing={refreshing} theme={theme} />
       <Modal visible={editVisible} transparent animationType="fade" onRequestClose={() => setEditVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -765,6 +778,8 @@ export default function Collection({ navigation, route }) {
         contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
         bounces
         alwaysBounceVertical
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.isDark ? '#fff' : '#111827'} progressViewOffset={24} />}
       >
         {header}
