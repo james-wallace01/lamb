@@ -126,6 +126,7 @@ export default function PrivateVaults({ navigation, route }) {
 
   const [vaultEditVisible, setVaultEditVisible] = useState(false);
   const [vaultEditName, setVaultEditName] = useState('');
+  const [vaultEditSaving, setVaultEditSaving] = useState(false);
 
   const [collectionEditVisible, setCollectionEditVisible] = useState(false);
   const [collectionEditName, setCollectionEditName] = useState('');
@@ -1119,7 +1120,15 @@ export default function PrivateVaults({ navigation, route }) {
           </View>
           </Modal>
 
-            <Modal visible={vaultEditVisible} transparent animationType="fade" onRequestClose={() => setVaultEditVisible(false)}>
+            <Modal
+              visible={vaultEditVisible}
+              transparent
+              animationType="fade"
+              onRequestClose={() => {
+                if (vaultEditSaving) return;
+                setVaultEditVisible(false);
+              }}
+            >
           <View style={styles.modalBackdrop}>
             <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               <Text style={[styles.modalTitle, { color: theme.text }]}>Edit Vault</Text>
@@ -1131,33 +1140,62 @@ export default function PrivateVaults({ navigation, route }) {
                 placeholderTextColor={theme.placeholder}
                 style={[styles.modalInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }]}
                 {...noAutoCorrect}
+                editable={!vaultEditSaving}
               />
 
               <View style={styles.modalActions}>
-                <TouchableOpacity style={[styles.secondaryButton, { borderColor: theme.border }]} onPress={() => setVaultEditVisible(false)}>
+                <TouchableOpacity
+                  style={[styles.secondaryButton, { borderColor: theme.border }, vaultEditSaving && styles.buttonDisabled]}
+                  onPress={() => setVaultEditVisible(false)}
+                  disabled={vaultEditSaving}
+                >
                   <Text style={[styles.secondaryButtonText, { color: theme.text }]}>Close</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.primaryButton, { backgroundColor: theme.primary, borderColor: theme.primary }, (!selectedVaultId || !canVaultEditOnline) && styles.buttonDisabled]}
-                  disabled={!selectedVaultId || !canVaultEditOnline}
+                  style={[
+                    styles.primaryButton,
+                    { backgroundColor: theme.primary, borderColor: theme.primary },
+                    (!selectedVaultId || !canVaultEditOnline || vaultEditSaving) && styles.buttonDisabled,
+                  ]}
+                  disabled={!selectedVaultId || !canVaultEditOnline || vaultEditSaving}
                   onPress={() => {
                     if (!selectedVaultId || !selectedVault) return;
+                    if (vaultEditSaving) return;
                     const expectedEditedAt = selectedVault?.editedAt ?? null;
                     (async () => {
-                      const res = await updateVault?.(String(selectedVaultId), { name: limit35((vaultEditName || '').trim()) }, { expectedEditedAt });
-                      if (!res || res.ok === false) {
-                        Alert.alert('Save failed', res?.message || 'Unable to update vault');
-                        return;
+                      setVaultEditSaving(true);
+                      try {
+                        const res = await updateVault?.(String(selectedVaultId), { name: limit35((vaultEditName || '').trim()) }, { expectedEditedAt });
+                        if (!res || res.ok === false) {
+                          if (res?.code === 'conflict') {
+                            Alert.alert('Updated elsewhere', 'This vault changed on another device. Reload and try again.', [
+                              { text: 'Reload', onPress: () => setVaultEditVisible(false) },
+                              { text: 'Cancel', style: 'cancel' },
+                            ]);
+                            return;
+                          }
+                          Alert.alert('Save failed', res?.message || 'Unable to update vault');
+                          return;
+                        }
+                        setVaultEditVisible(false);
+                        showNotice?.('Vault saved.', { durationMs: 1200 });
+                      } catch (e) {
+                        Alert.alert('Save failed', e?.message || 'Unable to update vault');
+                      } finally {
+                        setVaultEditSaving(false);
                       }
-                      setVaultEditVisible(false);
                     })();
                   }}
                 >
-                  <Text style={[styles.primaryButtonText, { color: theme.onAccentText }]}>Save</Text>
+                  <Text style={[styles.primaryButtonText, { color: theme.onAccentText }]}>{vaultEditSaving ? 'Saving…' : 'Save'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.dangerButton, { backgroundColor: theme.dangerBg, borderColor: theme.dangerBorder }, (!selectedVaultId || !canVaultDeleteOnline) && styles.buttonDisabled]}
-                  disabled={!selectedVaultId || !canVaultDeleteOnline}
+                  style={[
+                    styles.dangerButton,
+                    { backgroundColor: theme.dangerBg, borderColor: theme.dangerBorder },
+                    (!selectedVaultId || !canVaultDeleteOnline || vaultEditSaving) && styles.buttonDisabled,
+                  ]}
+                  disabled={!selectedVaultId || !canVaultDeleteOnline || vaultEditSaving}
                   onPress={() => {
                     if (!selectedVaultId) return;
                     Alert.alert('Delete Vault?', 'This action cannot be undone.', [
@@ -1167,14 +1205,18 @@ export default function PrivateVaults({ navigation, route }) {
                         style: 'destructive',
                         onPress: () => {
                           (async () => {
-                            const res = await deleteVault?.(String(selectedVaultId));
-                            if (!res || res.ok === false) {
-                              Alert.alert('Delete failed', res?.message || 'Unable to delete vault');
-                              return;
+                            try {
+                              const res = await deleteVault?.(String(selectedVaultId));
+                              if (!res || res.ok === false) {
+                                Alert.alert('Delete failed', res?.message || 'Unable to delete vault');
+                                return;
+                              }
+                              setVaultEditVisible(false);
+                              setSelectedVaultId(null);
+                              setSelectedCollectionId(null);
+                            } catch (e) {
+                              Alert.alert('Delete failed', e?.message || 'Unable to delete vault');
                             }
-                            setVaultEditVisible(false);
-                            setSelectedVaultId(null);
-                            setSelectedCollectionId(null);
                           })();
                         },
                       },
