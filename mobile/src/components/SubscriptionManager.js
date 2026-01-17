@@ -7,8 +7,9 @@ import { safeIapCall } from '../utils/iap';
 import * as RNIap from 'react-native-iap';
 
 export default function SubscriptionManager({ showTitle = true, showChooseMembership = false, onChooseMembership }) {
-  const { currentUser, subscriptionTiers, convertPrice, theme, showAlert } = useData();
-  const Alert = { alert: showAlert };
+  const { currentUser, subscriptionTiers, convertPrice, theme, showNotice } = useData();
+  const notifyError = (message) => showNotice?.(message, { variant: 'error', durationMs: 2600 });
+  const notifyInfo = (message) => showNotice?.(message, { durationMs: 1800 });
   const [submitting, setSubmitting] = useState(false);
 
   const iapNativeAvailable =
@@ -46,15 +47,12 @@ export default function SubscriptionManager({ showTitle = true, showChooseMember
 
   const restorePurchases = async () => {
     if (Platform.OS !== 'ios') {
-      Alert.alert('Unavailable', 'Restore is available on iOS only.');
+      notifyError('Restore is available on iOS only.');
       return;
     }
 
     if (!iapNativeAvailable) {
-      Alert.alert(
-        'In-app purchases unavailable',
-        'To test purchases you need a native build (TestFlight or an EAS development build). Expo Go does not support react-native-iap.'
-      );
+      notifyError('To test purchases you need a native build (TestFlight or an EAS development build). Expo Go does not support in-app purchases.');
       return;
     }
 
@@ -62,10 +60,7 @@ export default function SubscriptionManager({ showTitle = true, showChooseMember
     try {
       const purchases = await safeIapCall(() => RNIap.getAvailablePurchases());
       if (!purchases) {
-        Alert.alert(
-          'In-app purchases unavailable',
-          'This build cannot access Apple In-App Purchases. Use TestFlight (recommended) or an EAS development build with react-native-iap included.'
-        );
+        notifyError('This build cannot access Apple In-App Purchases. Use TestFlight (recommended) or an EAS development build.');
         setSubmitting(false);
         return;
       }
@@ -73,7 +68,7 @@ export default function SubscriptionManager({ showTitle = true, showChooseMember
       const receiptData = best?.transactionReceipt || null;
       const productId = best?.productId || null;
       if (!receiptData) {
-        Alert.alert('Nothing to restore', 'No active purchases were found on this Apple ID.');
+        notifyInfo('No active purchases were found on this Apple ID.');
         setSubmitting(false);
         return;
       }
@@ -86,14 +81,14 @@ export default function SubscriptionManager({ showTitle = true, showChooseMember
       });
       const json = await resp.json().catch(() => null);
       if (!resp.ok) {
-        Alert.alert('Restore failed', json?.error || 'Unable to verify receipt');
+        notifyError(json?.error || 'Unable to verify receipt');
         setSubmitting(false);
         return;
       }
 
-      Alert.alert('Restored', 'Your membership has been restored.');
+      notifyInfo('Your membership has been restored.');
     } catch (e) {
-      Alert.alert('Restore failed', e?.message || 'Unable to restore purchases');
+      notifyError(e?.message || 'Unable to restore purchases');
     } finally {
       setSubmitting(false);
     }

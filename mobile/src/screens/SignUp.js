@@ -16,8 +16,7 @@ import { GOOGLE_ANDROID_CLIENT_ID, GOOGLE_IOS_CLIENT_ID, GOOGLE_WEB_CLIENT_ID, i
 WebBrowser.maybeCompleteAuthSession();
 
 export default function SignUp({ navigation }) {
-  const { register, loginWithApple, loginWithGoogleIdToken, loading, theme, backendReachable, showAlert } = useData();
-  const Alert = { alert: showAlert };
+  const { register, loginWithApple, loginWithGoogleIdToken, loading, theme, backendReachable, showNotice } = useData();
   const insets = useSafeAreaInsets();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -33,6 +32,8 @@ export default function SignUp({ navigation }) {
   const [usernameChecking, setUsernameChecking] = useState(false);
 
   const isOffline = backendReachable === false;
+
+  const notifyError = (message) => showNotice?.(message, { variant: 'error', durationMs: 2600 });
 
   const googleDiscovery = AuthSession.useAutoDiscovery('https://accounts.google.com');
   const googleClientId = Platform.OS === 'ios'
@@ -56,7 +57,7 @@ export default function SignUp({ navigation }) {
     if (googleResponse.type !== 'success') return;
     const idToken = googleResponse?.params?.id_token;
     if (!idToken) {
-      Alert.alert('Google Sign In', 'Google sign-in failed. Please try again.');
+      notifyError('Google sign-in failed. Please try again.');
       return;
     }
 
@@ -66,10 +67,10 @@ export default function SignUp({ navigation }) {
       try {
         const res = await loginWithGoogleIdToken?.({ idToken });
         if (!cancelled && res && res.ok === false) {
-          Alert.alert('Google Sign In', res.message || 'Google sign-in failed');
+          notifyError(res.message || 'Google sign-in failed');
         }
       } catch {
-        if (!cancelled) Alert.alert('Google Sign In', 'Google sign-in failed. Please try again.');
+        if (!cancelled) notifyError('Google sign-in failed. Please try again.');
       }
     })();
 
@@ -273,17 +274,17 @@ export default function SignUp({ navigation }) {
 
   const handleSubmit = async () => {
     if (isOffline) {
-      Alert.alert('Offline', 'Internet connection required. Please reconnect and try again.');
+      notifyError('Internet connection required. Please reconnect and try again.');
       return;
     }
     if (!firstName || !lastName || !email || !username || !password) {
-      Alert.alert('Missing info', 'Please fill all fields');
+      notifyError('Please fill all fields.');
       return;
     }
 
     if (emailErrorRaw) {
       setEmailBlurred(true);
-      Alert.alert('Invalid email', emailErrorRaw);
+      notifyError(emailErrorRaw);
       return;
     }
 
@@ -329,13 +330,13 @@ export default function SignUp({ navigation }) {
 
     if (usernameErrorRaw) {
       setUsernameBlurred(true);
-      Alert.alert('Invalid username', usernameErrorRaw);
+      notifyError(usernameErrorRaw);
       return;
     }
 
     if (passwordInvalidRaw) {
       setPasswordBlurred(true);
-      Alert.alert('Weak password', 'Use 12+ characters with a letter, number, and symbol. Avoid your username/email.');
+      notifyError('Use 12+ characters with a letter, number, and symbol. Avoid your username/email.');
       return;
     }
 
@@ -376,10 +377,10 @@ export default function SignUp({ navigation }) {
             try {
               const res = await loginWithApple?.();
               if (!res?.ok && res?.message && res.message !== 'Canceled') {
-                Alert.alert('Apple Sign In', res.message);
+                notifyError(res.message);
               }
             } catch {
-              Alert.alert('Apple Sign In', 'Apple Sign In failed. Please try again.');
+              notifyError('Apple Sign In failed. Please try again.');
             }
           }}
           disabled={loading || isOffline}
@@ -397,17 +398,17 @@ export default function SignUp({ navigation }) {
         onPress={async () => {
           if (loading || isOffline) return;
           if (!isGoogleOAuthConfigured()) {
-            Alert.alert('Google Sign In', 'Google sign-in is not configured for this build.');
+            notifyError('Google sign-in is not configured for this build.');
             return;
           }
           if (!googleDiscovery) {
-            Alert.alert('Google Sign In', 'Google sign-in is not ready yet. Please try again.');
+            notifyError('Google sign-in is not ready yet. Please try again.');
             return;
           }
           try {
             await googlePromptAsync?.({ useProxy: true });
           } catch {
-            Alert.alert('Google Sign In', 'Google sign-in failed. Please try again.');
+            notifyError('Google sign-in failed. Please try again.');
           }
         }}
         disabled={loading || isOffline || !googleRequest || !googleDiscovery}

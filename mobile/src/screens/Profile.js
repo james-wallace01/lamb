@@ -1,10 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, Image, ScrollView, RefreshControl, Platform, Switch, Linking } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, Image, ScrollView, RefreshControl } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useData } from '../context/DataContext';
 import LambHeader from '../components/LambHeader';
-import { LEGAL_LINK_ITEMS } from '../config/legalLinks';
 import { getInitials } from '../utils/user';
 
 export default function Profile({ navigation, route }) {
@@ -18,12 +17,7 @@ export default function Profile({ navigation, route }) {
     refreshData,
     backendReachable,
     theme,
-    isDarkMode,
-    setDarkModeEnabled,
     membershipAccess,
-    biometricEnabledForCurrentUser,
-    enableBiometricSignInForCurrentUser,
-    disableBiometricSignIn,
     showAlert,
   } = useData();
   const Alert = { alert: showAlert };
@@ -32,7 +26,6 @@ export default function Profile({ navigation, route }) {
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [updatingBiometric, setUpdatingBiometric] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
@@ -46,26 +39,11 @@ export default function Profile({ navigation, route }) {
   const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
   const scrollRef = useRef(null);
-  const notificationsOffsetYRef = useRef(null);
-
-  const openLegalLink = (url) => {
-    Linking.openURL(url).catch(() => {});
-  };
 
   useEffect(() => {
     setDraft(currentUser || {});
     setIsEditing(false);
   }, [currentUser]);
-
-  useEffect(() => {
-    if (route?.params?.scrollTo !== 'notifications') return;
-    const y = notificationsOffsetYRef.current;
-    if (typeof y !== 'number') return;
-
-    // A small top offset keeps the header spacing comfortable.
-    scrollRef.current?.scrollTo?.({ y: Math.max(0, y - 12), animated: true });
-    navigation?.setParams?.({ scrollTo: null });
-  }, [route?.params?.scrollTo, navigation]);
 
   useEffect(() => {
     setCurrentPassword('');
@@ -521,52 +499,6 @@ export default function Profile({ navigation, route }) {
             <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Account</Text>
 
-              <View style={styles.toggleRow}>
-                <View style={styles.toggleTextCol}>
-                  <Text style={[styles.toggleTitle, { color: theme.text }]}>Dark Mode</Text>
-                  <Text style={[styles.toggleSubtitle, { color: theme.textMuted }]}>Default is on. Turn off for a light theme.</Text>
-                </View>
-                <Switch
-                  value={!!isDarkMode}
-                  onValueChange={(next) => {
-                    const res = setDarkModeEnabled?.(next);
-                    if (!res?.ok) Alert.alert('Dark Mode', res?.message || 'Could not update theme');
-                  }}
-                />
-              </View>
-
-              {Platform.OS === 'ios' && (
-                <View style={styles.toggleRow}>
-                  <View style={styles.toggleTextCol}>
-                    <Text style={[styles.toggleTitle, { color: theme.text }]}>Face ID Sign In</Text>
-                    <Text style={[styles.toggleSubtitle, { color: theme.textMuted }]}>Use Face ID to sign in on this device.</Text>
-                  </View>
-                  <Switch
-                    value={!!biometricEnabledForCurrentUser}
-                    onValueChange={async (next) => {
-                      if (updatingBiometric) return;
-                      setUpdatingBiometric(true);
-                      try {
-                        if (next) {
-                          const res = await enableBiometricSignInForCurrentUser?.();
-                          if (!res?.ok) {
-                            Alert.alert('Face ID', res?.message || 'Could not enable Face ID');
-                          }
-                        } else {
-                          const res = await disableBiometricSignIn?.();
-                          if (!res?.ok) {
-                            Alert.alert('Face ID', res?.message || 'Could not disable Face ID');
-                          }
-                        }
-                      } finally {
-                        setUpdatingBiometric(false);
-                      }
-                    }}
-                    disabled={updatingBiometric}
-                  />
-                </View>
-              )}
-
               {!showResetPassword && (
                 <TouchableOpacity
                   style={[styles.button, resettingPassword && styles.buttonDisabled]}
@@ -681,26 +613,10 @@ export default function Profile({ navigation, route }) {
               </TouchableOpacity>
             </View>
 
-            <View
-              style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
-              onLayout={(e) => {
-                const y = e?.nativeEvent?.layout?.y;
-                if (typeof y === 'number') notificationsOffsetYRef.current = y;
-              }}
-            > 
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Notifications</Text>
-              <TouchableOpacity
-                style={[styles.button, { marginTop: 0 }]}
-                onPress={() => navigation?.navigate?.('EmailNotifications')}
-              >
-                <Text style={styles.buttonText}>Email Notifications</Text>
-              </TouchableOpacity>
-            </View>
-
             {!membershipAccess && (
               <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                 <Text style={[styles.sectionTitle, { color: theme.text }]}>Membership Required</Text>
-                <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Only Profile and Membership are available until you renew.</Text>
+                <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Only Profile, Settings, and Membership are available until you renew.</Text>
               </View>
             )}
 
@@ -713,21 +629,6 @@ export default function Profile({ navigation, route }) {
             >
               <Text style={[styles.buttonText, styles.deleteButtonText]}>Delete Account</Text>
             </TouchableOpacity>
-
-            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Legal</Text>
-              {LEGAL_LINK_ITEMS.map((item) => (
-                <TouchableOpacity
-                  key={item.key}
-                  style={styles.legalRow}
-                  onPress={() => openLegalLink(item.url)}
-                  accessibilityRole="link"
-                >
-                  <Text style={[styles.legalLink, { color: theme.link }]}>{item.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
           </>
         ) : (
           <Text style={styles.subtitle}>No user loaded.</Text>

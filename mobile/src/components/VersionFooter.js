@@ -92,7 +92,8 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
     const r = currentRouteName;
     if (!r) return null;
     if (r === 'Membership' || r === 'ChooseSubscription') return 'Membership';
-    if (r === 'Profile' || r === 'EmailNotifications') return 'Profile';
+    if (r === 'Settings' || r === 'EmailNotifications') return 'Settings';
+    if (r === 'Profile') return 'Profile';
     if (r === 'PrivateVaults') return 'PrivateVaults';
     if (r === 'SharedVaults') return 'SharedVaults';
     if (r === 'Tracking') return 'Tracking';
@@ -123,7 +124,8 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
   const tabForRouteName = (routeName) => {
     const r = String(routeName || '');
     if (r === 'Membership' || r === 'ChooseSubscription') return 'Membership';
-    if (r === 'Profile' || r === 'EmailNotifications') return 'Profile';
+    if (r === 'Settings' || r === 'EmailNotifications') return 'Settings';
+    if (r === 'Profile') return 'Profile';
     if (r === 'PrivateVaults') return 'PrivateVaults';
     if (r === 'SharedVaults') return 'SharedVaults';
     if (r === 'Tracking') return 'Tracking';
@@ -135,8 +137,6 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
       if (!navigationRef?.isReady?.()) return;
       const current = navigationRef.getCurrentRoute?.()?.name;
       if (current === routeName) return;
-      const targetTab = tabForRouteName(routeName);
-      if (activeTab && targetTab && activeTab === targetTab) return;
 
       navigationRef.dispatch(CommonActions.navigate({ name: routeName, params }));
     } catch {
@@ -204,7 +204,7 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
             style={styles.navButton}
             onPress={() => {
               if (!hasProMembership) {
-                safeNavigate('ChooseSubscription', { mode: 'upgrade' });
+                safeNavigate('Membership');
                 return;
               }
               safeNavigate('Tracking');
@@ -231,6 +231,20 @@ export default function VersionFooter({ navigationRef, currentRouteName }) {
               color={activeTab === 'Membership' ? activeColor : inactiveColor}
             />
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.navButton}
+            onPress={() => safeNavigate('Settings')}
+            accessibilityRole="button"
+            accessibilityLabel="Go to Settings"
+          >
+            <Ionicons
+              name={activeTab === 'Settings' ? 'settings' : 'settings-outline'}
+              size={22}
+              color={activeTab === 'Settings' ? activeColor : inactiveColor}
+            />
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.navButton}
             onPress={() => safeNavigate('Profile')}

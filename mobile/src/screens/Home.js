@@ -6,9 +6,10 @@ import { getInitials } from '../utils/user';
 import { runWithMinimumDuration } from '../utils/timing';
 
 export default function Home({ navigation }) {
-  const { currentUser, refreshData, theme, membershipAccess, acceptInvitationCode, denyInvitationCode, listMyInvitations, backendReachable, showAlert, t } = useData();
-  const Alert = { alert: showAlert };
+  const { currentUser, refreshData, theme, membershipAccess, acceptInvitationCode, denyInvitationCode, listMyInvitations, backendReachable, showNotice, t } = useData();
   const isOffline = backendReachable === false;
+
+  const notifyError = (message) => showNotice?.(message, { variant: 'error', durationMs: 2600 });
   const [invitations, setInvitations] = useState([]);
   const [invitesLoading, setInvitesLoading] = useState(false);
   const [invitesError, setInvitesError] = useState('');
@@ -84,10 +85,10 @@ export default function Home({ navigation }) {
     if (!raw) return;
     const res = await acceptInvitationCode?.(raw);
     if (!res || res.ok === false) {
-      Alert.alert('Invite failed', res?.message || 'Unable to accept invite');
+      notifyError(res?.message || 'Unable to accept invite');
       return;
     }
-    Alert.alert('Joined', 'You now have access to the shared vault.');
+    showNotice?.('You now have access to the shared vault.', { durationMs: 1800 });
     await loadInvitations();
     if (res.vaultId) navigation.navigate('SharedVaults', { selectedVaultId: res.vaultId });
   };
@@ -97,10 +98,10 @@ export default function Home({ navigation }) {
     if (!raw) return;
     const res = await denyInvitationCode?.(raw);
     if (!res || res.ok === false) {
-      Alert.alert('Invite failed', res?.message || 'Unable to deny invite');
+      notifyError(res?.message || 'Unable to deny invite');
       return;
     }
-    Alert.alert('Denied', 'Invitation denied.');
+    showNotice?.('Invitation denied.', { durationMs: 1800 });
     await loadInvitations();
   };
 

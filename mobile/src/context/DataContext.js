@@ -42,6 +42,7 @@ import {
 import { API_URL } from '../config/api';
 import NetInfo from '@react-native-community/netinfo';
 import { apiFetch, setApiFetchSessionExpiredHandler } from '../utils/apiFetch';
+import NotificationBanner from '../components/NotificationBanner';
 
 const DATA_KEY = 'lamb-mobile-data-v6';
 const LAST_ACTIVITY_KEY = 'lamb-mobile-last-activity-v1';
@@ -756,11 +757,15 @@ export function DataProvider({ children }) {
   const [permissionGrants, setPermissionGrants] = useState([]);
   const [auditEvents, setAuditEvents] = useState([]);
   const [alertState, setAlertState] = useState({ visible: false, title: '', message: '', buttons: null });
+  const [noticeState, setNoticeState] = useState({ visible: false, message: '', variant: 'info' });
+  const noticeTimeoutRef = useRef(null);
   const [lastActivityAt, setLastActivityAt] = useState(Date.now());
   const deviceLocale = useMemo(() => getDeviceLocale(), []);
   const deviceRegion = useMemo(() => inferRegionFromLocale(deviceLocale), [deviceLocale]);
   const [language, setLanguage] = useState(() => inferLanguageFromLocale(deviceLocale));
+  const [languageOverrideEnabled, setLanguageOverrideEnabled] = useState(false);
   const [currency, setCurrency] = useState(() => inferCurrencyFromRegion(deviceRegion));
+  const [currencyOverrideEnabled, setCurrencyOverrideEnabled] = useState(false);
   const effectiveLocale = useMemo(() => {
     const lang = normalizeLanguageCode(language) || inferLanguageFromLocale(deviceLocale);
     return deviceRegion ? `${lang}-${deviceRegion}` : (lang || deviceLocale);
@@ -807,6 +812,34 @@ export function DataProvider({ children }) {
     setAlertState({ visible: true, title: effectiveTitle, message: effectiveMessage, buttons: btns });
   }, []);
 
+  const showNotice = useCallback((message, options) => {
+    const msg = message != null ? String(message) : '';
+    if (!msg) return;
+
+    const variant = options?.variant ? String(options.variant) : 'info';
+    const durationMs = Number.isFinite(Number(options?.durationMs)) ? Number(options.durationMs) : 1800;
+
+    if (noticeTimeoutRef.current) {
+      clearTimeout(noticeTimeoutRef.current);
+      noticeTimeoutRef.current = null;
+    }
+
+    setNoticeState({ visible: true, message: msg, variant });
+
+    noticeTimeoutRef.current = setTimeout(() => {
+      setNoticeState((prev) => ({ ...prev, visible: false }));
+      noticeTimeoutRef.current = null;
+    }, Math.max(600, durationMs));
+  }, []);
+
+  const dismissNotice = useCallback(() => {
+    if (noticeTimeoutRef.current) {
+      clearTimeout(noticeTimeoutRef.current);
+      noticeTimeoutRef.current = null;
+    }
+    setNoticeState((prev) => ({ ...prev, visible: false }));
+  }, []);
+
   const t = useCallback(
     (key) => {
       const lang = normalizeLanguageCode(language) || 'en';
@@ -816,21 +849,45 @@ export function DataProvider({ children }) {
     [language]
   );
 
-  const setLanguagePreference = useCallback(async (nextLanguage) => {
-    const normalized = normalizeLanguageCode(nextLanguage);
-    if (!normalized) return { ok: false, message: 'Language must be a 2–3 letter code (e.g., en, fr).' };
-    setLanguage(normalized);
-    await setItem(LANGUAGE_PREF_KEY, normalized);
-    return { ok: true };
-  }, []);
+  const setLanguagePreference = useCallback(
+    async (nextLanguage) => {
+      const raw = nextLanguage == null ? '' : String(nextLanguage);
+      if (!raw || raw === '__auto__') {
+        setLanguage(inferLanguageFromLocale(deviceLocale));
+        setLanguageOverrideEnabled(false);
+        await removeItem(LANGUAGE_PREF_KEY);
+        return { ok: true };
+      }
 
-  const setCurrencyPreference = useCallback(async (nextCurrency) => {
-    const normalized = normalizeCurrencyCode(nextCurrency);
-    if (!normalized) return { ok: false, message: 'Currency must be a 3-letter code (e.g., USD, EUR).' };
-    setCurrency(normalized);
-    await setItem(CURRENCY_PREF_KEY, normalized);
-    return { ok: true };
-  }, []);
+      const normalized = normalizeLanguageCode(raw);
+      if (!normalized) return { ok: false, message: 'Language must be a 2–3 letter code (e.g., en, fr).' };
+      setLanguage(normalized);
+      setLanguageOverrideEnabled(true);
+      await setItem(LANGUAGE_PREF_KEY, normalized);
+      return { ok: true };
+    },
+    [deviceLocale]
+  );
+
+  const setCurrencyPreference = useCallback(
+    async (nextCurrency) => {
+      const raw = nextCurrency == null ? '' : String(nextCurrency);
+      if (!raw || raw === '__auto__') {
+        setCurrency(inferCurrencyFromRegion(deviceRegion));
+        setCurrencyOverrideEnabled(false);
+        await removeItem(CURRENCY_PREF_KEY);
+        return { ok: true };
+      }
+
+      const normalized = normalizeCurrencyCode(raw);
+      if (!normalized) return { ok: false, message: 'Currency must be a 3-letter code (e.g., USD, EUR).' };
+      setCurrency(normalized);
+      setCurrencyOverrideEnabled(true);
+      await setItem(CURRENCY_PREF_KEY, normalized);
+      return { ok: true };
+    },
+    [deviceRegion]
+  );
 
   const formatCurrencyValue = useCallback(
     (value) => {
@@ -1123,8 +1180,19 @@ export function DataProvider({ children }) {
         const storedCurrency = await getItem(CURRENCY_PREF_KEY, null);
         const normalizedLang = normalizeLanguageCode(storedLang);
         const normalizedCurrency = normalizeCurrencyCode(storedCurrency);
-        if (normalizedLang) setLanguage(normalizedLang);
-        if (normalizedCurrency) setCurrency(normalizedCurrency);
+        if (normalizedLang) {
+          setLanguage(normalizedLang);
+          setLanguageOverrideEnabled(true);
+        } else {
+          setLanguageOverrideEnabled(false);
+        }
+
+        if (normalizedCurrency) {
+          setCurrency(normalizedCurrency);
+          setCurrencyOverrideEnabled(true);
+        } else {
+          setCurrencyOverrideEnabled(false);
+        }
 
         const stored = await getItem(DATA_KEY, null);
         if (stored && stored.version === STORAGE_VERSION) {
@@ -3577,6 +3645,8 @@ export function DataProvider({ children }) {
     checkBackend,
     language,
     currency,
+    languagePreferenceMode: languageOverrideEnabled ? 'manual' : 'auto',
+    currencyPreferenceMode: currencyOverrideEnabled ? 'manual' : 'auto',
     locale: effectiveLocale,
     setLanguagePreference,
     setCurrencyPreference,
@@ -3669,9 +3739,15 @@ export function DataProvider({ children }) {
     retainVaultCollections,
     releaseVaultCollections,
     showAlert,
+    showNotice,
   }), [
     loading,
     backendReachable,
+    language,
+    currency,
+    languageOverrideEnabled,
+    currencyOverrideEnabled,
+    effectiveLocale,
     membershipActive,
     membershipAccess,
     users,
@@ -3690,10 +3766,18 @@ export function DataProvider({ children }) {
     retainVaultCollections,
     releaseVaultCollections,
     showAlert,
+    showNotice,
   ]);
 
   return (
     <DataContext.Provider value={value}>
+      <NotificationBanner
+        visible={!!noticeState.visible}
+        message={noticeState.message}
+        variant={noticeState.variant}
+        theme={value.theme}
+        onHidden={dismissNotice}
+      />
       {children}
       <ThemedAlertModal
         visible={!!alertState.visible}

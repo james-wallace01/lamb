@@ -14,13 +14,14 @@ const REMEMBER_ME_ENABLED_KEY = 'lamb-mobile-remember-me-enabled-v1';
 const REMEMBERED_IDENTIFIER_KEY = 'lamb-mobile-remembered-identifier-v1';
 
 export default function SignIn({ navigation }) {
-  const { login, loginWithApple, loginWithGoogleIdToken, loading, biometricUserId, biometricLogin, users, theme, backendReachable, showAlert } = useData();
-  const Alert = { alert: showAlert };
+  const { login, loginWithApple, loginWithGoogleIdToken, loading, biometricUserId, biometricLogin, users, theme, backendReachable, showNotice } = useData();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const isOffline = backendReachable === false;
+
+  const notifyError = (message) => showNotice?.(message, { variant: 'error', durationMs: 2600 });
 
   useEffect(() => {
     let cancelled = false;
@@ -61,7 +62,7 @@ export default function SignIn({ navigation }) {
     if (googleResponse.type !== 'success') return;
     const idToken = googleResponse?.params?.id_token;
     if (!idToken) {
-      Alert.alert('Google Sign In', 'Google sign-in failed. Please try again.');
+      notifyError('Google sign-in failed. Please try again.');
       return;
     }
 
@@ -72,7 +73,7 @@ export default function SignIn({ navigation }) {
       try {
         const res = await loginWithGoogleIdToken?.({ idToken });
         if (!cancelled && res && res.ok === false) {
-          Alert.alert('Google Sign In', res.message || 'Google sign-in failed');
+          notifyError(res.message || 'Google sign-in failed');
         }
       } finally {
         if (!cancelled) setSubmitting(false);
@@ -93,18 +94,18 @@ export default function SignIn({ navigation }) {
 
   const handleSubmit = async () => {
     if (isOffline) {
-      Alert.alert('Offline', 'Internet connection required. Please reconnect and try again.');
+      notifyError('Internet connection required. Please reconnect and try again.');
       return;
     }
     if (!identifier || !password) {
-      Alert.alert('Missing info', 'Please enter username/email and password');
+      notifyError('Please enter username/email and password.');
       return;
     }
     setSubmitting(true);
     try {
       const res = await login(identifier.trim(), password);
       if (!res.ok) {
-        Alert.alert('Sign in failed', res.message || 'Check your credentials');
+        notifyError(res.message || 'Check your credentials.');
         return;
       }
 
@@ -152,7 +153,7 @@ export default function SignIn({ navigation }) {
             try {
               const res = await loginWithApple?.();
               if (!res?.ok && res?.message && res.message !== 'Canceled') {
-                Alert.alert('Apple Sign In', res.message);
+                notifyError(res.message);
               }
             } finally {
               setSubmitting(false);
@@ -177,17 +178,17 @@ export default function SignIn({ navigation }) {
         onPress={async () => {
           if (submitting || loading || isOffline) return;
           if (!isGoogleOAuthConfigured()) {
-            Alert.alert('Google Sign In', 'Google sign-in is not configured for this build.');
+            notifyError('Google sign-in is not configured for this build.');
             return;
           }
           if (!googleDiscovery) {
-            Alert.alert('Google Sign In', 'Google sign-in is not ready yet. Please try again.');
+            notifyError('Google sign-in is not ready yet. Please try again.');
             return;
           }
           try {
             await googlePromptAsync?.({ useProxy: true });
           } catch {
-            Alert.alert('Google Sign In', 'Google sign-in failed. Please try again.');
+            notifyError('Google sign-in failed. Please try again.');
           }
         }}
         disabled={submitting || loading || isOffline || !googleRequest || !googleDiscovery}
@@ -212,7 +213,7 @@ export default function SignIn({ navigation }) {
             try {
               const res = await biometricLogin?.();
               if (!res?.ok) {
-                Alert.alert('Face ID Sign In', res?.message || 'Could not sign in with Face ID');
+                notifyError(res?.message || 'Could not sign in with Face ID');
               }
             } finally {
               setSubmitting(false);

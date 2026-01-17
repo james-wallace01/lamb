@@ -28,9 +28,10 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
     assets,
     vaultMemberships,
     permissionGrants,
-    showAlert,
+    showNotice,
   } = useData();
-  const Alert = { alert: showAlert };
+  const notifyError = (message) => showNotice?.(message, { variant: 'error', durationMs: 2600 });
+  const notifyInfo = (message) => showNotice?.(message, { durationMs: 1800 });
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteEmailError, setInviteEmailError] = useState('');
   const [creatingInvite, setCreatingInvite] = useState(false);
@@ -137,7 +138,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
             : null;
 
     if (!res || res.ok === false) {
-      Alert.alert('Not allowed', res?.message || 'You do not have permission to share this item.');
+      notifyError(res?.message || 'You do not have permission to share this item.');
       return;
     }
 
@@ -150,7 +151,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
     const selfEmail = String(currentUser?.email || '').trim().toLowerCase();
     if (!email) {
       setInviteEmailError('');
-      Alert.alert('Delegate', 'Enter an email to delegate.');
+      notifyError('Enter an email to delegate.');
       return;
     }
 
@@ -170,7 +171,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
     // Otherwise: immediately grant access to an existing user matched by email.
     const match = (users || []).find((u) => String(u?.email || '').toLowerCase() === email);
     if (!match?.id) {
-      Alert.alert('User not found', 'No user with that email is available to delegate.');
+      notifyError('No user with that email is available to delegate.');
       return;
     }
 
@@ -181,7 +182,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
 
     await handleShare(match.id);
     setInviteEmail('');
-    Alert.alert('Delegated', 'Delegate access has been granted.');
+    notifyInfo('Delegate access has been granted.');
   };
 
   const canInviteByEmail = useMemo(() => {
@@ -307,7 +308,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
     const selfEmail = String(currentUser?.email || '').trim().toLowerCase();
     if (!email) {
       setInviteEmailError('');
-      Alert.alert('Invite', 'Enter an email to invite.');
+      notifyError('Enter an email to invite.');
       return;
     }
 
@@ -319,7 +320,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
     setInviteEmailError('');
     if (creatingInvite) return;
     if (!canInviteByEmail) {
-      Alert.alert('Invite', 'Only the vault owner can create invites.');
+      notifyError('Only the vault owner can create invites.');
       return;
     }
     setCreatingInvite(true);
@@ -355,7 +356,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
       });
       const json = await resp.json().catch(() => null);
       if (!resp.ok) {
-        Alert.alert('Invite failed', json?.error || 'Unable to create invitation');
+        notifyError(json?.error || 'Unable to create invitation');
         return;
       }
 
@@ -363,9 +364,9 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
       await loadInvites();
 
       setInviteEmail('');
-      Alert.alert('Invite sent', 'An invitation has been created for this email.');
+      notifyInfo('An invitation has been created for this email.');
     } catch (e) {
-      Alert.alert('Invite failed', e?.message || 'Unable to create invitation');
+      notifyError(e?.message || 'Unable to create invitation');
     } finally {
       inviteAbortRef.current = null;
       setCreatingInvite(false);
@@ -374,7 +375,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
 
   const handleRevokeInvite = async (code) => {
     if (!canInviteByEmail) {
-      Alert.alert('Revoke failed', 'Only the vault owner can revoke invites.');
+      notifyError('Only the vault owner can revoke invites.');
       return;
     }
     const vaultId = String(vaultIdForTarget);
@@ -388,13 +389,13 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
       });
       const json = await resp.json().catch(() => null);
       if (!resp.ok) {
-        Alert.alert('Revoke failed', json?.error || 'Unable to revoke invitation');
+        notifyError(json?.error || 'Unable to revoke invitation');
         return;
       }
-      Alert.alert('Revoked', 'Invitation has been revoked.');
+      notifyInfo('Invitation has been revoked.');
       await loadInvites();
     } catch (e) {
-      Alert.alert('Revoke failed', e?.message || 'Unable to revoke invitation');
+      notifyError(e?.message || 'Unable to revoke invitation');
     }
   };
 
@@ -411,7 +412,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
             : null;
 
     if (!res || res.ok === false) {
-      Alert.alert('Not allowed', res?.message || 'You do not have permission to update sharing on this item.');
+      notifyError(res?.message || 'You do not have permission to update sharing on this item.');
     }
   };
 
@@ -426,7 +427,7 @@ export default function ShareModal({ visible, onClose, targetType, targetId }) {
             : null;
 
     if (!res || res.ok === false) {
-      Alert.alert('Not allowed', res?.message || 'You do not have permission to remove sharing on this item.');
+      notifyError(res?.message || 'You do not have permission to remove sharing on this item.');
     }
   };
 

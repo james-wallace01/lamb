@@ -43,8 +43,8 @@ const ToggleRow = ({ label, helper, value, disabled, onPress, theme }) => {
 };
 
 export default function EmailNotifications() {
-  const { theme, vaults, currentUser, showAlert } = useData();
-  const Alert = { alert: showAlert };
+  const { theme, vaults, currentUser, showNotice } = useData();
+  const notifyError = (message) => showNotice?.(message, { variant: 'error', durationMs: 2600 });
 
   const ownsAnyVault = useMemo(() => {
     if (!currentUser?.id) return false;
@@ -59,7 +59,7 @@ export default function EmailNotifications() {
 
   const load = async () => {
     if (!API_URL) {
-      Alert.alert('Unavailable', 'Server is not configured.');
+      notifyError('Server is not configured.');
       setLoading(false);
       return;
     }
@@ -101,7 +101,7 @@ export default function EmailNotifications() {
       setCategories(s.categories || {});
       setDigestFrequency(s.digestFrequency === 'daily' ? 'daily' : 'weekly');
     } catch (e) {
-      Alert.alert('Could not save', e?.message || 'Please try again');
+      notifyError(e?.message || 'Please try again');
     } finally {
       setSaving(false);
     }

@@ -15,7 +15,8 @@ import AssetScreen from './src/screens/Asset';
 import PrivateVaultsScreen from './src/screens/PrivateVaults';
 import SharedVaultsScreen from './src/screens/SharedVaults';
 import TrackingScreen from './src/screens/Tracking';
-import MembershipScreen from './src/screens/Settings';
+import MembershipScreen from './src/screens/Membership';
+import SettingsScreen from './src/screens/Settings';
 import ProfileScreen from './src/screens/Profile';
 import EmailNotificationsScreen from './src/screens/EmailNotifications';
 import SignInScreen from './src/screens/SignIn';
@@ -66,6 +67,7 @@ const MainStack = () => {
     <Stack.Screen name="Collection" component={CollectionScreen} options={{ headerShown: false }} />
     <Stack.Screen name="Asset" component={AssetScreen} options={{ headerShown: false }} />
     <Stack.Screen name="Membership" component={MembershipScreen} options={{ headerShown: false }} />
+    <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
     <Stack.Screen name="ChooseSubscription" component={ChooseSubscriptionScreen} options={{ headerShown: false }} />
     <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
     <Stack.Screen name="EmailNotifications" component={EmailNotificationsScreen} options={{ headerShown: false }} />
@@ -93,6 +95,7 @@ const LimitedStack = () => {
       <Stack.Screen name="Tracking" component={TrackingScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Membership" component={MembershipScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="ChooseSubscription" component={ChooseSubscriptionScreen} options={{ headerShown: false }} />
       <Stack.Screen name="EmailNotifications" component={EmailNotificationsScreen} options={{ headerShown: false }} />
     </Stack.Navigator>

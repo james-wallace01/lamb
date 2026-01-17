@@ -8,8 +8,8 @@ import { firebaseAuth, isFirebaseConfigured } from '../firebase';
 const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
 
 export default function ForgotPassword({ navigation, route }) {
-  const { theme, showAlert } = useData();
-  const Alert = { alert: showAlert };
+  const { theme, showNotice } = useData();
+  const notifyError = (message) => showNotice?.(message, { variant: 'error', durationMs: 2600 });
   const initial = normalizeEmail(route?.params?.prefillEmail);
   const [email, setEmail] = useState(initial);
   const [submitting, setSubmitting] = useState(false);
@@ -25,15 +25,15 @@ export default function ForgotPassword({ navigation, route }) {
   const handleSend = async () => {
     const v = normalizeEmail(email);
     if (!v) {
-      Alert.alert('Missing info', 'Please enter your email address.');
+      notifyError('Please enter your email address.');
       return;
     }
     if (emailError) {
-      Alert.alert('Invalid email', emailError);
+      notifyError(emailError);
       return;
     }
     if (!isFirebaseConfigured() || !firebaseAuth) {
-      Alert.alert('Unavailable', 'Password reset is not available right now.');
+      notifyError('Password reset is not available right now.');
       return;
     }
 
@@ -46,9 +46,8 @@ export default function ForgotPassword({ navigation, route }) {
       setSubmitting(false);
     }
 
-    Alert.alert('Check your email', 'If an account exists for that email, you will receive a reset link shortly.', [
-      { text: 'OK', onPress: () => navigation.navigate('SignIn') },
-    ]);
+    showNotice?.('If an account exists for that email, you will receive a reset link shortly.', { durationMs: 2400 });
+    navigation.navigate('SignIn');
   };
 
   return (
