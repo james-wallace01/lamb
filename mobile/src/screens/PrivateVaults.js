@@ -127,6 +127,7 @@ export default function PrivateVaults({ navigation, route }) {
   const [vaultEditVisible, setVaultEditVisible] = useState(false);
   const [vaultEditName, setVaultEditName] = useState('');
   const [vaultEditSaving, setVaultEditSaving] = useState(false);
+  const vaultEditSavingRef = useRef(false);
 
   const [collectionEditVisible, setCollectionEditVisible] = useState(false);
   const [collectionEditName, setCollectionEditName] = useState('');
@@ -169,6 +170,11 @@ export default function PrivateVaults({ navigation, route }) {
   };
 
   const uid = currentUser?.id ? String(currentUser.id) : null;
+
+  const closeVaultEditModal = () => {
+    if (vaultEditSavingRef.current) return;
+    setVaultEditVisible(false);
+  };
 
   const selectedVaultAssetsForTotal = useMemo(() => {
     if (!selectedVaultId) return [];
@@ -1125,12 +1131,11 @@ export default function PrivateVaults({ navigation, route }) {
               transparent
               animationType="fade"
               onRequestClose={() => {
-                if (vaultEditSaving) return;
-                setVaultEditVisible(false);
+                closeVaultEditModal();
               }}
             >
-          <View style={styles.modalBackdrop}>
-            <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={closeVaultEditModal}>
+            <TouchableOpacity activeOpacity={1} style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               <Text style={[styles.modalTitle, { color: theme.text }]}>Edit Vault</Text>
               <Text style={[styles.modalLabel, { color: theme.textMuted }]}>Name</Text>
               <TextInput
@@ -1146,7 +1151,7 @@ export default function PrivateVaults({ navigation, route }) {
               <View style={styles.modalActions}>
                 <TouchableOpacity
                   style={[styles.secondaryButton, { borderColor: theme.border }, vaultEditSaving && styles.buttonDisabled]}
-                  onPress={() => setVaultEditVisible(false)}
+                  onPress={closeVaultEditModal}
                   disabled={vaultEditSaving}
                 >
                   <Text style={[styles.secondaryButtonText, { color: theme.text }]}>Close</Text>
@@ -1160,7 +1165,8 @@ export default function PrivateVaults({ navigation, route }) {
                   disabled={!selectedVaultId || !canVaultEditOnline || vaultEditSaving}
                   onPress={() => {
                     if (!selectedVaultId || !selectedVault) return;
-                    if (vaultEditSaving) return;
+                    if (vaultEditSavingRef.current) return;
+                    vaultEditSavingRef.current = true;
                     const expectedEditedAt = selectedVault?.editedAt ?? null;
                     (async () => {
                       setVaultEditSaving(true);
@@ -1182,6 +1188,7 @@ export default function PrivateVaults({ navigation, route }) {
                       } catch (e) {
                         Alert.alert('Save failed', e?.message || 'Unable to update vault');
                       } finally {
+                        vaultEditSavingRef.current = false;
                         setVaultEditSaving(false);
                       }
                     })();
@@ -1226,8 +1233,8 @@ export default function PrivateVaults({ navigation, route }) {
                   <Text style={[styles.dangerButtonText, { color: theme.dangerText }]}>Delete</Text>
                 </TouchableOpacity>
               </View>
-            </View>
-          </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
           </Modal>
 
         <Modal visible={assetMoveVisible} transparent animationType="fade" onRequestClose={() => setAssetMoveVisible(false)}>
