@@ -232,8 +232,9 @@ export default function SignIn({ navigation }) {
         placeholder="Username or email"
         placeholderTextColor={theme.placeholder}
         autoCapitalize="none"
-        autoComplete="username"
-        textContentType="username"
+        autoComplete="off"
+        textContentType="none"
+        importantForAutofill="no"
         value={identifier}
         onChangeText={setIdentifier}
       />
@@ -243,8 +244,9 @@ export default function SignIn({ navigation }) {
         placeholderTextColor={theme.placeholder}
         secureTextEntry
         autoCapitalize="none"
-        autoComplete="password"
-        textContentType="password"
+        autoComplete="off"
+        textContentType="none"
+        importantForAutofill="no"
         value={password}
         onChangeText={setPassword}
       />

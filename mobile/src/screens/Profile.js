@@ -539,8 +539,9 @@ export default function Profile({ navigation, route }) {
                       }}
                       secureTextEntry={!showCurrentPassword}
                       autoCapitalize="none"
-                      textContentType="password"
-                      autoComplete="current-password"
+                      textContentType="none"
+                      autoComplete="off"
+                      importantForAutofill="no"
                     />
                     <TouchableOpacity
                       style={styles.eyeButton}
@@ -563,9 +564,9 @@ export default function Profile({ navigation, route }) {
                       onChangeText={handlePasswordChange}
                       secureTextEntry={!showNewPassword}
                       autoCapitalize="none"
-                      textContentType="newPassword"
-                      autoComplete="new-password"
-                      passwordRules="minlength: 12; required: lower; required: upper; required: digit; required: special;"
+                      textContentType="none"
+                      autoComplete="off"
+                      importantForAutofill="no"
                     />
                     <TouchableOpacity
                       style={styles.eyeButton}
@@ -588,8 +589,9 @@ export default function Profile({ navigation, route }) {
                       onChangeText={handleConfirmPasswordChange}
                       secureTextEntry={!showConfirmNewPassword}
                       autoCapitalize="none"
-                      textContentType="newPassword"
-                      autoComplete="new-password"
+                      textContentType="none"
+                      autoComplete="off"
+                      importantForAutofill="no"
                     />
                     <TouchableOpacity
                       style={styles.eyeButton}

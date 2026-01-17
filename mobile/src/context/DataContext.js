@@ -2415,22 +2415,32 @@ export function DataProvider({ children }) {
       const matchesUsername = !!existingUsernameNorm && existingUsernameNorm === un.value;
 
       const existingId =
-        existingLocal?.id != null
-          ? existingLocal.id
-          : existingLocal?.user_id != null
-            ? existingLocal.user_id
-            : existingLocal?.firebaseUid != null
-              ? existingLocal.firebaseUid
-              : existingLocal?.firebase_uid != null
-                ? existingLocal.firebase_uid
+        existingLocal?.firebaseUid != null
+          ? existingLocal.firebaseUid
+          : existingLocal?.firebase_uid != null
+            ? existingLocal.firebase_uid
+            : existingLocal?.id != null
+              ? existingLocal.id
+              : existingLocal?.user_id != null
+                ? existingLocal.user_id
                 : null;
 
+      const existingCandidates = [
+        existingLocal?.firebaseUid,
+        existingLocal?.firebase_uid,
+        existingLocal?.id,
+        existingLocal?.user_id,
+      ]
+        .map((x) => (x != null ? String(x) : null))
+        .filter(Boolean);
+
       const existingUid = existingId != null ? String(existingId) : null;
+      const isSameUser = existingCandidates.some((x) => x === uid);
 
       // Only block on an email conflict with a different known uid.
       // Do NOT block on username collisions here: local cache can be stale and username is not
       // a Firebase Auth-unique identifier.
-      if (existingUid && existingUid !== uid) {
+      if (!isSameUser && existingUid && existingUid !== uid) {
         if (matchesEmail) return { ok: false, message: 'Email is already in use' };
       }
 

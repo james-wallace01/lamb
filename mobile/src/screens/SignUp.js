@@ -455,8 +455,9 @@ export default function SignUp({ navigation }) {
           value={username} 
           autoCapitalize="none" 
           autoCorrect={false}
-          autoComplete="username"
-          textContentType="username"
+          autoComplete="off"
+          textContentType="none"
+          importantForAutofill="no"
           onChangeText={(t) => {
             setUsernameBlurred(false);
             setUsernameTaken(false);
@@ -475,10 +476,9 @@ export default function SignUp({ navigation }) {
           placeholderTextColor={theme.placeholder}
           secureTextEntry
           autoCapitalize="none"
-          autoComplete="password-new"
-          textContentType="newPassword"
-          // Apple iOS password rules hint (enforcement happens in DataContext.register)
-          passwordRules="minlength: 12; required: lower; required: upper; required: digit; required: special;"
+          autoComplete="off"
+          textContentType="none"
+          importantForAutofill="no"
           value={password}
           onChangeText={(t) => {
             setPasswordBlurred(false);
